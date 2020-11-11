@@ -12,7 +12,7 @@ libs=-pthread -lbfd -ldwarf
 tgt_dir=bin
 obj_dir=obj
 src_dir=src
-dep_dir=.deps
+dep_dir=$(obj_dir)/.deps
 
 # files
 src=$(wildcard src/*.cpp)
@@ -40,7 +40,7 @@ $(dep_dir):
 $(tgt): $(obj)
 	$(cc) $^ $(libs) -o $@
 
-obj/%.o: src/%.cpp $(dep_dir)/%.d
+$(obj_dir)/%.o: $(src_dir)/%.cpp $(dep_dir)/%.d
 	$(cc) -MT $@ -MMD -MP -MF $(dep_dir)/$*.d $(cflags) $(cppflags) -c -o $@ $<
 
 $(deps):
