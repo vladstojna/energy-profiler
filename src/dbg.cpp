@@ -54,7 +54,7 @@ tep::compilation_unit::compilation_unit(compilation_unit&& other) :
 {
 }
 
-void tep::compilation_unit::add_address(uint64_t lineno, uintptr_t lineaddr)
+void tep::compilation_unit::add_address(line_no lineno, tep::line_addr lineaddr)
 {
     if (_lines.find(lineno) == _lines.end())
     {
@@ -63,7 +63,7 @@ void tep::compilation_unit::add_address(uint64_t lineno, uintptr_t lineaddr)
     _lines.at(lineno).emplace_back(lineaddr);
 }
 
-uintptr_t tep::compilation_unit::line_first_addr(uint64_t lineno) const
+tep::line_addr tep::compilation_unit::line_first_addr(line_no lineno) const
 {
     for (const auto& [no, addrs] : _lines)
     {
@@ -76,7 +76,7 @@ uintptr_t tep::compilation_unit::line_first_addr(uint64_t lineno) const
     throw std::invalid_argument("invalid line");
 }
 
-const std::vector<uintptr_t>& tep::compilation_unit::line_addrs(uint64_t lineno) const
+const std::vector<tep::line_addr>& tep::compilation_unit::line_addrs(line_no lineno) const
 {
     for (const auto& [no, addrs] : _lines)
     {
@@ -132,18 +132,13 @@ void tep::dbg_line_info::get_line_info(const char* filename)
     }
 
     // iterate all compilation units
-    int iter = 0;
-    while (++iter)
+    while (true)
     {
         Dwarf_Unsigned next_cu_size;
         if ((rv = dwarf_next_cu_header(dw_dbg, NULL, NULL, NULL, NULL, &next_cu_size, &dw_err)) != DW_DLV_OK)
         {
             // if no more compilation units left
-            // for some reason 'dwarf_init' does not return DW_DLV_NO_ENTRY when compiling
-            // without debug symbols, so count number of iterations and if
-            // 'dwarf_next_cu_header' returns DW_DLV_NO_ENTRY on the first iteration
-            // consider it an error
-            if (rv == DW_DLV_NO_ENTRY && iter > 1)
+            if (rv == DW_DLV_NO_ENTRY)
                 break;
             handle_dwarf_error(rv, fl, dw_err);
         }

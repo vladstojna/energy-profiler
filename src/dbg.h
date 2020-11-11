@@ -10,14 +10,14 @@
 namespace tep
 {
 
-typedef uint64_t line_no;
+typedef uint32_t line_no;
 typedef uintptr_t line_addr;
 
 class compilation_unit
 {
 private:
     const std::string _name;
-    std::map<uint64_t, std::vector<uintptr_t>> _lines;
+    std::map<line_no, std::vector<line_addr>> _lines;
 
 public:
     compilation_unit(const char* name);
@@ -32,9 +32,9 @@ public:
     const std::string& name()  const { return _name; }
     const decltype(_lines)& lines() const { return _lines; }
 
-    void add_address(uint64_t lineno, uintptr_t lineaddr);
-    uintptr_t line_first_addr(uint64_t lineno) const;
-    const std::vector<uintptr_t>& line_addrs(uint64_t lineno) const;
+    void add_address(line_no lineno, line_addr lineaddr);
+    line_addr line_first_addr(line_no lineno) const;
+    const std::vector<line_addr>& line_addrs(line_no lineno) const;
 
     friend std::ostream& operator<<(std::ostream& os, const compilation_unit& cu);
 };
