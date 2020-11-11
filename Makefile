@@ -44,7 +44,8 @@ obj/%.o: src/%.cpp $(dep_dir)/%.d
 	$(cc) -MT $@ -MMD -MP -MF $(dep_dir)/$*.d $(cflags) $(cppflags) -c -o $@ $<
 
 $(deps):
-include $^
+
+include $(wildcard $(deps))
 
 .PHONY: remake
 remake: clean all
