@@ -1,0 +1,336 @@
+// profiler.cpp
+#include "profiler.h"
+
+#include <chrono>
+
+#include <cassert>
+#include <cinttypes>
+#include <cstddef>
+#include <cstdint>
+
+#include <errno.h>
+#include <string.h>
+#include <unistd.h>
+#include <sys/ptrace.h>
+#include <sys/wait.h>
+#include <sys/user.h>
+
+#include "macros.h"
+#include "trap.h"
+#include "util.h"
+
+// declarations
+
+bool add_child(std::unordered_map<pid_t, bool>& children, pid_t pid);
+bool insert_trap(pid_t pid, uintptr_t addr, long& word);
+bool replace_trap(pid_t pid, struct user_regs_struct& regs, long orig_word);
+
+// start helper functions
+
+constexpr uint32_t get_ptrace_opts()
+{
+    return PTRACE_O_TRACECLONE | PTRACE_O_TRACEFORK | PTRACE_O_TRACEVFORK | PTRACE_O_EXITKILL;
+}
+
+bool add_child(std::unordered_map<pid_t, bool>& children, pid_t pid)
+{
+    auto pair = children.try_emplace(pid, false);
+    dbg(tep::procmsg("child %d created (total = %lu)\n", pid, children.size()));
+    return pair.second;
+}
+
+bool insert_trap(pid_t pid, uintptr_t addr, long& word)
+{
+    // clear errno before call
+    errno = 0;
+    word = ptrace(PTRACE_PEEKDATA, pid, addr, 0);
+    if (errno) // check if errno is set
+    {
+        perror(fileline("PTRACE_PEEKDATA"));
+        return false;
+    }
+    long new_word = (word & tep::lsb_mask()) | tep::trap::code();
+    if (ptrace(PTRACE_POKEDATA, pid, addr, new_word) < 0)
+    {
+        perror(fileline("PTRACE_POKEDATA"));
+        return false;
+    }
+    return true;
+}
+
+bool replace_trap(pid_t pid, struct user_regs_struct& regs, long orig_word)
+{
+    if (ptrace(PTRACE_POKEDATA, pid, regs.rip, orig_word) < 0)
+    {
+        perror(fileline("PTRACE_POKEDATA"));
+        return false;
+    };
+    if (ptrace(PTRACE_SETREGS, pid, 0, &regs) < 0)
+    {
+        perror(fileline("PTRACE_SETREGS"));
+        return false;
+    }
+    return true;
+}
+
+// end helper functions
+
+tep::profiler::profiler(pid_t child_pid, const std::unordered_set<uintptr_t>& addresses) :
+    _sampler_thread(),
+    _sampler_mutex(),
+    _sampler_cond(),
+    _task_finished(false),
+    _target_finished(false),
+    _child_pid(child_pid),
+    _bp_addresses(addresses),
+    _trap_count(0),
+    _children()
+{
+    // start pooled sampling thread
+    _sampler_thread = std::thread(&profiler::sampler_routine, this);
+}
+
+tep::profiler::profiler(pid_t child_pid, std::unordered_set<uintptr_t>&& addresses) :
+    _sampler_thread(),
+    _sampler_mutex(),
+    _sampler_cond(),
+    _task_finished(false),
+    _target_finished(false),
+    _child_pid(child_pid),
+    _bp_addresses(std::move(addresses)),
+    _trap_count(0),
+    _children()
+{
+    // start pooled sampling thread
+    _sampler_thread = std::thread(&profiler::sampler_routine, this);
+}
+
+tep::profiler::~profiler()
+{
+    notify_target_finished();
+    _sampler_thread.join();
+
+    for (size_t ix = 0; ix < _children.size(); ix++)
+    {
+        pid_t child_pid = wait(NULL);
+        assert(child_pid != -1);
+        dbg(tep::procmsg("waited for child %d\n", child_pid));
+    }
+}
+
+void tep::profiler::notify_task()
+{
+    {
+        std::scoped_lock lock(_sampler_mutex);
+        _task_finished = bool(_trap_count++ % 2);
+    }
+    _sampler_cond.notify_one();
+}
+
+void tep::profiler::notify_target_finished()
+{
+    {
+        std::scoped_lock lock(_sampler_mutex);
+        _target_finished = true;
+    }
+    _sampler_cond.notify_one();
+}
+
+void tep::profiler::sampler_routine()
+{
+    while (true)
+    {
+        {
+            std::unique_lock lock(_sampler_mutex);
+            _sampler_cond.wait(lock);
+            if (_target_finished)
+                return;
+            tep::procmsg("first sample\n");
+        }
+        {
+            while (true)
+            {
+                std::unique_lock lock(_sampler_mutex);
+                _sampler_cond.wait_for(lock, std::chrono::seconds(1),
+                    [this] { return _task_finished || _target_finished; });
+                tep::procmsg(_task_finished || _target_finished ?
+                    "final sample\n" : "intermediate sample\n", false);
+                if (_target_finished)
+                    return;
+                if (_task_finished)
+                    break;
+            }
+        }
+    }
+}
+
+bool tep::profiler::stop_other_children(pid_t caller_pid)
+{
+    for (auto& [pid, stopped] : _children)
+    {
+        if (pid != caller_pid)
+        {
+            stopped = true;
+            if (kill(pid, SIGSTOP) != 0)
+            {
+                perror(fileline("kill(SIGSTOP)"));
+                return false;
+            }
+        }
+    }
+    return true;
+}
+
+bool tep::profiler::restart_other_children(pid_t caller_pid)
+{
+    for (auto& [pid, stopped] : _children)
+    {
+        if (pid != caller_pid)
+        {
+            if (kill(pid, SIGCONT) != 0)
+            {
+                perror(fileline("kill(SIGCONT)"));
+                return false;
+            }
+        }
+    }
+    return true;
+}
+
+bool tep::profiler::run()
+{
+    int wait_status;
+    pid_t waited_pid;
+    struct user_regs_struct regs;
+    uint32_t ptrace_opts;
+    uintptr_t entrypoint_addr;
+    std::unordered_map<uintptr_t, long> original_words;
+
+    // not necessary if running once: clear any children previously encountered
+    _children.clear();
+    ptrace_opts = get_ptrace_opts();
+
+    waited_pid = waitpid(_child_pid, &wait_status, 0);
+    assert(waited_pid == _child_pid);
+    if (!WIFSTOPPED(wait_status))
+    {
+        tep::procmsg(fileline("target not stopped\n"));
+        return false;
+    }
+
+    ptrace(PTRACE_GETREGS, waited_pid, 0, &regs);
+    dbg(tep::procmsg("target %d rip @ 0x%016llx\n", waited_pid, regs.rip));
+
+    entrypoint_addr = tep::get_entrypoint_addr(waited_pid);
+    if (entrypoint_addr == 0)
+    {
+        perror(fileline("tep::get_entrypoint_addr"));
+        return false;
+    }
+    dbg(tep::procmsg("target %d entrypoint @ 0x%016llx\n", waited_pid, entrypoint_addr));
+    ptrace(PTRACE_SETOPTIONS, waited_pid, NULL, ptrace_opts);
+    if (!add_child(_children, waited_pid))
+    {
+        tep::procmsg("child %d already exists!", waited_pid);
+        return false;
+    }
+
+    // set breakpoints
+    for (uintptr_t addr : _bp_addresses)
+    {
+        long word;
+        uintptr_t final_addr = entrypoint_addr + addr;
+        if (insert_trap(_child_pid, final_addr, word) &&
+            original_words.try_emplace(final_addr, word).second)
+        {
+            dbg(tep::procmsg("inserted trap @ 0x%016llx\n", final_addr));
+        }
+        else
+        {
+            tep::procmsg(fileline("error setting breakpoints"));
+            return false;
+        }
+    }
+
+    // if no breakpoint addresses: measure the whole program
+    if (_bp_addresses.empty())
+    {
+        notify_task();
+    }
+
+    // main tracing loop
+    while (WIFSTOPPED(wait_status))
+    {
+        if (ptrace(PTRACE_CONT, waited_pid, 0, 0) < 0)
+        {
+            perror(fileline("PTRACE_CONT"));
+            return false;
+        }
+        waited_pid = waitpid(-1, &wait_status, 0);
+        if (tep::is_clone_event(wait_status) ||
+            tep::is_vfork_event(wait_status) ||
+            tep::is_fork_event(wait_status))
+        {
+            pid_t new_child;
+            if (ptrace(PTRACE_GETEVENTMSG, waited_pid, 0, &new_child) < 0)
+            {
+                perror(fileline("PTRACE_GETEVENTMSG"));
+                return false;
+            }
+            if (!add_child(_children, new_child))
+            {
+                tep::procmsg("child %d already exists!", new_child);
+                return false;
+            }
+        }
+        else if (WIFSTOPPED(wait_status) && WSTOPSIG(wait_status) == SIGTRAP)
+        {
+            ptrace(PTRACE_GETREGS, waited_pid, 0, &regs);
+            tep::procmsg("child %d trapped @ 0x%016llx (0x%llx)\n", waited_pid,
+                regs.rip, regs.rip - entrypoint_addr);
+
+            // if child has been stopped, "unstop" it and skip the rest
+            if (_children.at(waited_pid))
+            {
+                _children.at(waited_pid) = false;
+                continue;
+            }
+
+            if (!stop_other_children(waited_pid))
+                return false;
+
+            regs.rip -= 1; // go back 1 byte trap instruction
+            if (!replace_trap(waited_pid, regs, original_words.at(regs.rip)))
+                return false;
+
+            notify_task();
+            if (!restart_other_children(waited_pid))
+                return false;
+        }
+        else if (WIFEXITED(wait_status))
+        {
+            _children.erase(waited_pid);
+            tep::procmsg("child %d exited with status %d\n", waited_pid,
+                WEXITSTATUS(wait_status));
+        }
+        else if (WIFSIGNALED(wait_status))
+        {
+            _children.erase(waited_pid);
+            tep::procmsg("child %d terminated by signal: %s\n", waited_pid,
+                strsignal(WTERMSIG(wait_status)));
+        }
+    #if !defined(NDEBUG)
+        else
+        {
+            if (ptrace(PTRACE_GETREGS, waited_pid, 0, &regs) < 0)
+            {
+                perror(fileline("PTRACE_GETREGS"));
+                return false;
+            }
+            tep::procmsg("child %d got a signal: %s @ 0x%016llx\n", waited_pid,
+                strsignal(WSTOPSIG(wait_status)), regs.rip);
+        }
+    #endif
+    }
+    return true;
+}
