@@ -1,0 +1,77 @@
+// main.cpp
+
+#include <iostream>
+#include <unordered_set>
+
+#include <unistd.h>
+
+#include "cmdargs.h"
+#include "dbg.h"
+#include "macros.h"
+#include "profiler.h"
+#include "target.h"
+#include "util.h"
+
+std::unordered_set<tep::line_addr> get_breakpoint_addresses(
+    const tep::dbg_line_info& dbg_info,
+    std::vector<tep::arguments::breakpoint>& breakpoints)
+{
+    std::unordered_set<tep::line_addr> addresses;
+    if (dbg_info.has_dbg_symbols())
+    {
+        addresses.reserve(breakpoints.size());
+        for (const auto& bp : breakpoints)
+        {
+            tep::line_addr addr = dbg_info
+                .cu_by_name(bp.cu_name)
+                .line_first_addr(bp.lineno);
+            addresses.emplace(addr);
+        }
+    }
+    else
+    {
+        tep::procmsg("no debug symbols found; ignoring breakpoints\n");
+    }
+    return addresses;
+}
+
+int main(int argc, char* argv[])
+{
+    tep::arguments args;
+    int idx = tep::parse_arguments(argc, argv, args);
+    if (idx < 0)
+    {
+        return 1;
+    }
+    dbg(std::cout << args << "\n");
+
+    pid_t child_pid = fork();
+    if (child_pid == 0)
+    {
+        tep::run_target(&argv[idx]);
+    }
+    else if (child_pid > 0)
+    {
+        try
+        {
+            bool result;
+            tep::dbg_line_info dbg_info(argv[idx]);
+            {
+                tep::profiler profiler(child_pid,
+                    get_breakpoint_addresses(dbg_info, args.breakpoints));
+                result = profiler.run();
+                // TODO make destructor non-blocking (wait) when some error occurs
+            }
+            return !result;
+        }
+        catch (const std::exception& e)
+        {
+            fprintf(stderr, "exception: %s\n", e.what());
+        }
+    }
+    else
+    {
+        perror(fileline("fork"));
+    }
+    return 1;
+}
