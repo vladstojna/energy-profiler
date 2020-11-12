@@ -2,10 +2,11 @@ cc=g++
 
 DEBUG?=
 
+warn=-Wall -Wextra -Wno-unknown-pragmas
 ifeq ($(DEBUG),true)
-cflags=-Wall -Wextra -g -O0
+cflags=$(warn) -g -O0
 else
-cflags=-Wall -Wextra -O3 -D NDEBUG
+cflags=$(warn) -O3 -D NDEBUG
 endif
 cppflags=-std=c++17
 libs=-pthread -lbfd -ldwarf
