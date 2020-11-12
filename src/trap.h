@@ -19,11 +19,9 @@
 #   endif
 #endif
 
-namespace tep::trap
-{
-
+extern "C"
 __inline__ __attribute__((always_inline))
-static void make()
+void make_trap()
 {
 #if TRAP && (__x86_64__ || __i386__)
     __asm__ volatile ("int $3");
@@ -42,9 +40,16 @@ static void make()
 #endif
 }
 
+#if defined(__cplusplus)
+
+namespace tep::trap
+{
+
 uint8_t code()
 {
     return 0xCC;
 }
 
 }
+
+#endif
