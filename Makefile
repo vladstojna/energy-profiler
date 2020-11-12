@@ -1,9 +1,11 @@
 cc=g++
 
-ifdef NDEBUG
-cflags=-Wall -Wextra -O3 -D NDEBUG
-else
+DEBUG?=
+
+ifeq ($(DEBUG),true)
 cflags=-Wall -Wextra -g -O0
+else
+cflags=-Wall -Wextra -O3 -D NDEBUG
 endif
 cppflags=-std=c++17
 libs=-pthread -lbfd -ldwarf
