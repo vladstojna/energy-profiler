@@ -4,6 +4,7 @@
 #include <stdarg.h>
 #include <stdio.h>
 #include <unistd.h>
+#include <sys/user.h>
 
 void tep::procmsg(const char* format, ...)
 {
@@ -33,4 +34,26 @@ uintptr_t tep::get_entrypoint_addr(pid_t pid)
         return 0;
 
     return ptr_start;
+}
+
+uintptr_t tep::get_ip(user_regs_struct& regs)
+{
+#if __x86_64__
+    return regs.rip;
+#elif __i386__
+    return regs.eip;
+#else // only x86 for now
+    return 0;
+#endif
+}
+
+void tep::set_ip(user_regs_struct& regs, uintptr_t addr)
+{
+#if __x86_64__
+    regs.rip = addr;
+#elif __i386__
+    regs.eip = addr;
+#else // only x86 for now
+    // empty
+#endif
 }

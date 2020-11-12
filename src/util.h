@@ -6,11 +6,12 @@
 #include <signal.h>
 #include <sys/ptrace.h>
 
+struct user_regs_struct;
+
 namespace tep
 {
 
 void procmsg(const char* format, ...);
-
 uintptr_t get_entrypoint_addr(pid_t pid);
 
 constexpr bool is_clone_event(int wait_status)
@@ -30,13 +31,10 @@ constexpr bool is_fork_event(int wait_status)
 
 constexpr unsigned long lsb_mask()
 {
-#if __x86_64__
-    return 0xFFFFFFFFFFFFFF00;
-#elif __i386__
-    return 0xFFFFFF00;
-#else
-    return 0x0;
-#endif
+    return ~0xFF;
 }
+
+uintptr_t get_ip(user_regs_struct& regs);
+void set_ip(user_regs_struct& regs, uintptr_t addr);
 
 }
