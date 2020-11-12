@@ -77,7 +77,8 @@ tep::profiler::profiler(pid_t child_pid, const std::unordered_set<uintptr_t>& ad
     _child_pid(child_pid),
     _bp_addresses(addresses),
     _trap_count(0),
-    _children()
+    _children(),
+    _unsuccess(true)
 {
     // start pooled sampling thread
     _sampler_thread = std::thread(&profiler::sampler_routine, this);
@@ -92,7 +93,8 @@ tep::profiler::profiler(pid_t child_pid, std::unordered_set<uintptr_t>&& address
     _child_pid(child_pid),
     _bp_addresses(std::move(addresses)),
     _trap_count(0),
-    _children()
+    _children(),
+    _unsuccess(true)
 {
     // start pooled sampling thread
     _sampler_thread = std::thread(&profiler::sampler_routine, this);
@@ -103,11 +105,28 @@ tep::profiler::~profiler()
     notify_target_finished();
     _sampler_thread.join();
 
-    for (size_t ix = 0; ix < _children.size(); ix++)
+    for (auto [tid, _] : _children)
     {
-        pid_t child_pid = wait(NULL);
-        assert(child_pid != -1);
-        dbg(tep::procmsg("waited for child %d\n", child_pid));
+        if (_unsuccess)
+        {
+        #ifdef NDEBUG
+            tgkill(_child_pid, tid, SIGKILL);
+        #else
+            int rv = tgkill(_child_pid, tid, SIGKILL);
+            assert(rv == 0);
+            dbg(tep::procmsg("killed child %d\n", tid));
+        #endif
+        }
+        else
+        {
+        #ifdef NDEBUG
+            wait(NULL);
+        #else
+            pid_t child_pid = wait(NULL);
+            assert(child_pid != -1);
+            dbg(tep::procmsg("waited for child %d\n", child_pid));
+        #endif
+        }
     }
 }
 
@@ -174,14 +193,14 @@ bool tep::profiler::signal_other_threads(pid_t tgid, pid_t caller_tid, int signa
     return true;
 }
 
-bool tep::profiler::run()
+void tep::profiler::run()
 {
     int wait_status;
     pid_t waited_pid;
     pid_t tgid;
-    user_regs_struct regs;
     uint32_t ptrace_opts;
     uintptr_t entrypoint_addr;
+    user_regs_struct regs;
     std::unordered_map<uintptr_t, long> original_words;
 
     // not necessary if running once: clear any children previously encountered
@@ -194,22 +213,21 @@ bool tep::profiler::run()
     assert(waited_pid == _child_pid);
     if (!WIFSTOPPED(wait_status))
     {
-        tep::procmsg(fileline("target not stopped\n"));
-        return false;
+        throw profiler_exception(fileline("target not stopped"));
     }
     ptrace(PTRACE_GETREGS, waited_pid, 0, &regs);
     dbg(tep::procmsg("target %d rip @ 0x%016llx\n", waited_pid, tep::get_ip(regs)));
     if ((entrypoint_addr = tep::get_entrypoint_addr(waited_pid)) == 0)
     {
-        perror(fileline("tep::get_entrypoint_addr"));
-        return false;
+        perror(fileline("get_entrypoint_addr"));
+        throw profiler_exception();
     }
     dbg(tep::procmsg("target %d entrypoint @ 0x%016llx\n", waited_pid, entrypoint_addr));
     ptrace(PTRACE_SETOPTIONS, waited_pid, NULL, ptrace_opts);
     if (!add_child(_children, waited_pid))
     {
-        tep::procmsg("child %d already exists!", waited_pid);
-        return false;
+        fprintf(stderr, "child %d already exists!", waited_pid);
+        throw profiler_exception();
     }
 
     // set breakpoints
@@ -225,8 +243,7 @@ bool tep::profiler::run()
         }
         else
         {
-            tep::procmsg(fileline("error setting breakpoints"));
-            return false;
+            throw profiler_exception(fileline("error setting breakpoints"));
         }
     }
 
@@ -242,7 +259,7 @@ bool tep::profiler::run()
         if (ptrace(PTRACE_CONT, waited_pid, 0, 0) < 0)
         {
             perror(fileline("PTRACE_CONT"));
-            return false;
+            throw profiler_exception();
         }
         waited_pid = waitpid(-1, &wait_status, 0);
         if (tep::is_clone_event(wait_status) ||
@@ -253,12 +270,12 @@ bool tep::profiler::run()
             if (ptrace(PTRACE_GETEVENTMSG, waited_pid, 0, &new_child) < 0)
             {
                 perror(fileline("PTRACE_GETEVENTMSG"));
-                return false;
+                throw profiler_exception();
             }
             if (!add_child(_children, new_child))
             {
-                tep::procmsg("child %d already exists!", new_child);
-                return false;
+                fprintf(stderr, "child %d already exists!", waited_pid);
+                throw profiler_exception();
             }
         }
         else if (WIFSTOPPED(wait_status) && WSTOPSIG(wait_status) == SIGTRAP)
@@ -273,7 +290,7 @@ bool tep::profiler::run()
             if (ptrace(PTRACE_SETREGS, waited_pid, 0, &regs) < 0)
             {
                 perror(fileline("PTRACE_SETREGS"));
-                return false;
+                throw profiler_exception();
             }
             // if child has not been marked as stopped then
             // it is the first thread to reach this code
@@ -281,12 +298,12 @@ bool tep::profiler::run()
             if (!_children.at(waited_pid))
             {
                 if (!signal_other_threads(tgid, waited_pid, SIGSTOP))
-                    return false;
+                    throw profiler_exception();
                 // replace the trap with the original word
                 if (ptrace(PTRACE_POKEDATA, waited_pid, tep::get_ip(regs), original_words.at(tep::get_ip(regs))) < 0)
                 {
                     perror(fileline("PTRACE_POKEDATA"));
-                    return false;
+                    throw profiler_exception();
                 };
                 notify_task();
             }
@@ -314,13 +331,13 @@ bool tep::profiler::run()
             if (ptrace(PTRACE_GETREGS, waited_pid, 0, &regs) < 0)
             {
                 perror(fileline("PTRACE_GETREGS"));
-                return false;
+                throw profiler_exception();
             }
             tep::procmsg("child %d got a signal: %s @ 0x%016llx\n", waited_pid,
                 strsignal(WSTOPSIG(wait_status)), tep::get_ip(regs));
-
         }
     #endif
     }
-    return true;
+    // successfully profiled
+    _unsuccess = false;
 }

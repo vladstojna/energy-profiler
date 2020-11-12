@@ -12,6 +12,17 @@
 namespace tep
 {
 
+class profiler_exception : public std::runtime_error
+{
+public:
+    profiler_exception() :
+        std::runtime_error("profiler finished unsuccessfully") {}
+    profiler_exception(const std::string& what) :
+        std::runtime_error(what) {}
+    profiler_exception(const char* what) :
+        std::runtime_error(what) {}
+};
+
 class profiler
 {
 private:
@@ -26,6 +37,7 @@ private:
 
     uint64_t _trap_count;
     std::unordered_map<pid_t, bool> _children;
+    bool _unsuccess;
 
 public:
     profiler(pid_t child_pid, const std::unordered_set<uintptr_t>& addresses);
@@ -36,13 +48,12 @@ public:
     profiler(const profiler& other) = delete;
     profiler& operator=(const profiler& other) = delete;
 
-    bool run();
+    void run();
 
 private:
     void sampler_routine();
     void notify_task();
     void notify_target_finished();
-
     bool signal_other_threads(pid_t tgid, pid_t caller_tid, int signal);
 };
 
