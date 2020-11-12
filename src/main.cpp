@@ -54,19 +54,15 @@ int main(int argc, char* argv[])
     {
         try
         {
-            bool result;
             tep::dbg_line_info dbg_info(argv[idx]);
-            {
-                tep::profiler profiler(child_pid,
-                    get_breakpoint_addresses(dbg_info, args.breakpoints));
-                result = profiler.run();
-                // TODO make destructor non-blocking (wait) when some error occurs
-            }
-            return !result;
+            tep::profiler profiler(child_pid,
+                get_breakpoint_addresses(dbg_info, args.breakpoints));
+            profiler.run();
+            return 0;
         }
         catch (const std::exception& e)
         {
-            fprintf(stderr, "exception: %s\n", e.what());
+            fprintf(stderr, "%s\n", e.what());
         }
     }
     else
