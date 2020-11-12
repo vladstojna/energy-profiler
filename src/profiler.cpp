@@ -23,13 +23,21 @@
 
 bool add_child(std::unordered_map<pid_t, bool>& children, pid_t pid);
 bool insert_trap(pid_t pid, uintptr_t addr, long& word);
-bool replace_trap(pid_t pid, struct user_regs_struct& regs, long orig_word);
 
 // start helper functions
 
 constexpr uint32_t get_ptrace_opts()
 {
-    return PTRACE_O_TRACECLONE | PTRACE_O_TRACEFORK | PTRACE_O_TRACEVFORK | PTRACE_O_EXITKILL;
+    // kill the tracee when the profiler errors
+    uint32_t opts = PTRACE_O_EXITKILL;
+    // trace threads being spawned using clone()
+    opts |= PTRACE_O_TRACECLONE;
+    // trace children spawned with fork(): will most likely be useless
+    opts |= PTRACE_O_TRACEFORK;
+    // trace children spawned with vfork() i.e. clone() with CLONE_VFORK
+    opts |= PTRACE_O_TRACEVFORK;
+
+    return opts;
 }
 
 bool add_child(std::unordered_map<pid_t, bool>& children, pid_t pid)
@@ -53,21 +61,6 @@ bool insert_trap(pid_t pid, uintptr_t addr, long& word)
     if (ptrace(PTRACE_POKEDATA, pid, addr, new_word) < 0)
     {
         perror(fileline("PTRACE_POKEDATA"));
-        return false;
-    }
-    return true;
-}
-
-bool replace_trap(pid_t pid, struct user_regs_struct& regs, long orig_word)
-{
-    if (ptrace(PTRACE_POKEDATA, pid, regs.rip, orig_word) < 0)
-    {
-        perror(fileline("PTRACE_POKEDATA"));
-        return false;
-    };
-    if (ptrace(PTRACE_SETREGS, pid, 0, &regs) < 0)
-    {
-        perror(fileline("PTRACE_SETREGS"));
         return false;
     }
     return true;
@@ -164,32 +157,16 @@ void tep::profiler::sampler_routine()
     }
 }
 
-bool tep::profiler::stop_other_children(pid_t caller_pid)
+bool tep::profiler::stop_other_children(pid_t caller_pid, pid_t tgid)
 {
     for (auto& [pid, stopped] : _children)
     {
         if (pid != caller_pid)
         {
             stopped = true;
-            if (kill(pid, SIGSTOP) != 0)
+            if (tgkill(tgid, pid, SIGSTOP))
             {
-                perror(fileline("kill(SIGSTOP)"));
-                return false;
-            }
-        }
-    }
-    return true;
-}
-
-bool tep::profiler::restart_other_children(pid_t caller_pid)
-{
-    for (auto& [pid, stopped] : _children)
-    {
-        if (pid != caller_pid)
-        {
-            if (kill(pid, SIGCONT) != 0)
-            {
-                perror(fileline("kill(SIGCONT)"));
+                perror(fileline("tgkill(SIGSTOP)"));
                 return false;
             }
         }
@@ -201,6 +178,7 @@ bool tep::profiler::run()
 {
     int wait_status;
     pid_t waited_pid;
+    pid_t tgid;
     struct user_regs_struct regs;
     uint32_t ptrace_opts;
     uintptr_t entrypoint_addr;
@@ -210,6 +188,8 @@ bool tep::profiler::run()
     _children.clear();
     ptrace_opts = get_ptrace_opts();
 
+    // the thread group id is the global pid
+    tgid = _child_pid;
     waited_pid = waitpid(_child_pid, &wait_status, 0);
     assert(waited_pid == _child_pid);
     if (!WIFSTOPPED(wait_status))
@@ -217,12 +197,9 @@ bool tep::profiler::run()
         tep::procmsg(fileline("target not stopped\n"));
         return false;
     }
-
     ptrace(PTRACE_GETREGS, waited_pid, 0, &regs);
-    dbg(tep::procmsg("target %d rip @ 0x%016llx\n", waited_pid, regs.rip));
-
-    entrypoint_addr = tep::get_entrypoint_addr(waited_pid);
-    if (entrypoint_addr == 0)
+    dbg(tep::procmsg("target %d rip @ 0x%016llx\n", waited_pid, tep::get_ip(regs)));
+    if ((entrypoint_addr = tep::get_entrypoint_addr(waited_pid)) == 0)
     {
         perror(fileline("tep::get_entrypoint_addr"));
         return false;
@@ -240,6 +217,7 @@ bool tep::profiler::run()
     {
         long word;
         uintptr_t final_addr = entrypoint_addr + addr;
+        // if trap insertion was successful & the address did not exist yet
         if (insert_trap(_child_pid, final_addr, word) &&
             original_words.try_emplace(final_addr, word).second)
         {
@@ -287,25 +265,36 @@ bool tep::profiler::run()
         {
             ptrace(PTRACE_GETREGS, waited_pid, 0, &regs);
             tep::procmsg("child %d trapped @ 0x%016llx (0x%llx)\n", waited_pid,
-                regs.rip, regs.rip - entrypoint_addr);
+                tep::get_ip(regs), tep::get_ip(regs) - entrypoint_addr);
 
-            // if child has been stopped, "unstop" it and skip the rest
-            if (_children.at(waited_pid))
+            // rewind the PC 1 byte (trap instruction size)
+            // no matter the thread and update the registers
+            tep::set_ip(regs, tep::get_ip(regs) - 1);
+            if (ptrace(PTRACE_SETREGS, waited_pid, 0, &regs) < 0)
+            {
+                perror(fileline("PTRACE_SETREGS"));
+                return false;
+            }
+            // if child has not been marked as stopped then
+            // it is the first thread to reach this code
+            assert(_children.find(waited_pid) != _children.end());
+            if (!_children.at(waited_pid))
+            {
+                if (!stop_other_children(waited_pid, tgid))
+                    return false;
+                // replace the trap with the original word
+                if (ptrace(PTRACE_POKEDATA, waited_pid, tep::get_ip(regs), original_words.at(tep::get_ip(regs))) < 0)
+                {
+                    perror(fileline("PTRACE_POKEDATA"));
+                    return false;
+                };
+                notify_task();
+            }
+            // if child has been stopped, "unstop" it
+            else
             {
                 _children.at(waited_pid) = false;
-                continue;
             }
-
-            if (!stop_other_children(waited_pid))
-                return false;
-
-            regs.rip -= 1; // go back 1 byte trap instruction
-            if (!replace_trap(waited_pid, regs, original_words.at(regs.rip)))
-                return false;
-
-            notify_task();
-            if (!restart_other_children(waited_pid))
-                return false;
         }
         else if (WIFEXITED(wait_status))
         {
@@ -328,7 +317,8 @@ bool tep::profiler::run()
                 return false;
             }
             tep::procmsg("child %d got a signal: %s @ 0x%016llx\n", waited_pid,
-                strsignal(WSTOPSIG(wait_status)), regs.rip);
+                strsignal(WSTOPSIG(wait_status)), tep::get_ip(regs));
+
         }
     #endif
     }
