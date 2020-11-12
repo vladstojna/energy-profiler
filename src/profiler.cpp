@@ -157,16 +157,16 @@ void tep::profiler::sampler_routine()
     }
 }
 
-bool tep::profiler::stop_other_children(pid_t caller_pid, pid_t tgid)
+bool tep::profiler::signal_other_threads(pid_t tgid, pid_t caller_tid, int signal)
 {
-    for (auto& [pid, stopped] : _children)
+    for (auto& [tid, stopped] : _children)
     {
-        if (pid != caller_pid)
+        if (tid != caller_tid)
         {
             stopped = true;
-            if (tgkill(tgid, pid, SIGSTOP))
+            if (tgkill(tgid, tid, signal))
             {
-                perror(fileline("tgkill(SIGSTOP)"));
+                perror(fileline("tgkill"));
                 return false;
             }
         }
@@ -179,7 +179,7 @@ bool tep::profiler::run()
     int wait_status;
     pid_t waited_pid;
     pid_t tgid;
-    struct user_regs_struct regs;
+    user_regs_struct regs;
     uint32_t ptrace_opts;
     uintptr_t entrypoint_addr;
     std::unordered_map<uintptr_t, long> original_words;
@@ -280,7 +280,7 @@ bool tep::profiler::run()
             assert(_children.find(waited_pid) != _children.end());
             if (!_children.at(waited_pid))
             {
-                if (!stop_other_children(waited_pid, tgid))
+                if (!signal_other_threads(tgid, waited_pid, SIGSTOP))
                     return false;
                 // replace the trap with the original word
                 if (ptrace(PTRACE_POKEDATA, waited_pid, tep::get_ip(regs), original_words.at(tep::get_ip(regs))) < 0)

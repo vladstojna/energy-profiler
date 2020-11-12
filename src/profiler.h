@@ -43,7 +43,7 @@ private:
     void notify_task();
     void notify_target_finished();
 
-    bool stop_other_children(pid_t caller_pid, pid_t tgid);
+    bool signal_other_threads(pid_t tgid, pid_t caller_tid, int signal);
 };
 
 }
