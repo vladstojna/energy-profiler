@@ -68,7 +68,9 @@ bool insert_trap(pid_t pid, uintptr_t addr, long& word)
 
 // end helper functions
 
-tep::profiler::profiler(pid_t child_pid, const std::unordered_set<uintptr_t>& addresses) :
+tep::profiler::profiler(pid_t child_pid,
+    const std::chrono::milliseconds& interval,
+    const std::unordered_set<uintptr_t>& addresses) :
     _sampler_thread(),
     _sampler_mutex(),
     _sampler_cond(),
@@ -81,10 +83,12 @@ tep::profiler::profiler(pid_t child_pid, const std::unordered_set<uintptr_t>& ad
     _unsuccess(true)
 {
     // start pooled sampling thread
-    _sampler_thread = std::thread(&profiler::sampler_routine, this);
+    _sampler_thread = std::thread(&profiler::sampler_routine, this, interval);
 }
 
-tep::profiler::profiler(pid_t child_pid, std::unordered_set<uintptr_t>&& addresses) :
+tep::profiler::profiler(pid_t child_pid,
+    const std::chrono::milliseconds& interval,
+    std::unordered_set<uintptr_t>&& addresses) :
     _sampler_thread(),
     _sampler_mutex(),
     _sampler_cond(),
@@ -97,7 +101,7 @@ tep::profiler::profiler(pid_t child_pid, std::unordered_set<uintptr_t>&& address
     _unsuccess(true)
 {
     // start pooled sampling thread
-    _sampler_thread = std::thread(&profiler::sampler_routine, this);
+    _sampler_thread = std::thread(&profiler::sampler_routine, this, interval);
 }
 
 tep::profiler::~profiler()
@@ -148,7 +152,7 @@ void tep::profiler::notify_target_finished()
     _sampler_cond.notify_one();
 }
 
-void tep::profiler::sampler_routine()
+void tep::profiler::sampler_routine(const std::chrono::milliseconds& interval)
 {
     while (true)
     {
@@ -163,7 +167,7 @@ void tep::profiler::sampler_routine()
             while (true)
             {
                 std::unique_lock lock(_sampler_mutex);
-                _sampler_cond.wait_for(lock, std::chrono::seconds(1),
+                _sampler_cond.wait_for(lock, interval,
                     [this] { return _task_finished || _target_finished; });
                 tep::procmsg(_task_finished || _target_finished ?
                     "final sample\n" : "intermediate sample\n", false);

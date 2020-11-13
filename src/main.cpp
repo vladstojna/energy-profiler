@@ -56,6 +56,7 @@ int main(int argc, char* argv[])
         {
             tep::dbg_line_info dbg_info(argv[idx]);
             tep::profiler profiler(child_pid,
+                std::chrono::milliseconds(args.interval),
                 get_breakpoint_addresses(dbg_info, args.breakpoints));
             profiler.run();
             return 0;

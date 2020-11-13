@@ -40,8 +40,12 @@ private:
     bool _unsuccess;
 
 public:
-    profiler(pid_t child_pid, const std::unordered_set<uintptr_t>& addresses);
-    profiler(pid_t child_pid, std::unordered_set<uintptr_t>&& addresses);
+    profiler(pid_t child_pid,
+        const std::chrono::milliseconds& interval,
+        const std::unordered_set<uintptr_t>& addresses);
+    profiler(pid_t child_pid,
+        const std::chrono::milliseconds& interval,
+        std::unordered_set<uintptr_t>&& addresses);
     ~profiler();
 
     // disable copying
@@ -51,7 +55,7 @@ public:
     void run();
 
 private:
-    void sampler_routine();
+    void sampler_routine(const std::chrono::milliseconds& interval);
     void notify_task();
     void notify_target_finished();
     bool signal_other_threads(pid_t tgid, pid_t caller_tid, int signal);
