@@ -135,6 +135,7 @@ int tep::parse_arguments(int argc, char* const argv[], arguments & args)
     {
         fprintf(stderr, "Missing executable name\n");
         print_usage(argv[0]);
+        return -1;
     }
 
     return optind;
