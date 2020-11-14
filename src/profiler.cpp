@@ -14,10 +14,18 @@
 #include <sys/ptrace.h>
 #include <sys/wait.h>
 #include <sys/user.h>
+#include <sys/syscall.h>
 
 #include "macros.h"
 #include "trap.h"
 #include "util.h"
+
+// tgkill wrapper
+
+inline int tgkill(pid_t tgid, pid_t tid, int signal)
+{
+    return syscall(SYS_tgkill, tgid, tid, signal);
+}
 
 // declarations
 
