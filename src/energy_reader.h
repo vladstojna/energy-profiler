@@ -3,6 +3,24 @@
 
 #include <iosfwd>
 #include <stdexcept>
+#include <memory>
+namespace tep::energy
+{
+
+enum class target
+{
+    smp,
+    gpu,
+    fpga
+};
+
+enum class engine
+{
+    papi,
+    pcm
+};
+
+}
 
 namespace tep
 {
@@ -39,5 +57,9 @@ protected:
     // count,timestamp,skt0_cpu,skt0_dram,...
     virtual void print(std::ostream& os) const = 0;
 };
+
+std::unique_ptr<energy_reader> make_energy_reader(
+    energy::target target,
+    energy::engine engine = energy::engine::papi);
 
 }
