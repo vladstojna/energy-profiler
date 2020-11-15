@@ -49,6 +49,7 @@ static int find_rapl_component()
 
 tep::energy_reader_papi::sample_point::sample_point(uint64_t count, size_t num_events) :
     number(count),
+    duration(),
     values(num_events)
 {
 }
@@ -153,12 +154,14 @@ void tep::energy_reader_papi::start()
     assert(_samples.size() == 0);
     _samples.emplace_back(_samples.size(), _events.size());
     PAPI_start(_event_set);
+    timepoint_now();
 }
 
 void tep::energy_reader_papi::sample()
 {
     assert(_samples.size() > 0);
     PAPI_stop(_event_set, _samples.back().values.data());
+    _samples.back().duration = timepoint_update();
     _samples.emplace_back(_samples.size(), _events.size());
     PAPI_start(_event_set);
 }
@@ -167,6 +170,7 @@ void tep::energy_reader_papi::stop()
 {
     assert(_samples.size() > 0);
     PAPI_stop(_event_set, _samples.back().values.data());
+    _samples.back().duration = timepoint_update();
 }
 
 void tep::energy_reader_papi::print(std::ostream & os) const
@@ -209,7 +213,8 @@ void tep::energy_reader_papi::print(std::ostream & os) const
         }
         char* currptr = buffer;
         char* end = buffer + sz;
-        currptr += snprintf(currptr, end - currptr, "%" PRIu64 ",%s", sample.number, "timestamp");
+        currptr += snprintf(currptr, end - currptr, "%" PRIu64 ",%" PRId64,
+            sample.number, sample.duration.count());
         assert(currptr < end);
         for (const auto& out : outputs)
         {

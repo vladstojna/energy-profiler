@@ -3,7 +3,6 @@
 
 #include "energy_reader.h"
 
-#include <array>
 #include <vector>
 
 #include <papi.h>
@@ -17,6 +16,7 @@ private:
     struct sample_point
     {
         uint64_t number;
+        std::chrono::milliseconds duration;
         std::vector<long long> values;
 
         sample_point(uint64_t count, size_t num_events);
