@@ -13,9 +13,11 @@ obj_dir=obj
 dep_dir=$(obj_dir)/.deps
 
 # external libs
-extlibs=pcm
-extlibs_ln=-lPCM
+extlibs=pcm papi
 extlibs_tgt=$(addprefix lib/,$(extlibs))
+extlibs_ln=-l:libPCM.a -l:libpapi.a
+extlibs_dirs=-Llib/pcm -Llib/papi/src
+extlibs_incl=-Ilib/pcm -Ilib/papi/src
 
 # files
 src=$(wildcard src/*.cpp)
@@ -33,32 +35,37 @@ else
 cflags=$(warn) -O3 -D NDEBUG
 endif
 cppflags=-std=c++17
-incl=$(addprefix -I,$(extlibs_tgt))
+incl=$(extlibs_incl)
 libs=-pthread -lbfd -ldwarf $(extlibs_ln)
-libdirs=$(addprefix -L,$(extlibs_tgt))
+libdirs=$(extlibs_dirs)
 
 # rules -----------------------------------------------------------------------
 
+.PHONY: all libs remake clean purge
+
 default: all
 
-.PHONY: all
 all: libs $(tgt)
 
-.PHONY: libs
 libs: $(extlibs_tgt)
 
 $(tgt_dir):
-	mkdir -p $@
+	@mkdir -p $@
 $(obj_dir):
-	mkdir -p $@
+	@mkdir -p $@
 $(dep_dir):
-	mkdir -p $@
+	@mkdir -p $@
 $(lib_dir):
-	mkdir -p $@
+	@mkdir -p $@
 
 lib/pcm: | $(lib_dir)
 	cd $(lib_dir) && git clone https://github.com/opcm/pcm.git $(@F)
 	$(MAKE) -C $@ -j $(nprocs)
+
+lib/papi: | $(lib_dir)
+	cd $(lib_dir) && git clone https://bitbucket.org/icl/papi.git $(@F)
+	cd $@/src && ./configure --with-components="rapl"
+	$(MAKE) -C $@/src -j $(nprocs)
 
 $(tgt): $(obj) | $(tgt_dir)
 	$(cc) $^ $(libs) $(libdirs) -o $@
@@ -71,16 +78,13 @@ $(deps):
 
 include $(wildcard $(deps))
 
-.PHONY: remake
 remake: clean all
 
 # do not clean libraries because
 # those may take a while to rebuild
-.PHONY: clean
 clean:
 	rm -rf $(tgt_dir) $(obj_dir)
 
 # clean everything, including libraries
-.PHONY: purge
 purge: clean
 	rm -rf $(lib_dir)
