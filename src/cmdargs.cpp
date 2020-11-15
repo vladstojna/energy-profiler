@@ -25,7 +25,7 @@ tep::arguments::breakpoint::breakpoint(const char* nm, uint32_t ln) :
 }
 
 tep::arguments::breakpoint::breakpoint(std::string&& nm, uint32_t ln) :
-    cu_name(nm),
+    cu_name(std::move(nm)),
     lineno(ln)
 {
 }
@@ -34,10 +34,9 @@ tep::arguments::breakpoint::breakpoint(breakpoint&& other) = default;
 
 tep::arguments::arguments() :
     interval(1500),
+    outfile(),
     breakpoints(),
-    quiet(false),
-    regular(false),
-    delta(false)
+    quiet(false)
 {
 }
 
@@ -46,9 +45,8 @@ tep::arguments::arguments(arguments && other) = default;
 std::ostream& tep::operator<<(std::ostream & os, const arguments & args)
 {
     os << "interval=" << args.interval << "\n";
+    os << "outfile=" << args.outfile << "\n";
     os << "quiet=" << (args.quiet ? "true\n" : "false\n");
-    os << "regular=" << (args.regular ? "true\n" : "false\n");
-    os << "delta=" << (args.delta ? "true\n" : "false\n");
     os << "breakpoints:";
     for (const auto& bp : args.breakpoints)
     {
@@ -69,7 +67,7 @@ void print_usage(const char* profiler_name)
     std::cout << "-o, --output <file>     output energy consumption results to <file> (default: stdout)\n";
     std::cout << "-h, --help              show this message\n";
     std::cout << "-b <cu>:<ln>            set breakpoint at line <ln> of compilation unit <cu>\n";
-    std::cout << "-b <ln>                 same as above but unspecified CU; use only when dealing with a single CU\n";
+    std::cout << "-b :<ln>                same as above but unspecified CU; use only when dealing with a single CU\n";
     std::cout << std::endl;
 }
 
@@ -80,7 +78,7 @@ int tep::parse_arguments(int argc, char* const argv[], arguments & args)
     opterr = 0;
 
     int c;
-    while ((c = getopt(argc, argv, "hi:b:")) != -1)
+    while ((c = getopt(argc, argv, "hi:o:b:")) != -1)
     {
         switch (c)
         {
@@ -113,8 +111,11 @@ int tep::parse_arguments(int argc, char* const argv[], arguments & args)
                 return -1;
             }
             args.breakpoints.emplace_back(mresults.str(1), result);
+            break;
         }
-        break;
+        case 'o':
+            args.outfile = optarg;
+            break;
         case 'h':
             print_usage(argv[0]);
             return -1;
