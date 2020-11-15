@@ -16,6 +16,7 @@
 #include <sys/user.h>
 #include <sys/syscall.h>
 
+#include "energy_reader.h"
 #include "macros.h"
 #include "trap.h"
 #include "util.h"
@@ -77,8 +78,10 @@ bool insert_trap(pid_t pid, uintptr_t addr, long& word)
 // end helper functions
 
 tep::profiler::profiler(pid_t child_pid,
+    std::ostream& outstream,
     const std::chrono::milliseconds& interval,
-    const std::unordered_set<uintptr_t>& addresses) :
+    const std::unordered_set<uintptr_t>& addresses,
+    std::unique_ptr<tep::energy_reader>&& energy_reader) :
     _sampler_thread(),
     _sampler_mutex(),
     _sampler_cond(),
@@ -88,28 +91,12 @@ tep::profiler::profiler(pid_t child_pid,
     _bp_addresses(addresses),
     _trap_count(0),
     _children(),
-    _unsuccess(true)
+    _unsuccess(true),
+    _energy_reader(std::move(energy_reader))
 {
     // start pooled sampling thread
-    _sampler_thread = std::thread(&profiler::sampler_routine, this, interval);
-}
-
-tep::profiler::profiler(pid_t child_pid,
-    const std::chrono::milliseconds& interval,
-    std::unordered_set<uintptr_t>&& addresses) :
-    _sampler_thread(),
-    _sampler_mutex(),
-    _sampler_cond(),
-    _task_finished(false),
-    _target_finished(false),
-    _child_pid(child_pid),
-    _bp_addresses(std::move(addresses)),
-    _trap_count(0),
-    _children(),
-    _unsuccess(true)
-{
-    // start pooled sampling thread
-    _sampler_thread = std::thread(&profiler::sampler_routine, this, interval);
+    _sampler_thread = std::thread(&profiler::sampler_routine,
+        this, &outstream, _energy_reader.get(), interval);
 }
 
 tep::profiler::~profiler()
@@ -160,8 +147,12 @@ void tep::profiler::notify_target_finished()
     _sampler_cond.notify_one();
 }
 
-void tep::profiler::sampler_routine(const std::chrono::milliseconds& interval)
+void tep::profiler::sampler_routine(std::ostream* os,
+    tep::energy_reader* energy_reader,
+    const std::chrono::milliseconds& interval)
 {
+    assert(os != nullptr);
+    assert(energy_reader != nullptr);
     while (true)
     {
         {
@@ -169,7 +160,7 @@ void tep::profiler::sampler_routine(const std::chrono::milliseconds& interval)
             _sampler_cond.wait(lock);
             if (_target_finished)
                 return;
-            tep::procmsg("first sample\n");
+            energy_reader->start();
         }
         {
             while (true)
@@ -177,12 +168,19 @@ void tep::profiler::sampler_routine(const std::chrono::milliseconds& interval)
                 std::unique_lock lock(_sampler_mutex);
                 _sampler_cond.wait_for(lock, interval,
                     [this] { return _task_finished || _target_finished; });
-                tep::procmsg(_task_finished || _target_finished ?
-                    "final sample\n" : "intermediate sample\n", false);
                 if (_target_finished)
+                {
+                    energy_reader->stop();
+                    *os << *energy_reader;
                     return;
+                }
                 if (_task_finished)
+                {
+                    energy_reader->stop();
+                    *os << *energy_reader;
                     break;
+                }
+                energy_reader->sample();
             }
         }
     }

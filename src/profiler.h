@@ -12,6 +12,8 @@
 namespace tep
 {
 
+class energy_reader;
+
 class profiler_exception : public std::runtime_error
 {
 public:
@@ -39,13 +41,15 @@ private:
     std::unordered_map<pid_t, bool> _children;
     bool _unsuccess;
 
+    std::unique_ptr<tep::energy_reader> _energy_reader;
+
 public:
     profiler(pid_t child_pid,
+        std::ostream& outstream,
         const std::chrono::milliseconds& interval,
-        const std::unordered_set<uintptr_t>& addresses);
-    profiler(pid_t child_pid,
-        const std::chrono::milliseconds& interval,
-        std::unordered_set<uintptr_t>&& addresses);
+        const std::unordered_set<uintptr_t>& addresses,
+        std::unique_ptr<tep::energy_reader>&& energy_reader);
+
     ~profiler();
 
     // disable copying
@@ -55,7 +59,10 @@ public:
     void run();
 
 private:
-    void sampler_routine(const std::chrono::milliseconds& interval);
+    void sampler_routine(std::ostream* os,
+        tep::energy_reader* energy_reader,
+        const std::chrono::milliseconds& interval);
+
     void notify_task();
     void notify_target_finished();
     bool signal_other_threads(pid_t tgid, pid_t caller_tid, int signal);
