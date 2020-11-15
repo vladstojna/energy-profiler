@@ -180,7 +180,7 @@ void tep::energy_reader_papi::print(std::ostream & os) const
     assert(_samples.size() > 0);
     os << "# results\n";
 
-    constexpr size_t sz = 384;
+    constexpr size_t sz = 256;
     char buffer[sz];
 
     const PAPI_hw_info_t* hw_info = PAPI_get_hardware_info();
@@ -189,9 +189,6 @@ void tep::energy_reader_papi::print(std::ostream & os) const
     for (const auto& sample : _samples)
     {
         assert(sample.values.size() >= outputs.size());
-        char* buffptr = buffer;
-        buffptr += snprintf(buffptr, sz, "%" PRIu64 ",%s",
-            sample.number, "timestamp");
         for (size_t ix = 0; ix < _events.size(); ix++)
         {
             assert(sample.values.size() == _events.size());
@@ -207,13 +204,17 @@ void tep::energy_reader_papi::print(std::ostream & os) const
                     sample.values[ix] * _events[ix].multiplier;
                 break;
             default:
-                assert(_events[ix].type != event_data::type::pkg_energy &&
-                    _events[ix].type != event_data::type::dram_energy);
+                assert(false);
             }
         }
+        char* currptr = buffer;
+        char* end = buffer + sz;
+        currptr += snprintf(currptr, end - currptr, "%" PRIu64 ",%s", sample.number, "timestamp");
+        assert(currptr < end);
         for (const auto& out : outputs)
         {
-            buffptr += snprintf(buffptr, sz, ",%f,%f", out.pkg_energy, out.dram_energy);
+            ptrdiff_t diff = (currptr < end ? end - currptr : 0);
+            currptr += snprintf(currptr, diff, ",%.6f,%.6f", out.pkg_energy, out.dram_energy);
         }
         os << buffer << '\n';
     }
