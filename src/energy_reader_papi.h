@@ -13,12 +13,9 @@ namespace tep
 class energy_reader_papi : public energy_reader
 {
 private:
-    struct sample_point
+    struct sample_point : energy_reader::basic_sample
     {
-        uint64_t number;
-        std::chrono::milliseconds duration;
         std::vector<long long> values;
-
         sample_point(uint64_t count, size_t num_events);
     };
 

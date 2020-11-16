@@ -48,8 +48,7 @@ static int find_rapl_component()
 // end helper functions
 
 tep::energy_reader_papi::sample_point::sample_point(uint64_t count, size_t num_events) :
-    number(count),
-    duration(),
+    basic_sample(count),
     values(num_events)
 {
 }

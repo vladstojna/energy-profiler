@@ -42,6 +42,14 @@ class energy_reader
 private:
     std::chrono::time_point<std::chrono::high_resolution_clock> _timepoint;
 
+protected:
+    struct basic_sample
+    {
+        uint64_t number;
+        std::chrono::nanoseconds duration;
+        basic_sample(uint64_t count) : number(count), duration() {}
+    };
+
 public:
     virtual ~energy_reader() = default;
     virtual void start() = 0;
@@ -70,10 +78,11 @@ protected:
     * sets the timepoint to the time now and returns
     * the duration between it and the previous timepoint
     **/
-    std::chrono::milliseconds timepoint_update()
+    decltype(basic_sample::duration) timepoint_update()
     {
         auto now = std::chrono::high_resolution_clock::now();
-        auto retval = std::chrono::duration_cast<std::chrono::milliseconds>(now - _timepoint);
+        auto retval = std::chrono::duration_cast<decltype(basic_sample::duration)>(
+            now - _timepoint);
         _timepoint = now;
         return retval;
     }

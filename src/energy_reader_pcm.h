@@ -14,9 +14,8 @@ namespace tep
 class energy_reader_pcm : public energy_reader
 {
 private:
-    struct sample_point
+    struct sample_point : energy_reader::basic_sample
     {
-        uint64_t number;
         pcm::SystemCounterState system_state;
         std::vector<pcm::SocketCounterState> socket_states;
         std::vector<pcm::CoreCounterState>& core_dummy_states;

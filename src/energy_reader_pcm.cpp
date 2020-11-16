@@ -7,7 +7,7 @@ tep::energy_reader_pcm::sample_point::sample_point(
     uint64_t count,
     uint32_t num_skts,
     std::vector<pcm::CoreCounterState>& ccs) :
-    number(count),
+    basic_sample(count),
     system_state(),
     socket_states(),
     core_dummy_states(ccs)
