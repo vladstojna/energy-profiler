@@ -59,6 +59,9 @@ int main(int argc, char* argv[])
             std::ofstream os;
             std::ostream& outfile = args.outfile.empty() ?
                 std::cout : (os = std::ofstream(args.outfile));
+            if (!outfile)
+                throw std::runtime_error("unable to open " +
+                    args.outfile + " for writing");
 
             tep::dbg_line_info dbg_info(argv[idx]);
             tep::profiler profiler(child_pid,

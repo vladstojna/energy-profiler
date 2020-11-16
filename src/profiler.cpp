@@ -2,6 +2,7 @@
 #include "profiler.h"
 
 #include <chrono>
+#include <ostream>
 
 #include <cassert>
 #include <cinttypes>
@@ -172,12 +173,16 @@ void tep::profiler::sampler_routine(std::ostream* os,
                 {
                     energy_reader->stop();
                     *os << *energy_reader;
+                    if (os->fail())
+                        fprintf(stderr, fileline("error writing to output stream"));
                     return;
                 }
                 if (_task_finished)
                 {
                     energy_reader->stop();
                     *os << *energy_reader;
+                    if (os->fail())
+                        fprintf(stderr, fileline("error writing to output stream"));
                     break;
                 }
                 energy_reader->sample();
