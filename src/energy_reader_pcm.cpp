@@ -54,13 +54,12 @@ tep::energy_reader_pcm::energy_reader_pcm(energy_reader_pcm&& other) :
 void tep::energy_reader_pcm::sample()
 {
     assert(_pcm != nullptr);
-    _samples.emplace_back(_sample_count, _pcm->getNumSockets(), _dummy_states);
+    _samples.emplace_back(_samples.size(), _pcm->getNumSockets(), _dummy_states);
     auto& sample = _samples.back();
     _pcm->getAllCounterStates(
         sample.system_state,
         sample.socket_states,
         sample.core_dummy_states);
-    _sample_count++;
 }
 
 void tep::energy_reader_pcm::print(std::ostream& os) const

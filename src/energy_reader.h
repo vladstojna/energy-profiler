@@ -39,8 +39,6 @@ public:
 
 class energy_reader
 {
-protected:
-    uint64_t _sample_count = 0;
 private:
     std::chrono::time_point<std::chrono::high_resolution_clock> _timepoint;
 
