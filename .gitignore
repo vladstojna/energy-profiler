@@ -10,3 +10,6 @@ obj/
 
 # libraries
 lib/
+
+# profiling results
+*.csv
