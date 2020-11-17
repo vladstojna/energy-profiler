@@ -16,7 +16,7 @@ private:
     struct sample_point : energy_reader::basic_sample
     {
         std::vector<long long> values;
-        sample_point(uint64_t count, size_t num_events);
+        sample_point(uint64_t count, const timepoint_t& tp, size_t num_events);
     };
 
     struct event_data

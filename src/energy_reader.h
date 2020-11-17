@@ -39,15 +39,23 @@ public:
 
 class energy_reader
 {
-private:
-    std::chrono::time_point<std::chrono::high_resolution_clock> _timepoint;
-
 protected:
+    using timepoint_t = std::chrono::time_point<std::chrono::high_resolution_clock>;
     struct basic_sample
     {
-        uint64_t number;
-        std::chrono::nanoseconds duration;
-        basic_sample(uint64_t count) : number(count), duration() {}
+        const uint64_t number;
+        const timepoint_t timepoint;
+
+        basic_sample(uint64_t count, const timepoint_t tp) :
+            number(count), timepoint(tp)
+        {
+        }
+
+        std::chrono::nanoseconds operator-(const basic_sample& rhs) const
+        {
+            return std::chrono::duration_cast<std::chrono::nanoseconds>(
+                timepoint - rhs.timepoint);
+        }
     };
 
 public:
@@ -67,24 +75,11 @@ protected:
     virtual void print(std::ostream& os) const = 0;
 
     /**
-    * sets timepoint to the time now
+    * returns the timepoint that represents the time now
     **/
-    void timepoint_now()
+    timepoint_t now()
     {
-        _timepoint = std::chrono::high_resolution_clock::now();
-    }
-
-    /**
-    * sets the timepoint to the time now and returns
-    * the duration between it and the previous timepoint
-    **/
-    decltype(basic_sample::duration) timepoint_update()
-    {
-        auto now = std::chrono::high_resolution_clock::now();
-        auto retval = std::chrono::duration_cast<decltype(basic_sample::duration)>(
-            now - _timepoint);
-        _timepoint = now;
-        return retval;
+        return std::chrono::high_resolution_clock::now();
     }
 };
 

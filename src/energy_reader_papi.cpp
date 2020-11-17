@@ -47,9 +47,11 @@ static int find_rapl_component()
 
 // end helper functions
 
-tep::energy_reader_papi::sample_point::sample_point(uint64_t count, size_t num_events) :
-    basic_sample(count),
-    values(num_events)
+tep::energy_reader_papi::sample_point::sample_point(uint64_t count,
+    const timepoint_t& tp,
+    size_t num_events) :
+    basic_sample(count, tp),
+    values(num_events, 0)
 {
 }
 
@@ -151,60 +153,66 @@ void tep::energy_reader_papi::add_events(int cid)
 void tep::energy_reader_papi::start()
 {
     assert(_samples.size() == 0);
-    _samples.emplace_back(_samples.size(), _events.size());
+    _samples.emplace_back(_samples.size(), now(), _events.size());
     PAPI_start(_event_set);
-    timepoint_now();
 }
 
 void tep::energy_reader_papi::sample()
 {
     assert(_samples.size() > 0);
-    PAPI_stop(_event_set, _samples.back().values.data());
-    _samples.back().duration = timepoint_update();
-    _samples.emplace_back(_samples.size(), _events.size());
-    PAPI_start(_event_set);
+    _samples.emplace_back(_samples.size(), now(), _events.size());
+    PAPI_read(_event_set, _samples.back().values.data());
 }
 
 void tep::energy_reader_papi::stop()
 {
     assert(_samples.size() > 0);
+    _samples.emplace_back(_samples.size(), now(), _events.size());
     PAPI_stop(_event_set, _samples.back().values.data());
-    _samples.back().duration = timepoint_update();
 }
 
 void tep::energy_reader_papi::print(std::ostream & os) const
 {
+    // always atleast two samples
+    assert(_samples.size() > 1);
+
     struct output_values
     {
         double pkg_energy = 0;
         double dram_energy = 0;
     };
 
-    assert(_samples.size() > 0);
     os << "# results\n";
-
     constexpr size_t sz = 256;
     char buffer[sz];
-
     const PAPI_hw_info_t* hw_info = PAPI_get_hardware_info();
     std::vector<output_values> outputs(hw_info->sockets);
 
-    for (const auto& sample : _samples)
+    for (size_t s = 1; s < _samples.size(); s++)
     {
+        const auto& sample_prev = _samples[s - 1];
+        const auto& sample = _samples[s];
+        assert(sample_prev.values.size() >= outputs.size());
         assert(sample.values.size() >= outputs.size());
+
         for (size_t ix = 0; ix < _events.size(); ix++)
         {
+            const auto& event = _events[ix];
+            assert(sample_prev.values.size() >= outputs.size());
             assert(sample.values.size() == _events.size());
-            assert(_events[ix].socket < outputs.size());
-            switch (_events[ix].type)
+            assert(event.socket < outputs.size());
+
+            switch (event.type)
             {
             case event_data::type::pkg_energy:
-                outputs[_events[ix].socket].pkg_energy =
-                    sample.values[ix] * _events[ix].multiplier;
+                outputs[event.socket].pkg_energy =
+                    (sample.values[ix] - sample_prev.values[ix]) *
+                    event.multiplier;
                 break;
             case event_data::type::dram_energy:
-                outputs[_events[ix].socket].dram_energy =
-                    sample.values[ix] * _events[ix].multiplier;
+                outputs[event.socket].dram_energy =
+                    (sample.values[ix] - sample_prev.values[ix]) *
+                    event.multiplier;
                 break;
             default:
                 assert(false);
@@ -212,13 +220,14 @@ void tep::energy_reader_papi::print(std::ostream & os) const
         }
         char* currptr = buffer;
         char* end = buffer + sz;
+        // we start counting from zero, so consider sample_prev as the sample number
         currptr += snprintf(currptr, end - currptr, "%" PRIu64 ",%" PRId64,
-            sample.number, sample.duration.count());
+            sample_prev.number, (sample - sample_prev).count());
         assert(currptr < end);
         for (const auto& out : outputs)
         {
             ptrdiff_t diff = (currptr < end ? end - currptr : 0);
-            currptr += snprintf(currptr, diff, ",%.6f,%.6f", out.pkg_energy, out.dram_energy);
+            currptr += snprintf(currptr, diff, ",%.8f,%.8f", out.pkg_energy, out.dram_energy);
         }
         os << buffer << '\n';
     }

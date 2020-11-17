@@ -3,11 +3,11 @@
 
 #include <cassert>
 
-tep::energy_reader_pcm::sample_point::sample_point(
-    uint64_t count,
+tep::energy_reader_pcm::sample_point::sample_point(uint64_t count,
+    const timepoint_t& tp,
     uint32_t num_skts,
     std::vector<pcm::CoreCounterState>& ccs) :
-    basic_sample(count),
+    basic_sample(count, tp),
     system_state(),
     socket_states(),
     core_dummy_states(ccs)
@@ -21,9 +21,7 @@ tep::energy_reader_pcm::energy_reader_pcm() :
     _dummy_states(),
     _pcm(nullptr)
 {
-    constexpr const size_t initial_size = 64;
     _pcm = pcm::PCM::getInstance();
-    _samples.reserve(initial_size);
     pcm::PCM::ErrorCode status = _pcm->program();
     switch (status)
     {
@@ -42,6 +40,7 @@ tep::energy_reader_pcm::energy_reader_pcm() :
         throw tep::energy_reader_exception(
             "Access to Processor Counter Monitor has denied (Unknown error).");
     }
+    _samples.reserve(ISAMPLE_SIZE);
 }
 
 tep::energy_reader_pcm::energy_reader_pcm(energy_reader_pcm&& other) :
@@ -51,54 +50,71 @@ tep::energy_reader_pcm::energy_reader_pcm(energy_reader_pcm&& other) :
 {
 }
 
+tep::energy_reader_pcm::~energy_reader_pcm()
+{
+    if (_pcm != nullptr)
+        _pcm->cleanup();
+}
+
+void tep::energy_reader_pcm::start()
+{
+    assert(_pcm != nullptr);
+    assert(_samples.size() == 0);
+    emplace_write_counters();
+}
+
 void tep::energy_reader_pcm::sample()
 {
     assert(_pcm != nullptr);
-    _samples.emplace_back(_samples.size(), _pcm->getNumSockets(), _dummy_states);
-    auto& sample = _samples.back();
-    _pcm->getAllCounterStates(
-        sample.system_state,
-        sample.socket_states,
-        sample.core_dummy_states);
+    assert(_samples.size() > 0);
+    emplace_write_counters();
+}
+
+void tep::energy_reader_pcm::stop()
+{
+    assert(_pcm != nullptr);
+    assert(_samples.size() > 0);
+    emplace_write_counters();
 }
 
 void tep::energy_reader_pcm::print(std::ostream& os) const
 {
-    os << "# results\n";
     // there are always at least 2 samples
+    assert(_pcm != nullptr);
     assert(_samples.size() > 1);
-    constexpr const double unable_to_read = -1;
+    os << "# results\n";
+    constexpr const double unable_to_read = 0;
     for (size_t ix = 1; ix < _samples.size(); ix++)
     {
+        auto const& sample_prev = _samples[ix - 1];
+        auto const& sample = _samples[ix];
         std::ostringstream buffer;
-        uint64_t cnt = _samples[ix - 1].number;
-        double cpu = _pcm->packageEnergyMetricsAvailable() ?
-            pcm::getConsumedJoules(
-                _samples[ix - 1].system_state,
-                _samples[ix].system_state)
-            : unable_to_read;
-        double dram = _pcm->dramEnergyMetricsAvailable() ?
-            pcm::getDRAMConsumedJoules(
-                _samples[ix - 1].system_state,
-                _samples[ix].system_state)
-            : unable_to_read;
-        double total = cpu + dram;
-        buffer << cnt << ',' << total << ',' << cpu << ',' << dram;
+        buffer << sample_prev.number << ',' << (sample - sample_prev).count();
         for (pcm::uint32 skt = 0; skt < _pcm->getNumSockets(); skt++)
         {
-            cpu = _pcm->packageEnergyMetricsAvailable() ?
+            double cpu = _pcm->packageEnergyMetricsAvailable() ?
                 pcm::getConsumedJoules(
-                    _samples[ix - 1].socket_states[skt],
-                    _samples[ix].socket_states[skt])
+                    sample_prev.socket_states[skt],
+                    sample.socket_states[skt])
                 : unable_to_read;
-            dram = _pcm->dramEnergyMetricsAvailable() ?
+            double dram = _pcm->dramEnergyMetricsAvailable() ?
                 pcm::getDRAMConsumedJoules(
-                    _samples[ix - 1].socket_states[skt],
-                    _samples[ix].socket_states[skt])
+                    sample_prev.socket_states[skt],
+                    sample.socket_states[skt])
                 : unable_to_read;
             buffer << ',' << cpu << ',' << dram;
         }
         buffer << '\n';
         os << buffer.rdbuf();
     }
+}
+
+void tep::energy_reader_pcm::emplace_write_counters()
+{
+    auto& sample = _samples.emplace_back(
+        _samples.size(), now(), _pcm->getNumSockets(), _dummy_states);
+    _pcm->getAllCounterStates(
+        sample.system_state,
+        sample.socket_states,
+        sample.core_dummy_states);
 }

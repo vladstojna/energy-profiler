@@ -21,6 +21,7 @@ private:
         std::vector<pcm::CoreCounterState>& core_dummy_states;
 
         sample_point(uint64_t count,
+            const timepoint_t& tp,
             uint32_t num_skts,
             std::vector<pcm::CoreCounterState>& ccs);
     };
@@ -34,16 +35,21 @@ private:
 public:
     energy_reader_pcm();
     energy_reader_pcm(energy_reader_pcm&& other);
+    ~energy_reader_pcm();
+
     // disable copying
     energy_reader_pcm(const energy_reader_pcm& other) = delete;
     energy_reader_pcm& operator=(const energy_reader_pcm& other) = delete;
 
-    virtual void start() override {}
+    virtual void start() override;
     virtual void sample() override;
-    virtual void stop() override {}
+    virtual void stop() override;
 
 protected:
     virtual void print(std::ostream& os) const override;
+
+private:
+    void emplace_write_counters();
 };
 
 }
