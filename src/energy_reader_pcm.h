@@ -20,8 +20,7 @@ private:
         std::vector<pcm::SocketCounterState> socket_states;
         std::vector<pcm::CoreCounterState>& core_dummy_states;
 
-        sample_point(uint64_t count,
-            const timepoint_t& tp,
+        sample_point(const timepoint_t& tp,
             uint32_t num_skts,
             std::vector<pcm::CoreCounterState>& ccs);
     };

@@ -47,10 +47,9 @@ static int find_rapl_component()
 
 // end helper functions
 
-tep::energy_reader_papi::sample_point::sample_point(uint64_t count,
-    const timepoint_t& tp,
+tep::energy_reader_papi::sample_point::sample_point(const timepoint_t& tp,
     size_t num_events) :
-    basic_sample(count, tp),
+    basic_sample(tp),
     values(num_events, 0)
 {
 }
@@ -153,22 +152,22 @@ void tep::energy_reader_papi::add_events(int cid)
 void tep::energy_reader_papi::start()
 {
     assert(_samples.size() == 0);
-    _samples.emplace_back(_samples.size(), now(), _events.size());
+    _samples.emplace_back(now(), _events.size());
     PAPI_start(_event_set);
 }
 
 void tep::energy_reader_papi::sample()
 {
     assert(_samples.size() > 0);
-    _samples.emplace_back(_samples.size(), now(), _events.size());
-    PAPI_read(_event_set, _samples.back().values.data());
+    auto& sample = _samples.emplace_back(now(), _events.size());
+    PAPI_read(_event_set, sample.values.data());
 }
 
 void tep::energy_reader_papi::stop()
 {
     assert(_samples.size() > 0);
-    _samples.emplace_back(_samples.size(), now(), _events.size());
-    PAPI_stop(_event_set, _samples.back().values.data());
+    auto& sample = _samples.emplace_back(now(), _events.size());
+    PAPI_stop(_event_set, sample.values.data());
 }
 
 void tep::energy_reader_papi::print(std::ostream & os) const
@@ -222,7 +221,7 @@ void tep::energy_reader_papi::print(std::ostream & os) const
         char* end = buffer + sz;
         // we start counting from zero, so consider sample_prev as the sample number
         currptr += snprintf(currptr, end - currptr, "%" PRIu64 ",%" PRId64,
-            sample_prev.number, (sample - sample_prev).count());
+            s - 1, (sample - sample_prev).count());
         assert(currptr < end);
         for (const auto& out : outputs)
         {

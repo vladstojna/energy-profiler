@@ -43,13 +43,8 @@ protected:
     using timepoint_t = std::chrono::time_point<std::chrono::high_resolution_clock>;
     struct basic_sample
     {
-        const uint64_t number;
         const timepoint_t timepoint;
-
-        basic_sample(uint64_t count, const timepoint_t tp) :
-            number(count), timepoint(tp)
-        {
-        }
+        basic_sample(const timepoint_t tp) : timepoint(tp) {}
 
         std::chrono::nanoseconds operator-(const basic_sample& rhs) const
         {

@@ -3,11 +3,10 @@
 
 #include <cassert>
 
-tep::energy_reader_pcm::sample_point::sample_point(uint64_t count,
-    const timepoint_t& tp,
+tep::energy_reader_pcm::sample_point::sample_point(const timepoint_t& tp,
     uint32_t num_skts,
     std::vector<pcm::CoreCounterState>& ccs) :
-    basic_sample(count, tp),
+    basic_sample(tp),
     system_state(),
     socket_states(),
     core_dummy_states(ccs)
@@ -58,21 +57,18 @@ tep::energy_reader_pcm::~energy_reader_pcm()
 
 void tep::energy_reader_pcm::start()
 {
-    assert(_pcm != nullptr);
     assert(_samples.size() == 0);
     emplace_write_counters();
 }
 
 void tep::energy_reader_pcm::sample()
 {
-    assert(_pcm != nullptr);
     assert(_samples.size() > 0);
     emplace_write_counters();
 }
 
 void tep::energy_reader_pcm::stop()
 {
-    assert(_pcm != nullptr);
     assert(_samples.size() > 0);
     emplace_write_counters();
 }
@@ -89,7 +85,7 @@ void tep::energy_reader_pcm::print(std::ostream& os) const
         auto const& sample_prev = _samples[ix - 1];
         auto const& sample = _samples[ix];
         std::ostringstream buffer;
-        buffer << sample_prev.number << ',' << (sample - sample_prev).count();
+        buffer << ix - 1 << ',' << (sample - sample_prev).count();
         for (pcm::uint32 skt = 0; skt < _pcm->getNumSockets(); skt++)
         {
             double cpu = _pcm->packageEnergyMetricsAvailable() ?
@@ -111,8 +107,9 @@ void tep::energy_reader_pcm::print(std::ostream& os) const
 
 void tep::energy_reader_pcm::emplace_write_counters()
 {
-    auto& sample = _samples.emplace_back(
-        _samples.size(), now(), _pcm->getNumSockets(), _dummy_states);
+    assert(_pcm != nullptr);
+    auto& sample = _samples.emplace_back(now(),
+        _pcm->getNumSockets(), _dummy_states);
     _pcm->getAllCounterStates(
         sample.system_state,
         sample.socket_states,
