@@ -36,7 +36,7 @@ uintptr_t tep::get_entrypoint_addr(pid_t pid)
     return ptr_start;
 }
 
-uintptr_t tep::get_ip(user_regs_struct& regs)
+uintptr_t tep::get_ip(const user_regs_struct& regs)
 {
 #if __x86_64__
     return regs.rip;
