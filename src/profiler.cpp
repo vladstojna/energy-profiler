@@ -174,7 +174,7 @@ void tep::profiler::sampler_routine(std::ostream* os,
                     energy_reader->stop();
                     *os << *energy_reader;
                     if (os->fail())
-                        fprintf(stderr, fileline("error writing to output stream"));
+                        fprintf(stderr, fileline("error writing to output stream\n"));
                     return;
                 }
                 if (_task_finished)
@@ -182,7 +182,7 @@ void tep::profiler::sampler_routine(std::ostream* os,
                     energy_reader->stop();
                     *os << *energy_reader;
                     if (os->fail())
-                        fprintf(stderr, fileline("error writing to output stream"));
+                        fprintf(stderr, fileline("error writing to output stream\n"));
                     break;
                 }
                 energy_reader->sample();

@@ -84,7 +84,7 @@ void tep::energy_reader_pcm::print(std::ostream& os) const
     {
         auto const& sample_prev = _samples[ix - 1];
         auto const& sample = _samples[ix];
-        std::ostringstream buffer;
+        std::stringstream buffer;
         buffer << ix - 1 << ',' << (sample - sample_prev).count();
         for (pcm::uint32 skt = 0; skt < _pcm->getNumSockets(); skt++)
         {
