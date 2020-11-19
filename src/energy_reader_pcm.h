@@ -32,7 +32,7 @@ private:
     pcm::PCM* _pcm;
 
 public:
-    energy_reader_pcm();
+    energy_reader_pcm(size_t init_sample_count);
     energy_reader_pcm(energy_reader_pcm&& other);
     ~energy_reader_pcm();
 

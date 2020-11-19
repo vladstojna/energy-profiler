@@ -14,7 +14,7 @@ tep::energy_reader_pcm::sample_point::sample_point(const timepoint_t& tp,
     socket_states.reserve(num_skts);
 }
 
-tep::energy_reader_pcm::energy_reader_pcm() :
+tep::energy_reader_pcm::energy_reader_pcm(size_t init_sample_count) :
     energy_reader(),
     _samples(),
     _dummy_states(),
@@ -39,7 +39,7 @@ tep::energy_reader_pcm::energy_reader_pcm() :
         throw tep::energy_reader_exception(
             "Access to Processor Counter Monitor has denied (Unknown error).");
     }
-    _samples.reserve(ISAMPLE_SIZE);
+    _samples.reserve(init_sample_count);
 }
 
 tep::energy_reader_pcm::energy_reader_pcm(energy_reader_pcm&& other) :

@@ -7,7 +7,8 @@
 
 std::unique_ptr<tep::energy_reader> tep::make_energy_reader(
     tep::energy::target target,
-    tep::energy::engine engine)
+    tep::energy::engine engine,
+    size_t init_sample_count)
 {
     switch (target)
     {
@@ -15,9 +16,9 @@ std::unique_ptr<tep::energy_reader> tep::make_energy_reader(
         switch (engine)
         {
         case tep::energy::engine::papi:
-            return std::make_unique<tep::energy_reader_papi>();
+            return std::make_unique<tep::energy_reader_papi>(init_sample_count);
         case tep::energy::engine::pcm:
-            return std::make_unique<tep::energy_reader_pcm>();
+            return std::make_unique<tep::energy_reader_pcm>(init_sample_count);
         default:
             throw std::runtime_error("Unknown energy engine");
         }

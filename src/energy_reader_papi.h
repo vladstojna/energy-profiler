@@ -41,7 +41,7 @@ private:
     std::vector<event_data> _events;
 
 public:
-    energy_reader_papi();
+    energy_reader_papi(size_t init_sample_count);
     energy_reader_papi(energy_reader_papi&& other);
     ~energy_reader_papi();
 

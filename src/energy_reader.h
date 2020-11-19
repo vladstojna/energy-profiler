@@ -5,6 +5,7 @@
 #include <iosfwd>
 #include <stdexcept>
 #include <memory>
+
 namespace tep::energy
 {
 
@@ -26,7 +27,7 @@ enum class engine
 namespace tep
 {
 
-constexpr const size_t ISAMPLE_SIZE = 128;
+constexpr const size_t ISAMPLE_COUNT = 128;
 
 class energy_reader_exception : public std::runtime_error
 {
@@ -78,8 +79,8 @@ protected:
     }
 };
 
-std::unique_ptr<energy_reader> make_energy_reader(
-    energy::target target,
-    energy::engine engine = energy::engine::papi);
+std::unique_ptr<energy_reader> make_energy_reader(energy::target target,
+    energy::engine engine,
+    size_t init_sample_count = ISAMPLE_COUNT);
 
 }

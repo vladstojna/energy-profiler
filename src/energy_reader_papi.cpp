@@ -32,9 +32,7 @@ static int find_rapl_component()
             {
                 constexpr size_t sz = 160;
                 char msg[sz];
-                int res = snprintf(msg, sz, "RAPL component disabled: %s",
-                    cmpinfo->disabled_reason);
-                assert(res >= 0 && size_t(res) < sz);
+                snprintf(msg, sz, "RAPL component disabled: %s", cmpinfo->disabled_reason);
                 throw tep::energy_reader_exception(msg);
             }
             return rapl_cid;
@@ -80,7 +78,7 @@ tep::energy_reader_papi::event_data::event_data(const std::string_view& name,
         throw energy_reader_exception("unable to find socket number from event name");
 }
 
-tep::energy_reader_papi::energy_reader_papi() :
+tep::energy_reader_papi::energy_reader_papi(size_t init_sample_count) :
     energy_reader(),
     _event_set(PAPI_NULL),
     _samples(),
@@ -98,7 +96,7 @@ tep::energy_reader_papi::energy_reader_papi() :
     if (_events.size() == 0)
         throw energy_reader_exception("No events were added");
 
-    _samples.reserve(ISAMPLE_SIZE);
+    _samples.reserve(init_sample_count);
 }
 
 tep::energy_reader_papi::energy_reader_papi(energy_reader_papi&& other) = default;
