@@ -1,11 +1,13 @@
 // main.cpp
 
+#include <fstream>
 #include <iostream>
 #include <unordered_set>
 
 #include <unistd.h>
 
 #include "cmdargs.h"
+#include "energy_reader.h"
 #include "dbg.h"
 #include "macros.h"
 #include "profiler.h"
@@ -54,10 +56,22 @@ int main(int argc, char* argv[])
     {
         try
         {
+            std::ofstream os;
+            std::ostream& outfile = args.outfile.empty() ?
+                std::cout : (os = std::ofstream(args.outfile));
+            if (!outfile)
+                throw std::runtime_error("unable to open " +
+                    args.outfile + " for writing");
+
             tep::dbg_line_info dbg_info(argv[idx]);
             tep::profiler profiler(child_pid,
+                outfile,
                 std::chrono::milliseconds(args.interval),
-                get_breakpoint_addresses(dbg_info, args.breakpoints));
+                get_breakpoint_addresses(dbg_info, args.breakpoints),
+                tep::make_energy_reader(
+                    tep::energy::target::smp,
+                    tep::energy::engine::papi));
+
             profiler.run();
             return 0;
         }

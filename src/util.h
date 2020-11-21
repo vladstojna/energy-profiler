@@ -34,7 +34,7 @@ constexpr unsigned long lsb_mask()
     return ~0xFF;
 }
 
-uintptr_t get_ip(user_regs_struct& regs);
+uintptr_t get_ip(const user_regs_struct& regs);
 void set_ip(user_regs_struct& regs, uintptr_t addr);
 
 }

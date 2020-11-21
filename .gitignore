@@ -1,4 +1,4 @@
-.vscode/*
+.vscode/
 *.code-workspace
 
 # Local History for Visual Studio Code
@@ -7,3 +7,9 @@
 # build files
 bin/
 obj/
+
+# libraries
+lib/
+
+# profiling results
+*.csv

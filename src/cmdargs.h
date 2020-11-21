@@ -25,10 +25,10 @@ struct arguments
     };
 
     uint32_t interval;
+    std::string outfile;
+    std::string target;
     std::vector<breakpoint> breakpoints;
     bool quiet;
-    bool regular;
-    bool delta;
 
     arguments();
     arguments(arguments&& other);
