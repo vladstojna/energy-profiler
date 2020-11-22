@@ -67,7 +67,6 @@ public:
     }
 
 protected:
-    // count,timestamp,skt0_cpu,skt0_dram,...
     virtual void print(std::ostream& os) const = 0;
 
     /**
