@@ -13,11 +13,12 @@ obj_dir=obj
 dep_dir=$(obj_dir)/.deps
 
 # external libs
-extlibs=pcm papi
-extlibs_tgt=$(addprefix lib/,$(extlibs))
-extlibs_ln=-l:libPCM.a -l:libpapi.a
-extlibs_dirs=-Llib/pcm -Llib/papi/src
-extlibs_incl=-Ilib/pcm -Ilib/papi/src
+extlibs_tgt=$(lib_dir)/pcm $(lib_dir)/papi
+extlibs_ln=-lpcm -lpapi -lrocm_smi64
+extlibs_incl=-I$(lib_dir)/pcm -I$(lib_dir)/papi/include
+extlibs_dirs=-L$(lib_dir)/pcm -L$(lib_dir)/papi/lib -L$(lib_dir)/rocm_smi/lib
+export PAPI_ROCMSMI_ROOT=$(shell pwd)/$(lib_dir)/rocm_smi
+export LD_RUN_PATH=$(lib_dir)/pcm:$(lib_dir)/papi/lib:$(lib_dir)/rocm_smi/lib
 
 # files
 src=$(wildcard src/*.cpp)
@@ -39,6 +40,9 @@ incl=$(extlibs_incl)
 libs=-pthread -lbfd -ldwarf $(extlibs_ln)
 libdirs=$(extlibs_dirs)
 
+# cmake
+CMAKE=cmake
+
 # rules -----------------------------------------------------------------------
 
 .PHONY: all libs remake clean purge
@@ -59,13 +63,28 @@ $(lib_dir):
 	@mkdir -p $@
 
 lib/pcm: | $(lib_dir)
+	@rm -rf $@
 	cd $(lib_dir) && git clone https://github.com/opcm/pcm.git $(@F)
 	$(MAKE) -C $@ -j $(nprocs)
 
-lib/papi: | $(lib_dir)
+lib/papi: lib/rocm_smi | $(lib_dir)
+	@rm -rf $@
 	cd $(lib_dir) && git clone https://bitbucket.org/icl/papi.git $(@F)
-	cd $@/src && ./configure --with-components="rapl"
+	installdir=$(shell pwd)/$@ && \
+		cd $@/src && \
+		./configure --prefix=$$installdir --with-components="rapl rocm_smi"
 	$(MAKE) -C $@/src -j $(nprocs)
+	$(MAKE) -C $@/src install
+
+lib/rocm_smi: | $(lib_dir)
+	@rm -rf $@
+	cd $(lib_dir) && git clone https://github.com/RadeonOpenCompute/rocm_smi_lib.git $(@F);
+	installdir=$(shell pwd)/$@ && \
+		cd $@ && \
+		mkdir -p build && \
+		$(CMAKE) -DCMAKE_INSTALL_PREFIX=$$installdir -Wdev -Wdeprecated -S . -B build
+	$(MAKE) -C $@/build -j $(nprocs)
+	$(MAKE) -C $@/build install
 
 $(tgt): $(obj) | $(tgt_dir)
 	$(cc) $^ $(libs) $(libdirs) -o $@
