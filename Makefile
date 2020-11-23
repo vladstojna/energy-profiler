@@ -80,9 +80,8 @@ lib/rocm_smi: | $(lib_dir)
 	@rm -rf $@
 	cd $(lib_dir) && git clone https://github.com/RadeonOpenCompute/rocm_smi_lib.git $(@F);
 	installdir=$(shell pwd)/$@ && \
-		cd $@ && \
-		mkdir -p build && \
-		$(CMAKE) -DCMAKE_INSTALL_PREFIX=$$installdir -Wdev -Wdeprecated -S . -B build
+		cd $@ && mkdir -p build && cd build && \
+		$(CMAKE) -DCMAKE_INSTALL_PREFIX=$$installdir -Wdev -Wdeprecated -S ..
 	$(MAKE) -C $@/build -j $(nprocs)
 	$(MAKE) -C $@/build install
 
