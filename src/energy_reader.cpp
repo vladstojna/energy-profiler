@@ -1,7 +1,8 @@
 // energy_reader.cpp
 #include "energy_reader.h"
-#include "energy_reader_papi.h"
+#include "energy_reader_smp.h"
 #include "energy_reader_pcm.h"
+#include "energy_reader_gpu.h"
 
 #include <cassert>
 
@@ -16,14 +17,14 @@ std::unique_ptr<tep::energy_reader> tep::make_energy_reader(
         switch (engine)
         {
         case tep::energy::engine::papi:
-            return std::make_unique<tep::energy_reader_papi>(init_sample_count);
+            return std::make_unique<tep::energy_reader_smp>(init_sample_count);
         case tep::energy::engine::pcm:
             return std::make_unique<tep::energy_reader_pcm>(init_sample_count);
         default:
-            throw std::runtime_error("Unknown energy engine");
+            throw std::runtime_error("Unknown SMP energy engine");
         }
     case tep::energy::target::gpu:
-        throw std::logic_error("GPU reader not yet implemented");
+        return std::make_unique<tep::energy_reader_gpu>(init_sample_count);
     case tep::energy::target::fpga:
         throw std::logic_error("FPGA reader not yet implemented");
     default:

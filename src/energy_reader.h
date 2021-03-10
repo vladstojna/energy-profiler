@@ -44,7 +44,7 @@ protected:
     using timepoint_t = std::chrono::time_point<std::chrono::high_resolution_clock>;
     struct basic_sample
     {
-        const timepoint_t timepoint;
+        timepoint_t timepoint;
         basic_sample(const timepoint_t tp) : timepoint(tp) {}
 
         std::chrono::nanoseconds operator-(const basic_sample& rhs) const
@@ -67,7 +67,6 @@ public:
     }
 
 protected:
-    // count,timestamp,skt0_cpu,skt0_dram,...
     virtual void print(std::ostream& os) const = 0;
 
     /**
