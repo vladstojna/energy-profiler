@@ -18,9 +18,6 @@ libs_L := $(addprefix -L, $(libs))
 
 #files
 src  := $(wildcard $(src_dir)/*.cpp)
-hdrs := $(wildcard $(src_dir)/*.hpp)
-hdrs += $(wildcard $(src_dir)/*.h)
-hdrs := $(patsubst $(src_dir)/%, $(incl_dir)/%, $(hdrs))
 obj  := $(patsubst $(src_dir)/%.cpp, $(obj_dir)/%.o, $(src))
 deps := $(patsubst $(src_dir)/%.cpp, $(dep_dir)/%.d, $(src))
 tgt  := $(tgt_dir)/libnrg.so
@@ -42,7 +39,7 @@ ldflags := -shared
 
 # rules -----------------------------------------------------------------------
 
-default: $(tgt) $(hdrs)
+default: $(tgt) $(incl_dir)
 
 $(tgt_dir):
 	@mkdir -p $@
@@ -50,17 +47,12 @@ $(obj_dir):
 	@mkdir -p $@
 $(dep_dir):
 	@mkdir -p $@
-$(incl_dir):
-	@mkdir -p $@
 
 $(tgt): $(obj) | $(tgt_dir)
 	$(cc) $^ $(ldflags) -o $@
 
-$(incl_dir)/%.h: $(src_dir)/%.h | $(incl_dir)
-	@cp $< $@
-
-$(incl_dir)/%.hpp: $(src_dir)/%.hpp | $(incl_dir)
-	@cp $< $@
+$(incl_dir):
+	ln -s $(src_dir) $@
 
 $(obj_dir)/%.o: $(src_dir)/%.cpp $(dep_dir)/%.d | $(obj_dir) $(dep_dir)
 	$(cc) -MT $@ -MMD -MP -MF $(dep_dir)/$*.d $(cflags) -c -o $@ $<

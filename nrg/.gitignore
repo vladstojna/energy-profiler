@@ -1,4 +1,4 @@
 # build files
-lib/
-include/
-obj/
+lib
+include
+obj
