@@ -65,8 +65,6 @@ namespace tep
         }
     };
 
-    std::ostream& operator<<(std::ostream& os, const cfg_error& res);
-
     // structs
 
     struct config_data
@@ -148,6 +146,14 @@ namespace tep
         uint32_t threads;
         std::vector<task> tasks;
     };
+
+    // operator overloads
+
+    std::ostream& operator<<(std::ostream& os, const cfg_error& res);
+    std::ostream& operator<<(std::ostream& os, const config_data::position& p);
+    std::ostream& operator<<(std::ostream& os, const config_data::section& s);
+    std::ostream& operator<<(std::ostream& os, const config_data::task& t);
+    std::ostream& operator<<(std::ostream& os, const config_data& cd);
 
     // types
 

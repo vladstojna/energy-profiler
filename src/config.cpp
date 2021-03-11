@@ -34,13 +34,6 @@ static const char* error_messages[] =
     "Invalid line number: must be a positive integer"
 };
 
-std::ostream& tep::operator<<(std::ostream& os, const cfg_error& res)
-{
-    auto idx = static_cast<std::underlying_type_t<cfg_error_code>>(res.code());
-    os << error_messages[idx] << " (error code " << idx << ")";
-    return os;
-}
-
 // begin helper functions
 
 cfg_expected<config_data::position> get_position(const pugi::xml_node& pos_node)
@@ -219,4 +212,63 @@ cfg_expected<config_data> tep::load_config(const char* file)
     }
 
     return cfgdata;
+}
+
+// operator overloads
+
+std::ostream& tep::operator<<(std::ostream& os, const cfg_error& res)
+{
+    auto idx = static_cast<std::underlying_type_t<cfg_error_code>>(res.code());
+    os << error_messages[idx] << " (error code " << idx << ")";
+    return os;
+}
+
+std::ostream& tep::operator<<(std::ostream& os, const config_data::position& p)
+{
+    os << p.compilation_unit << ":" << p.line;
+    return os;
+}
+
+std::ostream& tep::operator<<(std::ostream& os, const config_data::section& s)
+{
+    os << s.start << " - " << s.end;
+    return os;
+}
+
+std::ostream& tep::operator<<(std::ostream& os, const config_data::task& t)
+{
+    os << "name: " << (t.name.empty() ? "-" : t.name);
+    os << "\nextra: " << (t.extra.empty() ? "-" : t.extra);
+    os << "\ntarget: ";
+    switch (t.target)
+    {
+    case config_data::target::cpu:
+        os << "cpu";
+        break;
+    case config_data::target::gpu:
+        os << "gpu";
+        break;
+    }
+    os << "\nmethod: ";
+    switch (t.method)
+    {
+    case config_data::profiling_method::energy_profile:
+        os << "profile";
+        break;
+    case config_data::profiling_method::energy_total:
+        os << "total energy consumption";
+        break;
+    }
+    os << "\nsection: " << t.section;
+    os << "\nexecutions: " << t.executions;
+    return os;
+}
+
+std::ostream& tep::operator<<(std::ostream& os, const config_data& cd)
+{
+    os << "threads: " << cd.threads;
+    os << "\ntasks:";
+    for (const auto& task : cd.tasks)
+        os << "\n----------\n" << task;
+    return os;
 }
