@@ -1,0 +1,45 @@
+<?xml version="1.0" encoding="utf-8"?>
+
+<config>
+
+    <threads>16</threads>
+
+    <tasks>
+
+        <task>
+            <name>task1</name>
+            <target>cpu</target>
+            <method>profile</method>
+            <execs>16</execs>
+            <section>
+                <start>
+                    <cu>main.c</cu>
+                    <line>10</line>
+                </start>
+                <end>
+                    <cu>main.c</cu>
+                    <line>15</line>
+                </end>
+            </section>
+            <extra>generic CPU task</extra>
+        </task>
+
+        <task>
+            <name>task2</name>
+            <target>gpu</target>
+            <section>
+                <start>
+                    <cu>main.c</cu>
+                    <line>25</line>
+                </start>
+                <end>
+                    <cu>main.c</cu>
+                    <line>35</line>
+                </end>
+            </section>
+            <extra>simple GPU task</extra>
+        </task>
+
+    </tasks>
+
+</config>
