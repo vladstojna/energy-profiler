@@ -12,7 +12,7 @@ obj_dir  := obj
 incl_dir := include
 dep_dir  := $(obj_dir)/.deps
 
-incl   := ../lib/papi/include /opt/cuda/include
+incl   := /opt/cuda/include ../lib/papi/include ../util
 libs   := /usr/lib64 ../lib/papi/lib
 libs_L := $(addprefix -L, $(libs))
 
@@ -57,10 +57,10 @@ $(tgt): $(obj) | $(tgt_dir)
 	$(cc) $^ $(ldflags) -o $@
 
 $(incl_dir)/%.h: $(src_dir)/%.h | $(incl_dir)
-	cp $< $@
+	@cp $< $@
 
 $(incl_dir)/%.hpp: $(src_dir)/%.hpp | $(incl_dir)
-	cp $< $@
+	@cp $< $@
 
 $(obj_dir)/%.o: $(src_dir)/%.cpp $(dep_dir)/%.d | $(obj_dir) $(dep_dir)
 	$(cc) -MT $@ -MMD -MP -MF $(dep_dir)/$*.d $(cflags) -c -o $@ $<
