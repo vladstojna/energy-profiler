@@ -41,6 +41,7 @@ else
 cflags += -O3 -DNDEBUG
 endif
 cflags += $(addprefix -I, $(extlibs_incl))
+cflags += $(addprefix -I, util)
 cflags += -std=$(cppstd)
 
 # linked flags
