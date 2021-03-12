@@ -1,72 +1,119 @@
-// dbg.h
+// dbg.hpp
+
 #pragma once
 
-#include <cstdint>
+#include <expected.hpp>
+
 #include <string>
 #include <iosfwd>
 #include <vector>
 #include <map>
+#include <unordered_set>
 
 namespace tep
 {
 
-typedef uint32_t line_no;
-typedef uintptr_t line_addr;
+    // error handling
 
-class compilation_unit
-{
-private:
-    const std::string _name;
-    std::map<line_no, std::vector<line_addr>> _lines;
+    enum class dbg_error_code
+    {
+        SUCCESS = 0,
+        SYSTEM_ERROR,
+        DEBUG_SYMBOLS_NOT_FOUND,
+        COMPILATION_UNIT_NOT_FOUND,
+        INVALID_LINE,
+        DWARF_ERROR
+    };
 
-public:
-    compilation_unit(const char* name);
-    compilation_unit(const std::string& name);
-    compilation_unit(std::string&& name);
-    compilation_unit(compilation_unit&& other);
+    struct dbg_error
+    {
+        static dbg_error success()
+        {
+            return dbg_error(dbg_error_code::SUCCESS, "No error");
+        }
 
-    // disable copying
-    compilation_unit(const compilation_unit& other) = delete;
-    compilation_unit& operator=(const compilation_unit& other) = delete;
+        dbg_error_code code;
+        std::string message;
 
-    const std::string& name()  const { return _name; }
-    const decltype(_lines)& lines() const { return _lines; }
+        dbg_error(dbg_error_code c, const char* msg);
+        dbg_error(dbg_error_code c, const std::string& msg);
+        dbg_error(dbg_error_code c, std::string&& msg);
 
-    void add_address(line_no lineno, line_addr lineaddr);
-    line_addr line_first_addr(line_no lineno) const;
-    const std::vector<line_addr>& line_addrs(line_no lineno) const;
+        operator bool() const
+        {
+            return code != dbg_error_code::SUCCESS;
+        }
+    };
 
-    friend std::ostream& operator<<(std::ostream& os, const compilation_unit& cu);
-};
+    // types
 
-class dbg_line_info
-{
-private:
-    std::vector<compilation_unit> _units;
+    template<typename R>
+    using dbg_expected = cmmn::expected<R, dbg_error>;
 
-public:
-    dbg_line_info(const char* filename);
-    dbg_line_info(dbg_line_info&& other);
+    // classes
 
-    // disable copying
-    dbg_line_info(const dbg_line_info& other) = delete;
-    dbg_line_info& operator=(const dbg_line_info& other) = delete;
+    class compilation_unit
+    {
+    public:
+        struct hash
+        {
+            using is_transparent = void;
+            size_t operator()(const compilation_unit& cu) const;
+            size_t operator()(const std::string& name) const;
+        };
 
-    bool has_dbg_symbols() const { return !_units.empty(); }
+        struct equal
+        {
+            using is_transparent = void;
+            bool operator()(const compilation_unit& lhs, const compilation_unit& rhs) const;
+            bool operator()(const compilation_unit& lhs, const std::string& rhs) const;
+            bool operator()(const std::string& lhs, const compilation_unit& rhs) const;
+        };
 
-    const std::vector<compilation_unit>& cus() const { return _units; }
-    const compilation_unit& first_cu()         const { return _units.front(); }
+    private:
+        std::string _name;
+        std::map<uint32_t, std::vector<uintptr_t>> _lines;
 
-    const compilation_unit& cu_by_name(const std::string& name = "") const;
+    public:
+        compilation_unit(const char* name);
+        compilation_unit(const std::string& name);
+        compilation_unit(std::string&& name);
 
-    friend std::ostream& operator<<(std::ostream& os, const dbg_line_info& cu);
+        const std::string& name()  const { return _name; }
 
-private:
-    compilation_unit& last_cu() { return _units.back(); }
-    void get_line_info(const char* filename);
-};
+        void add_address(uint32_t lineno, uintptr_t lineaddr);
+        uintptr_t line_first_addr(uint32_t lineno) const;
+        const std::vector<uintptr_t>& line_addrs(uint32_t lineno) const;
 
-std::ostream& operator<<(std::ostream& os, const compilation_unit& cu);
-std::ostream& operator<<(std::ostream& os, const dbg_line_info& cu);
+        friend std::ostream& operator<<(std::ostream& os, const compilation_unit& cu);
+    };
+
+    class dbg_line_info
+    {
+    public:
+        static dbg_expected<dbg_line_info> create(const char* filename);
+
+    private:
+        std::unordered_set<
+            compilation_unit,
+            compilation_unit::hash,
+            compilation_unit::equal> _units;
+        dbg_line_info(const char* filename, dbg_error& err);
+
+    public:
+        bool has_dbg_symbols() const { return !_units.empty(); }
+        dbg_expected<const compilation_unit*> find_cu(const std::string& name) const;
+
+        friend std::ostream& operator<<(std::ostream& os, const dbg_line_info& cu);
+
+    private:
+        dbg_error get_line_info(int fd);
+    };
+
+    // operator overloads
+
+    std::ostream& operator<<(std::ostream& os, const dbg_error& de);
+    std::ostream& operator<<(std::ostream& os, const compilation_unit& cu);
+    std::ostream& operator<<(std::ostream& os, const dbg_line_info& cu);
 
 }
