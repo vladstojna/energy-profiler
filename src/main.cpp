@@ -24,10 +24,13 @@ std::unordered_set<uintptr_t> get_breakpoint_addresses(
         addresses.reserve(breakpoints.size());
         for (const auto& bp : breakpoints)
         {
-            auto result = dbg_info.find_cu(bp.cu_name);
-            if (!result)
-                throw std::runtime_error(result.error().message);
-            addresses.emplace(result.value()->line_first_addr(bp.lineno));
+            auto cu = dbg_info.find_cu(bp.cu_name);
+            if (!cu)
+                throw std::runtime_error(cu.error().message);
+            auto addr = cu.value()->line_first_addr(bp.lineno);
+            if (!addr)
+                throw std::runtime_error(addr.error().message);
+            addresses.insert(addr.value());
         }
     }
     else

@@ -80,10 +80,9 @@ namespace tep
         compilation_unit(std::string&& name);
 
         const std::string& name()  const { return _name; }
-
         void add_address(uint32_t lineno, uintptr_t lineaddr);
-        uintptr_t line_first_addr(uint32_t lineno) const;
-        const std::vector<uintptr_t>& line_addrs(uint32_t lineno) const;
+        dbg_expected<uintptr_t> line_first_addr(uint32_t lineno) const;
+        dbg_expected<uintptr_t> line_addr(uint32_t lineno, size_t order) const;
 
         friend std::ostream& operator<<(std::ostream& os, const compilation_unit& cu);
     };

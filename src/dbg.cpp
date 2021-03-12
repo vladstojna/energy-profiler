@@ -7,6 +7,7 @@
 #include <stdexcept>
 #include <iostream>
 #include <iomanip>
+#include <cassert>
 #include <cstring>
 #include <cerrno>
 
@@ -81,24 +82,21 @@ compilation_unit::compilation_unit(std::string&& name) :
 
 void compilation_unit::add_address(uint32_t lineno, uintptr_t lineaddr)
 {
-    if (_lines.find(lineno) == _lines.end())
-        _lines.try_emplace(lineno);
-    _lines.at(lineno).emplace_back(lineaddr);
+    _lines[lineno].push_back(lineaddr);
 }
 
-uintptr_t compilation_unit::line_first_addr(uint32_t lineno) const
+dbg_expected<uintptr_t> compilation_unit::line_first_addr(uint32_t lineno) const
 {
-    return line_addrs(lineno).front();
+    return line_addr(lineno, 0);
 }
 
-const std::vector<uintptr_t>& compilation_unit::line_addrs(uint32_t lineno) const
+dbg_expected<uintptr_t> compilation_unit::line_addr(uint32_t lineno, size_t order) const
 {
+    assert(order >= 0 && order < _lines.size());
     for (const auto& [no, addrs] : _lines)
-    {
         if (no >= lineno)
-            return addrs;
-    }
-    throw std::invalid_argument("invalid line");
+            return addrs[order];
+    return dbg_error(dbg_error_code::INVALID_LINE, "Invalid line");
 }
 
 
