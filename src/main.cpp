@@ -8,7 +8,7 @@
 
 #include "cmdargs.h"
 #include "energy_reader.h"
-#include "dbg.h"
+#include "dbg.hpp"
 #include "macros.h"
 #include "profiler.h"
 #include "target.h"

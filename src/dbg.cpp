@@ -2,7 +2,7 @@
 
 #include <libdwarf/libdwarf.h>
 
-#include "dbg.h"
+#include "dbg.hpp"
 
 #include <stdexcept>
 #include <iostream>
