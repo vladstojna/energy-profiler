@@ -2,6 +2,7 @@
 
 #pragma once
 
+#include <chrono>
 #include <iosfwd>
 #include <string>
 #include <vector>
@@ -25,17 +26,25 @@ namespace tep
 
         INVALID_THREAD_CNT,
 
-        TASK_LIST_EMPTY,
-        TASK_NO_TARGET,
-        TASK_NO_SECTION,
-        TASK_INVALID_TARGET,
-        TASK_INVALID_EXECS,
-        TASK_INVALID_NAME,
-        TASK_INVALID_EXTRA,
-        TASK_INVALID_METHOD,
+        SEC_LIST_EMPTY,
+        SEC_NO_BOUNDS,
+        SEC_NO_FREQ,
+        SEC_INVALID_TARGET,
+        SEC_INVALID_NAME,
+        SEC_INVALID_EXTRA,
+        SEC_INVALID_FREQ,
+        SEC_INVALID_INTERVAL,
+        SEC_INVALID_METHOD,
+        SEC_INVALID_EXECS,
+        SEC_INVALID_SAMPLES,
+        SEC_INVALID_DURATION,
 
-        SEC_NO_START_NODE,
-        SEC_NO_END_NODE,
+        PARAM_INVALID_DOMAIN_MASK,
+        PARAM_INVALID_SOCKET_MASK,
+        PARAM_INVALID_DEVICE_MASK,
+
+        BOUNDS_NO_START,
+        BOUNDS_NO_END,
 
         POS_NO_COMP_UNIT,
         POS_NO_LINE,
@@ -51,8 +60,7 @@ namespace tep
     public:
         cfg_error(cfg_error_code code) :
             _code(code)
-        {
-        }
+        {}
 
         cfg_error_code code() const
         {
@@ -61,7 +69,7 @@ namespace tep
 
         operator bool() const
         {
-            return _code == cfg_error_code::SUCCESS;
+            return _code != cfg_error_code::SUCCESS;
         }
     };
 
@@ -88,78 +96,96 @@ namespace tep
 
             position(const std::string& cu, uint32_t ln) :
                 compilation_unit(cu), line(ln)
-            {
-            }
+            {}
 
             position(std::string&& cu, uint32_t ln) :
                 compilation_unit(std::move(cu)), line(ln)
-            {
-            }
+            {}
 
             position(const char* cu, uint32_t ln) :
                 compilation_unit(cu), line(ln)
-            {
-            }
+            {}
         };
 
-        struct section
+        struct bounds
         {
             config_data::position start;
             config_data::position end;
 
             template<typename T, std::enable_if_t<std::is_same_v<T, config_data::position>, bool> = true>
-            section(T&& s, T&& e) :
+            bounds(T&& s, T&& e) :
                 start(std::forward<T>(s)), end(std::forward<T>(e))
-            {
-            }
+            {}
         };
 
-        struct task
+        struct params
+        {
+            unsigned int domain_mask;
+            unsigned int socket_mask;
+            unsigned int device_mask;
+
+            params() : params(~0x0, ~0x0, ~0x0)
+            {}
+
+            params(unsigned int dommask, unsigned int sktmask, unsigned int devmask) :
+                domain_mask(dommask),
+                socket_mask(sktmask),
+                device_mask(devmask)
+            {}
+        };
+
+        struct section
         {
             std::string name;
             std::string extra;
             config_data::target target;
+            std::chrono::milliseconds interval;
             config_data::profiling_method method;
-            config_data::section section;
+            config_data::bounds bounds;
             uint32_t executions;
+            uint32_t samples;
 
             template<typename T1, typename T2, typename T3, std::enable_if_t<
                 std::is_same_v<T1, std::string> || std::is_same_v<T1, const char*> ||
                 std::is_same_v<T2, std::string> || std::is_same_v<T2, const char*> ||
-                std::is_same_v<T3, config_data::section>, bool> = true
-            > task(T1&& nm,
-                T2&& extr,
+                std::is_same_v<T3, config_data::bounds>, bool> = true
+            > section(T1&& nm, T2&& extr,
                 config_data::target tgt,
+                const std::chrono::milliseconds& intrv,
                 config_data::profiling_method mthd,
-                T3&& sec,
-                uint32_t execs) :
+                T3&& bnd,
+                uint32_t execs,
+                uint32_t smp) :
                 name(std::forward<T1>(nm)),
                 extra(std::forward<T2>(extr)),
                 target(tgt),
+                interval(intrv),
                 method(mthd),
-                section(std::forward<T3>(sec)),
-                executions(execs)
-            {
-            }
+                bounds(std::forward<T3>(bnd)),
+                executions(execs),
+                samples(smp)
+            {}
         };
 
         uint32_t threads;
-        std::vector<task> tasks;
+        config_data::params parameters;
+        std::vector<section> sections;
     };
 
     // operator overloads
 
     std::ostream& operator<<(std::ostream& os, const cfg_error& res);
+    std::ostream& operator<<(std::ostream& os, const config_data::target& tgt);
+    std::ostream& operator<<(std::ostream& os, const config_data::profiling_method& pm);
+    std::ostream& operator<<(std::ostream& os, const config_data::params& p);
     std::ostream& operator<<(std::ostream& os, const config_data::position& p);
+    std::ostream& operator<<(std::ostream& os, const config_data::bounds& b);
     std::ostream& operator<<(std::ostream& os, const config_data::section& s);
-    std::ostream& operator<<(std::ostream& os, const config_data::task& t);
     std::ostream& operator<<(std::ostream& os, const config_data& cd);
 
     // types
 
-    template<typename R>
-    using cfg_expected = cmmn::expected<R, cfg_error>;
-    using cfg_result = cfg_expected<config_data>;
+    using cfg_result = cmmn::expected<config_data, cfg_error>;
 
     // functions
 
