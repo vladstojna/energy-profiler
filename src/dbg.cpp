@@ -17,18 +17,15 @@ using namespace tep;
 
 dbg_error::dbg_error(dbg_error_code c, const char* msg) :
     code(c), message(msg)
-{
-}
+{}
 
 dbg_error::dbg_error(dbg_error_code c, const std::string& msg) :
     code(c), message(msg)
-{
-}
+{}
 
 dbg_error::dbg_error(dbg_error_code c, std::string&& msg) :
     code(c), message(std::move(msg))
-{
-}
+{}
 
 // template specialisations
 
@@ -65,20 +62,17 @@ bool compilation_unit::equal::operator()(const std::string& lhs, const compilati
 compilation_unit::compilation_unit(const char* name) :
     _name(name),
     _lines()
-{
-}
+{}
 
 compilation_unit::compilation_unit(const std::string& name) :
     _name(name),
     _lines()
-{
-}
+{}
 
 compilation_unit::compilation_unit(std::string&& name) :
     _name(std::move(name)),
     _lines()
-{
-}
+{}
 
 void compilation_unit::add_address(uint32_t lineno, uintptr_t lineaddr)
 {
@@ -92,7 +86,7 @@ dbg_expected<uintptr_t> compilation_unit::line_first_addr(uint32_t lineno) const
 
 dbg_expected<uintptr_t> compilation_unit::line_addr(uint32_t lineno, size_t order) const
 {
-    assert(order >= 0 && order < _lines.size());
+    assert(order < _lines.size());
     for (const auto& [no, addrs] : _lines)
         if (no >= lineno)
             return addrs[order];
