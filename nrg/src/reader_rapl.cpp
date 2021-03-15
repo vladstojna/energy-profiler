@@ -187,6 +187,14 @@ detail::file_descriptor::file_descriptor(const char* file, error& err) :
         err = { error_code::SYSTEM, strerror(errno) };
 }
 
+detail::file_descriptor::file_descriptor(const file_descriptor& other) noexcept :
+    value(dup(other.value))
+{
+    if (value == -1)
+        perror("file_descriptor: error duplicating file descriptor");
+}
+
+
 detail::file_descriptor::file_descriptor(file_descriptor&& other) noexcept :
     value(std::exchange(other.value, -1))
 {}
@@ -204,8 +212,23 @@ detail::file_descriptor& detail::file_descriptor::operator=(file_descriptor&& ot
     return *this;
 }
 
+detail::file_descriptor& detail::file_descriptor::operator=(const file_descriptor& other) noexcept
+{
+    value = dup(other.value);
+    if (value == -1)
+        perror("file_descriptor: error duplicating file descriptor");
+    return *this;
+}
+
 
 // event_data
+
+
+detail::event_data::event_data(const file_descriptor& fd, uint64_t p, uint64_t m) :
+    fd(fd),
+    prev(p),
+    max(m)
+{};
 
 
 detail::event_data::event_data(file_descriptor&& fd, uint64_t p, uint64_t m) :

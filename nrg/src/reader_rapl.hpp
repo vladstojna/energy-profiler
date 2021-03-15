@@ -24,8 +24,8 @@ namespace nrgprf
             file_descriptor(const char* file, error& err);
             ~file_descriptor() noexcept;
 
-            file_descriptor(const file_descriptor& fd) = delete;
-            file_descriptor& operator=(const file_descriptor& other) = delete;
+            file_descriptor(const file_descriptor& fd) noexcept;
+            file_descriptor& operator=(const file_descriptor& other) noexcept;
 
             file_descriptor(file_descriptor&& fd) noexcept;
             file_descriptor& operator=(file_descriptor&& other) noexcept;
@@ -36,6 +36,7 @@ namespace nrgprf
             file_descriptor fd;
             uint64_t prev;
             uint64_t max;
+            event_data(const file_descriptor& fd, uint64_t p, uint64_t m);
             event_data(file_descriptor&& fd, uint64_t p, uint64_t m);
         };
     }
