@@ -181,10 +181,10 @@ cfg_expected<config_data::bounds> get_bounds(const pugi::xml_node& bounds)
     // position error checks
     cfg_expected<config_data::position> pstart = get_position(start);
     if (!pstart)
-        return pstart.error();
+        return std::move(pstart.error());
     cfg_expected<config_data::position> pend = get_position(end);
     if (!pend)
-        return pend.error();
+        return std::move(pend.error());
 
     return { std::move(pstart.value()), std::move(pend.value()) };
 }
@@ -205,7 +205,7 @@ cfg_expected<config_data::section> get_section(const pugi::xml_node& nsection)
     // attribute target
     cfg_expected<config_data::target> target = get_target(nsection);
     if (!target)
-        return target.error();
+        return std::move(target.error());
 
     // <name></name> - optional, must not be empty
     xml_node nname = nsection.child("name");
@@ -219,7 +219,7 @@ cfg_expected<config_data::section> get_section(const pugi::xml_node& nsection)
     // get interval
     cfg_expected<std::chrono::milliseconds> interval = get_interval(nsection);
     if (!interval)
-        return interval.error();
+        return std::move(interval.error());
 
     // <method></method> - optional
     // default is 'total'; should have no effect when target is 'gpu' due to the
@@ -230,7 +230,7 @@ cfg_expected<config_data::section> get_section(const pugi::xml_node& nsection)
     {
         cfg_expected<config_data::profiling_method> result = get_method(nmethod);
         if (!result)
-            return result.error();
+            return std::move(result.error());
         if (target.value() == config_data::target::cpu)
             method = result.value();
     }
@@ -251,7 +251,7 @@ cfg_expected<config_data::section> get_section(const pugi::xml_node& nsection)
         return cfg_error(cfg_error_code::SEC_NO_BOUNDS);
     cfg_expected<config_data::bounds> bounds = get_bounds(nbounds);
     if (!bounds)
-        return bounds.error();
+        return std::move(bounds.error());
 
     return {
         nname.child_value(),
@@ -305,7 +305,7 @@ cfg_expected<config_data> tep::load_config(const char* file)
     {
         cfg_expected<config_data::params> custom_params = get_params(nparams);
         if (!custom_params)
-            return custom_params.error();
+            return std::move(custom_params.error());
         cfgdata.parameters = custom_params.value();
     }
 
@@ -320,7 +320,7 @@ cfg_expected<config_data> tep::load_config(const char* file)
             // <section></section>
             cfg_expected<config_data::section> section = get_section(nsection);
             if (!section)
-                return section.error();
+                return std::move(section.error());
             cfgdata.sections.push_back(std::move(section.value()));
         }
         if (sec_count == 0)

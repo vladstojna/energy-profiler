@@ -47,6 +47,15 @@ namespace cmmn
         }
 
         template<typename T = E, std::enable_if_t<!std::is_scalar_v<T>, bool> = true>
+        expected(E& error) :
+            _result(error)
+        {
+            DBG(std::cout << "[result@"
+                << reinterpret_cast<uintptr_t>(this)
+                << ": const& error]\n");
+        }
+
+        template<typename T = E, std::enable_if_t<!std::is_scalar_v<T>, bool> = true>
         expected(E&& error) :
             _result(std::move(error))
         {
@@ -102,6 +111,13 @@ namespace cmmn
         const E& error() const
         {
             DBG(std::cout << "[error: returned const&]\n");
+            return std::get<E>(_result);
+        }
+
+        template<typename T = E, std::enable_if_t<!std::is_scalar_v<T>, bool> = true>
+        E& error()
+        {
+            DBG(std::cout << "[error: returned &]\n");
             return std::get<E>(_result);
         }
 
