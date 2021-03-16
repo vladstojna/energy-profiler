@@ -1,7 +1,5 @@
 // nrg.hpp
 
-#include "event_cpu.hpp"
-#include "event_gpu.hpp"
 #include "execution.hpp"
 #include "reader_rapl.hpp"
 #include "reader_gpu.hpp"

@@ -2,25 +2,40 @@
 
 #pragma once
 
-#include "error_codes.hpp"
-
 #include <string>
 
 namespace nrgprf
 {
+
+    // error codes
+
+    enum class error_code
+    {
+        SUCCESS = 0,
+        SYSTEM,
+        NOT_IMPL,
+        READ_ERROR,
+        SETUP_ERROR,
+        NO_EVENT,
+        OUT_OF_BOUNDS,
+        BAD_ALLOC,
+        READER_GPU,
+        READER_CPU,
+        NO_SOCKETS,
+        TOO_MANY_SOCKETS,
+        TOO_MANY_DEVICES,
+        INVALID_DOMAIN_NAME,
+        UNKNOWN_ERROR,
+    };
+
+    // error holder
+
     class error
     {
     public:
-        static const error& success()
+        static error success()
         {
-            static error success = { error_code::SUCCESS, "Success" };
-            return success;
-        }
-
-        static const error& unknown()
-        {
-            static error unknown = { error_code::UNKNOWN_ERROR, "Unknown error" };
-            return unknown;
+            return { error_code::SUCCESS };
         }
 
     private:
@@ -28,34 +43,18 @@ namespace nrgprf
         std::string _msg;
 
     public:
-        error();
-        error(error_code code, const char* msg);
-        error(error_code code, const std::string& msg);
-        error(error_code code, std::string&& msg);
+        error(error_code code);
+        error(error_code code, const char* message);
+        error(error_code code, const std::string& message);
+        error(error_code code, std::string&& message);
 
-        error(const error& other);
-        error(error&& other);
-        error& operator=(const error& other);
-        error& operator=(error&& other);
+        error_code code() const { return _code; }
+        const std::string& msg() const;
 
-        error_code code() const
-        {
-            return _code;
-        }
-
-        const std::string& msg() const
-        {
-            return _msg;
-        }
-
-        operator bool() const
-        {
-            return _code != error_code::SUCCESS;
-        }
-
-        friend std::ostream& operator<<(std::ostream& os, const error& e);
+        explicit operator bool() const;
     };
 
     std::ostream& operator<<(std::ostream& os, const error& e);
+    std::ostream& operator<<(std::ostream& os, const error_code& ec);
 
 }

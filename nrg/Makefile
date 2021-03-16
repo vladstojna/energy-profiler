@@ -12,9 +12,7 @@ obj_dir  := obj
 incl_dir := include
 dep_dir  := $(obj_dir)/.deps
 
-incl   := /opt/cuda/include ../lib/papi/include ../util
-libs   := /usr/lib64 ../lib/papi/lib
-libs_L := $(addprefix -L, $(libs))
+incl := /opt/cuda/include ../util
 
 #files
 src  := $(wildcard $(src_dir)/*.cpp)
@@ -26,7 +24,7 @@ tgt  := $(tgt_dir)/libnrg.so
 cc := g++
 DEBUG ?=
 cflags := -Wall -Wextra -Wno-unknown-pragmas -fPIC -g
-ifeq ($(DEBUG),true)
+ifdef DEBUG
 cflags += -O0
 else
 cflags += -O3 -DNDEBUG

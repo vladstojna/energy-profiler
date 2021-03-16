@@ -7,249 +7,380 @@
 #include <cassert>
 #include <charconv>
 #include <cstdio>
+#include <cstring>
+#include <iostream>
 
-#include <papi.h>
+#include <sys/stat.h>
+#include <unistd.h>
+#include <fcntl.h>
 
 using namespace nrgprf;
 
+constexpr static const char EVENT_PKG_PREFIX[] = "package";
+constexpr static const char EVENT_PP0[] = "core";
+constexpr static const char EVENT_PP1[] = "uncore";
+constexpr static const char EVENT_DRAM[] = "dram";
+
+constexpr static const uint8_t EVENT_PKG_IDX = 0;
+constexpr static const uint8_t EVENT_PP0_IDX = 1;
+constexpr static const uint8_t EVENT_PP1_IDX = 2;
+constexpr static const uint8_t EVENT_DRAM_IDX = 3;
+
+// structs
+
+
+struct domain_index
+{
+    rapl_domain domain;
+    int8_t index;
+
+    domain_index(rapl_domain d, int8_t idx) :
+        domain(d), index(idx)
+    {}
+
+    operator bool() const
+    {
+        return domain != rapl_domain::NONE && index >= 0;
+    }
+};
+
+
 // begin helper functions
 
-result<int> find_rapl_component()
+
+std::string system_error_str(const char* prefix)
 {
-    int numcmp = PAPI_num_components();
-    int rapl_cid;
-    int cid;
-    for (cid = 0; cid < numcmp; cid++)
+    char buffer[256];
+    return std::string(prefix)
+        .append(": ")
+        .append(strerror_r(errno, buffer, 256));
+}
+
+
+ssize_t read_buff(int fd, char* buffer, size_t buffsz)
+{
+    ssize_t ret;
+    ret = pread(fd, buffer, buffsz - 1, 0);
+    if (ret > 0)
+        buffer[ret] = '\0';
+    return ret;
+}
+
+
+int read_uint64(int fd, uint64_t* res)
+{
+    constexpr static const size_t MAX_UINT64_SZ = 24;
+    char buffer[MAX_UINT64_SZ];
+    char* end;
+    if (read_buff(fd, buffer, MAX_UINT64_SZ) <= 0)
+        return -1;
+    *res = static_cast<uint64_t>(strtoull(buffer, &end, 0));
+    if (buffer != end && errno != ERANGE)
+        return 0;
+    return -1;
+}
+
+
+result<uint8_t> count_sockets()
+{
+    char filename[128];
+    bool pkg_found[MAX_SOCKETS]{ false };
+    uint8_t ret = 0;
+    for (int i = 0; ; i++)
     {
-        const PAPI_component_info_t* cmpinfo;
-        if ((cmpinfo = PAPI_get_component_info(cid)) == NULL)
-            return error(error_code::SETUP_ERROR, "PAPI_get_component_info failed");
-
-        std::string_view name(cmpinfo->name, PAPI_MAX_STR_LEN);
-        if (name.find("rapl") != name.npos)
+        uint64_t pkg;
+        snprintf(filename, sizeof(filename),
+            "/sys/devices/system/cpu/cpu%d/topology/physical_package_id", i);
+        if (access(filename, F_OK) == -1)
+            break;
+        result<detail::file_descriptor> filed = detail::file_descriptor::create(filename);
+        if (!filed)
+            return std::move(filed.error());
+        if (read_uint64(filed.value().value, &pkg) < 0)
+            return error(error_code::SYSTEM, system_error_str(filename));
+        if (pkg >= MAX_SOCKETS)
+            return error(error_code::TOO_MANY_SOCKETS,
+                "Too many sockets (a maximum of 8 is supported)");
+        if (!pkg_found[pkg])
         {
-            rapl_cid = cid;
-            printf("found rapl component at cid %d\n", rapl_cid);
-            if (cmpinfo->disabled)
-            {
-                constexpr size_t sz = PAPI_MAX_STR_LEN + 32;
-                char msg[sz];
-                snprintf(msg, sz, "RAPL component disabled: %s", cmpinfo->disabled_reason);
-                return error(error_code::SETUP_ERROR, msg);
-            }
-            return rapl_cid;
+            pkg_found[pkg] = true;
+            ret++;
         }
-    }
-    return error(error_code::SETUP_ERROR, "no rapl component found"
-        "configure PAPI with --with-component=\"rapl\"");
+    };
+    if (ret == 0)
+        return error(error_code::NO_SOCKETS, "no sockets found");
+    return ret;
 }
 
-result<double> multiplier_from_units(const std::string_view& units)
+
+domain_index domain_index_from_name(const char* name)
 {
-    if (units.find("nJ") != units.npos)
-        return 1e-9;
-    return error(error_code::SETUP_ERROR, "Unknown unit");
+    if (!strncmp(EVENT_PKG_PREFIX, name, sizeof(EVENT_PKG_PREFIX) - 1))
+        return { rapl_domain::PKG, EVENT_PKG_IDX };
+    if (!strncmp(EVENT_PP0, name, sizeof(EVENT_PP0) - 1))
+        return { rapl_domain::PP0, EVENT_PP0_IDX };
+    if (!strncmp(EVENT_PP1, name, sizeof(EVENT_PP1) - 1))
+        return { rapl_domain::PP1, EVENT_PP1_IDX };
+    if (!strncmp(EVENT_DRAM, name, sizeof(EVENT_DRAM) - 1))
+        return { rapl_domain::DRAM, EVENT_DRAM_IDX };
+    return { rapl_domain::NONE, -1 };
 }
 
-result<rapl_domain> domain_from_event_name(const std::string_view& name, size_t& pos)
+
+result<uint64_t> get_value(const sample& s,
+    const int8_t(&map)[MAX_SOCKETS][MAX_RAPL_DOMAINS], uint8_t skt, uint8_t idx)
 {
-    static constexpr const char PKG_ENERGY[] = "PACKAGE_ENERGY:PACKAGE";
-    static constexpr const char PP0_ENERGY[] = "PP0_ENERGY:PACKAGE";
-    static constexpr const char PP1_ENERGY[] = "PP1_ENERGY:PACKAGE";
-    static constexpr const char DRAM_ENERGY[] = "DRAM_ENERGY:PACKAGE";
-
-    if ((pos = name.find(PKG_ENERGY)) != name.npos)
-        return rapl_domain::PKG;
-    if ((pos = name.find(PP0_ENERGY)) != name.npos)
-        return rapl_domain::PP0;
-    if ((pos = name.find(PP1_ENERGY)) != name.npos)
-        return rapl_domain::PP1;
-    if ((pos = name.find(DRAM_ENERGY)) != name.npos)
-        return rapl_domain::DRAM;
-    return error(error_code::SETUP_ERROR, "event does not represent energy readings");
+    if (map[skt][idx] < 0)
+        return error(error_code::NO_EVENT);
+    return s.get(map[skt][idx]);
 }
 
-uint8_t skt_from_event_name(const std::string_view& name, size_t pos)
+
+result<domain_index> get_domain_idx(const char* base)
 {
-    uint8_t skt = 0;
-    auto [ptr, ec] = std::from_chars(&name.at(pos), &name.back(), skt, 10);
-    assert(ec != std::errc());
-    return skt;
+    // open the */name file, read the name and obtain the domain and index
+
+    char name[64];
+    char filename[256];
+    snprintf(filename, sizeof(filename), "%s/name", base);
+    result<detail::file_descriptor> filed = detail::file_descriptor::create(filename);
+    if (!filed)
+        return std::move(filed.error());
+    if (read_buff(filed.value().value, name, sizeof(name)) < 0)
+        return error(error_code::SYSTEM, system_error_str(filename));
+    domain_index didx = domain_index_from_name(name);
+    if (!didx)
+        return error(error_code::INVALID_DOMAIN_NAME,
+            std::string("invalid domain name - ").append(name));
+    return didx;
 }
 
-bool skt_is_set(uint8_t skt_mask, uint8_t skt)
+
+result<detail::event_data> get_event_data(const char* base)
 {
-    return skt_mask & (1 << skt);
+    // open the */max_energy_range_uj file and save the max value
+    // open the */energy_uj file and save the file descriptor
+
+    char filename[256];
+    snprintf(filename, sizeof(filename), "%s/max_energy_range_uj", base);
+    result<detail::file_descriptor> filed = detail::file_descriptor::create(filename);
+    if (!filed)
+        return std::move(filed.error());
+    uint64_t max_value;
+    if (read_uint64(filed.value().value, &max_value) < 0)
+        return error(error_code::SYSTEM, system_error_str(filename));
+    snprintf(filename, sizeof(filename), "%s/energy_uj", base);
+    filed = detail::file_descriptor::create(filename);
+    if (!filed)
+        return std::move(filed.error());
+    return { std::move(filed.value()), 0, max_value };
 }
+
 
 // end helper functions
 
-reader_rapl::reader_rapl(rapl_domain dmask, uint8_t skt_mask, error& ec) :
-    _evset(PAPI_NULL),
-    _dmask(dmask),
-    _skt_mask(skt_mask),
-    _events()
+
+// file_descriptor
+
+
+result<detail::file_descriptor> detail::file_descriptor::create(const char* file)
 {
-    int retval;
-    // initialize PAPI, if not initialized
-    if (PAPI_is_initialized() == PAPI_NOT_INITED)
+    nrgprf::error err = error::success();
+    file_descriptor fd(file, err);
+    if (err)
+        return err;
+    return fd;
+}
+
+detail::file_descriptor::file_descriptor(const char* file, error& err) :
+    value(open(file, O_RDONLY))
+{
+    if (value == -1)
+        err = { error_code::SYSTEM, system_error_str(file) };
+}
+
+detail::file_descriptor::file_descriptor(const file_descriptor& other) noexcept :
+    value(dup(other.value))
+{
+    if (value == -1)
+        perror("file_descriptor: error duplicating file descriptor");
+}
+
+
+detail::file_descriptor::file_descriptor(file_descriptor&& other) noexcept :
+    value(std::exchange(other.value, -1))
+{}
+
+detail::file_descriptor::~file_descriptor() noexcept
+{
+    if (value >= 0 && close(value) == -1)
+        perror("file_descriptor: error closing file");
+}
+
+detail::file_descriptor& detail::file_descriptor::operator=(file_descriptor&& other) noexcept
+{
+    value = other.value;
+    other.value = -1;
+    return *this;
+}
+
+detail::file_descriptor& detail::file_descriptor::operator=(const file_descriptor& other) noexcept
+{
+    value = dup(other.value);
+    if (value == -1)
+        perror("file_descriptor: error duplicating file descriptor");
+    return *this;
+}
+
+
+// event_data
+
+
+detail::event_data::event_data(const file_descriptor& fd, uint64_t p, uint64_t m) :
+    fd(fd),
+    prev(p),
+    max(m)
+{};
+
+
+detail::event_data::event_data(file_descriptor&& fd, uint64_t p, uint64_t m) :
+    fd(std::move(fd)),
+    prev(p),
+    max(m)
+{};
+
+
+// reader_rapl
+
+
+reader_rapl::reader_rapl(rapl_domain dmask, uint8_t skt_mask, error& ec) :
+    _event_map{ -1 },
+    _active_events()
+{
+    result<uint8_t> num_skts = count_sockets();
+    if (!num_skts)
     {
-        retval = PAPI_library_init(PAPI_VER_CURRENT);
-        if (retval != PAPI_VER_CURRENT)
+        ec = std::move(num_skts.error());
+        return;
+    }
+    std::cout << "found " << num_skts << " sockets\n";
+    for (uint8_t skt = 0; skt < num_skts.value(); skt++)
+    {
+        if (!(skt_mask & (1 << skt)))
+            continue;
+        std::cout << "socket " << +skt << " not masked\n";
+
+        char base[96];
+        int written = snprintf(base, sizeof(base), "/sys/class/powercap/intel-rapl/intel-rapl:%u", skt);
+        error err = add_event(base, dmask, skt);
+        if (err)
         {
-            ec = { error_code::SETUP_ERROR, PAPI_strerror(retval) };
+            ec = std::move(err);
             return;
         }
-    }
-    // find the RAPL component
-    result<int> rapl_cid = find_rapl_component();
-    if (!rapl_cid)
-    {
-        ec = std::move(rapl_cid.error());
-        return;
-    }
-    // create event set
-    retval = PAPI_create_eventset(&_evset);
-    if (retval != PAPI_OK)
-    {
-        ec = { error_code::SETUP_ERROR, PAPI_strerror(retval) };
-        return;
-    }
-    // add the events
-    error err = add_events(rapl_cid.value());
-    if (err)
-    {
-        ec = std::move(err);
-        return;
-    }
-    // start the counters
-    retval = PAPI_start(_evset);
-    if (retval != PAPI_OK)
-    {
-        ec = { error_code::SETUP_ERROR, PAPI_strerror(retval) };
-        return;
+        // already found one domain above
+        for (uint8_t domain_count = 0; domain_count < MAX_RAPL_DOMAINS - 1; domain_count++)
+        {
+            snprintf(base + written, sizeof(base) - written, "/intel-rapl:%u:%u", skt, domain_count);
+            // only consider the domain if the file exists
+            if (access(base, F_OK) != -1)
+            {
+                err = add_event(base, dmask, skt);
+                if (err)
+                {
+                    ec = std::move(err);
+                    return;
+                }
+            }
+        }
     }
 }
 
-reader_rapl::~reader_rapl() noexcept
+reader_rapl::reader_rapl(error& ec) :
+    reader_rapl(rapl_domain::PKG | rapl_domain::PP0 | rapl_domain::PP1 | rapl_domain::DRAM, 0xff, ec)
+{}
+
+error reader_rapl::add_event(const char* base, rapl_domain dmask, uint8_t skt)
 {
-    if (PAPI_is_initialized() == PAPI_NOT_INITED)
-        return;
-    int retval = PAPI_stop(_evset, nullptr);
-    if (retval != PAPI_OK)
-        PAPI_perror(PAPI_strerror(retval));
-    retval = PAPI_cleanup_eventset(_evset);
-    if (retval != PAPI_OK)
-        PAPI_perror(PAPI_strerror(retval));
-    retval = PAPI_destroy_eventset(&_evset);
-    if (retval != PAPI_OK)
-        PAPI_perror(PAPI_strerror(retval));
-    PAPI_shutdown();
+    result<domain_index> didx = get_domain_idx(base);
+    if (!didx)
+        return std::move(didx.error());
+    if ((didx.value().domain & dmask) != rapl_domain::NONE)
+    {
+        result<detail::event_data> event_data = get_event_data(base);
+        if (!event_data)
+            return std::move(event_data.error());
+        std::cout << "added event: " << base << "\n";
+        _event_map[skt][didx.value().index] = _active_events.size();
+        _active_events.push_back(std::move(event_data.value()));
+    }
+    return error::success();
 }
 
-error reader_rapl::add_events(int cid)
+error reader_rapl::read(sample& s)
 {
-    struct event_cpu_tmp
+    for (size_t ix = 0; ix < _active_events.size(); ix++)
     {
-        rapl_domain domain = rapl_domain::NONE;
-        uint8_t pkg, pp0, pp1, dram;
-        double mult;
+        error err = read(s, ix);
+        if (err)
+            return err;
     };
-
-    int code = PAPI_NATIVE_MASK;
-    uint8_t event_idx = 0;
-    event_cpu_tmp events[MAX_SOCKETS];
-
-    for (int cmp_enum = PAPI_enum_cmp_event(&code, PAPI_ENUM_FIRST, cid);
-        cmp_enum == PAPI_OK;
-        cmp_enum = PAPI_enum_cmp_event(&code, PAPI_ENUM_EVENTS, cid))
-    {
-        PAPI_event_info_t evinfo;
-        char event_name[PAPI_MAX_STR_LEN];
-
-        int retval = PAPI_event_code_to_name(code, event_name);
-        if (retval != PAPI_OK)
-            return { error_code::SETUP_ERROR, PAPI_strerror(retval) };
-        retval = PAPI_get_event_info(code, &evinfo);
-        if (retval != PAPI_OK)
-            return { error_code::SETUP_ERROR, PAPI_strerror(retval) };
-
-        size_t pos;
-        result<rapl_domain> domain = domain_from_event_name(event_name, pos);
-        if (!domain)
-        {
-            std::cerr << fileline(__FILE__, __LINE__, domain.error().msg()) << "\n";
-            continue;
-        }
-        result<double> mult = multiplier_from_units(evinfo.units);
-        if (!mult)
-        {
-            std::cerr << fileline(__FILE__, __LINE__, mult.error().msg()) << "\n";
-            continue;
-        }
-        uint8_t skt = skt_from_event_name(event_name, pos);
-        if (skt > MAX_SOCKETS)
-        {
-            std::cerr << fileline(__FILE__, __LINE__, "found more sockets than supported\n");
-            continue;
-        }
-
-        // if domain and socket are to be evaluated in their respective masks
-        if ((_dmask & domain.value()) != rapl_domain::NONE && skt_is_set(_skt_mask, skt))
-        {
-            if (PAPI_add_event(_evset, code) != PAPI_OK)
-            {
-                std::cout << fileline(__FILE__, __LINE__, "event limit reached\n");
-                break;
-            }
-            events[skt].domain |= domain.value();
-            events[skt].mult = mult.value();
-            switch (domain.value())
-            {
-            case rapl_domain::PKG:
-                events[skt].pkg = event_idx;
-                break;
-            case rapl_domain::PP0:
-                events[skt].pp0 = event_idx;
-                break;
-            case rapl_domain::PP1:
-                events[skt].pp1 = event_idx;
-                break;
-            case rapl_domain::DRAM:
-                events[skt].dram = event_idx;
-                break;
-            default:
-                break;
-            }
-            event_idx++;
-            std::cout << fileline(__FILE__, __LINE__, std::string("added event: ").append(event_name)) << "\n";
-        }
-    }
-    if (!event_idx)
-        return { error_code::SETUP_ERROR, "No events added" };
-
-    for (uint8_t i = 0; i < MAX_SOCKETS; i++)
-    {
-        _events[i] = event_cpu(
-            events[i].domain,
-            events[i].pkg,
-            events[i].pp0,
-            events[i].pp1,
-            events[i].dram,
-            events[i].mult);
-    }
     return error::success();
 }
 
-error reader_rapl::read(sample& s) const
+error reader_rapl::read(sample& s, uint8_t idx)
 {
-    int retval = PAPI_read(_evset, s.values());
-    if (retval != PAPI_OK)
-        return error(error_code::READ_ERROR, PAPI_strerror(retval));
+    uint64_t curr;
+    if (read_uint64(_active_events[idx].fd.value, &curr) == -1)
+        return { error_code::SYSTEM, system_error_str("Error reading counters") };
+    if (curr < _active_events[idx].prev)
+    {
+        curr += _active_events[idx].max - _active_events[idx].prev;
+        _active_events[idx].max += _active_events[idx].max;
+    }
+    _active_events[idx].prev = curr;
+    s.set(idx, curr);
     return error::success();
 }
 
-const event_cpu& reader_rapl::event(size_t skt) const
+int8_t reader_rapl::event_idx(rapl_domain domain, uint8_t skt) const
 {
-    return _events[skt];
+    switch (domain)
+    {
+    case rapl_domain::PKG:
+        return _event_map[skt][EVENT_PKG_IDX];
+    case rapl_domain::PP0:
+        return _event_map[skt][EVENT_PP0_IDX];
+    case rapl_domain::PP1:
+        return _event_map[skt][EVENT_PP1_IDX];
+    case rapl_domain::DRAM:
+        return _event_map[skt][EVENT_DRAM_IDX];
+    default:
+        return -1;
+    };
+}
+
+size_t reader_rapl::num_events() const
+{
+    return _active_events.size();
+}
+
+result<uint64_t> reader_rapl::get_pkg_energy(const sample& s, uint8_t skt) const
+{
+    return get_value(s, _event_map, skt, EVENT_PKG_IDX);
+}
+
+result<uint64_t> reader_rapl::get_pp0_energy(const sample& s, uint8_t skt) const
+{
+    return get_value(s, _event_map, skt, EVENT_PP0_IDX);
+}
+
+result<uint64_t> reader_rapl::get_pp1_energy(const sample& s, uint8_t skt) const
+{
+    return get_value(s, _event_map, skt, EVENT_PP1_IDX);
+}
+
+result<uint64_t> reader_rapl::get_dram_energy(const sample& s, uint8_t skt) const
+{
+    return get_value(s, _event_map, skt, EVENT_DRAM_IDX);
 }
