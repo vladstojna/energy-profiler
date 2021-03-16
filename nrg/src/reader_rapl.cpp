@@ -8,6 +8,7 @@
 #include <charconv>
 #include <cstdio>
 #include <cstring>
+#include <iostream>
 
 #include <sys/stat.h>
 #include <unistd.h>
@@ -45,6 +46,15 @@ struct domain_index
 
 
 // begin helper functions
+
+
+std::string system_error_str(const char* prefix)
+{
+    char buffer[256];
+    return std::string(prefix)
+        .append(": ")
+        .append(strerror_r(errno, buffer, 256));
+}
 
 
 ssize_t read_buff(int fd, char* buffer, size_t buffsz)
@@ -87,9 +97,10 @@ result<uint8_t> count_sockets()
         if (!filed)
             return std::move(filed.error());
         if (read_uint64(filed.value().value, &pkg) < 0)
-            return error(error_code::SYSTEM, strerror(errno));
+            return error(error_code::SYSTEM, system_error_str(filename));
         if (pkg >= MAX_SOCKETS)
-            return error(error_code::OUT_OF_BOUNDS, "more sockets found than supported");
+            return error(error_code::TOO_MANY_SOCKETS,
+                "Too many sockets (a maximum of 8 is supported)");
         if (!pkg_found[pkg])
         {
             pkg_found[pkg] = true;
@@ -97,7 +108,7 @@ result<uint8_t> count_sockets()
         }
     };
     if (ret == 0)
-        return error(error_code::SETUP_ERROR, "no sockets found");
+        return error(error_code::NO_SOCKETS, "no sockets found");
     return ret;
 }
 
@@ -120,7 +131,7 @@ result<uint64_t> get_value(const sample& s,
     const int8_t(&map)[MAX_SOCKETS][MAX_RAPL_DOMAINS], uint8_t skt, uint8_t idx)
 {
     if (map[skt][idx] < 0)
-        return error(error_code::NO_EVENT, "no such event");
+        return error(error_code::NO_EVENT);
     return s.get(map[skt][idx]);
 }
 
@@ -136,10 +147,11 @@ result<domain_index> get_domain_idx(const char* base)
     if (!filed)
         return std::move(filed.error());
     if (read_buff(filed.value().value, name, sizeof(name)) < 0)
-        return error(error_code::SYSTEM, strerror(errno));
+        return error(error_code::SYSTEM, system_error_str(filename));
     domain_index didx = domain_index_from_name(name);
     if (!didx)
-        return error(error_code::SETUP_ERROR, "invalid domain name");
+        return error(error_code::INVALID_DOMAIN_NAME,
+            std::string("invalid domain name - ").append(name));
     return didx;
 }
 
@@ -156,7 +168,7 @@ result<detail::event_data> get_event_data(const char* base)
         return std::move(filed.error());
     uint64_t max_value;
     if (read_uint64(filed.value().value, &max_value) < 0)
-        return error(error_code::SYSTEM, strerror(errno));
+        return error(error_code::SYSTEM, system_error_str(filename));
     snprintf(filename, sizeof(filename), "%s/energy_uj", base);
     filed = detail::file_descriptor::create(filename);
     if (!filed)
@@ -184,7 +196,7 @@ detail::file_descriptor::file_descriptor(const char* file, error& err) :
     value(open(file, O_RDONLY))
 {
     if (value == -1)
-        err = { error_code::SYSTEM, strerror(errno) };
+        err = { error_code::SYSTEM, system_error_str(file) };
 }
 
 detail::file_descriptor::file_descriptor(const file_descriptor& other) noexcept :
@@ -320,7 +332,7 @@ error reader_rapl::read(sample& s, uint8_t idx)
 {
     uint64_t curr;
     if (read_uint64(_active_events[idx].fd.value, &curr) == -1)
-        return error(error_code::READ_ERROR, strerror(errno));
+        return { error_code::SYSTEM, system_error_str("Error reading counters") };
     if (curr < _active_events[idx].prev)
     {
         curr += _active_events[idx].max - _active_events[idx].prev;

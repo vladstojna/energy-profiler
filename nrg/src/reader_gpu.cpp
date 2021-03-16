@@ -15,6 +15,14 @@
 using namespace nrgprf;
 
 
+std::string error_str(const char* prefix, nvmlReturn_t result)
+{
+    return std::string(prefix)
+        .append(": ")
+        .append(nvmlErrorString(result));
+}
+
+
 // nvml_handle
 
 
@@ -22,7 +30,7 @@ detail::nvml_handle::nvml_handle(error& ec)
 {
     nvmlReturn_t result = nvmlInit();
     if (result != NVML_SUCCESS)
-        ec = { error_code::SETUP_ERROR, nvmlErrorString(result) };
+        ec = { error_code::READER_GPU, error_str("Failed to initialise NVML", result) };
 }
 
 detail::nvml_handle::~nvml_handle() noexcept
@@ -75,12 +83,12 @@ reader_gpu::reader_gpu(uint8_t dev_mask, size_t offset, error& ec) :
     result = nvmlDeviceGetCount(&device_cnt);
     if (result != NVML_SUCCESS)
     {
-        ec = { error_code::SETUP_ERROR, nvmlErrorString(result) };
+        ec = { error_code::READER_GPU, error_str("Failed to obtain device count", result) };
         return;
     }
     if (device_cnt > MAX_SOCKETS)
     {
-        ec = { error_code::OUT_OF_BOUNDS, "Too many devices (a maximum of 8 is supported)" };
+        ec = { error_code::TOO_MANY_DEVICES, "Too many devices (a maximum of 8 is supported)" };
         return;
     }
     printf("Found %u device%s\n", device_cnt, device_cnt != 1 ? "s" : "");
@@ -95,13 +103,13 @@ reader_gpu::reader_gpu(uint8_t dev_mask, size_t offset, error& ec) :
         result = nvmlDeviceGetHandleByIndex(i, &handle);
         if (result != NVML_SUCCESS)
         {
-            ec = { error_code::SETUP_ERROR, nvmlErrorString(result) };
+            ec = { error_code::READER_GPU, error_str("Failed to get device handle", result) };
             return;
         }
         result = nvmlDeviceGetName(handle, name, NVML_DEVICE_NAME_BUFFER_SIZE);
         if (result != NVML_SUCCESS)
         {
-            ec = { error_code::SETUP_ERROR, nvmlErrorString(result) };
+            ec = { error_code::READER_GPU, error_str("Failed to get device name", result) };
             return;
         }
         printf("Device name: %s\n", name);
@@ -145,7 +153,7 @@ error reader_gpu::read(sample& s, int8_t ev_idx) const
     unsigned int power;
     nvmlReturn_t result = nvmlDeviceGetPowerUsage(_active_handles[ev_idx], &power);
     if (result != NVML_SUCCESS)
-        return { error_code::READ_ERROR, nvmlErrorString(result) };
+        return { error_code::READER_GPU, nvmlErrorString(result) };
     s.set(_offset + ev_idx, power);
     return error::success();
 }
@@ -165,6 +173,6 @@ result<uint64_t> reader_gpu::get_board_power(const sample& s, uint8_t dev) const
 {
     int8_t idx = event_idx(dev);
     if (idx < 0)
-        return error(error_code::NO_EVENT, "no such event");
+        return error(error_code::NO_EVENT);
     return s.get(_offset + idx);
 }
