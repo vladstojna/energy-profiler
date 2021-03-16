@@ -38,11 +38,6 @@ namespace nrgprf
             return { error_code::SUCCESS };
         }
 
-        static error unknown()
-        {
-            return { error_code::UNKNOWN_ERROR };
-        }
-
     private:
         error_code _code;
         std::string _msg;
