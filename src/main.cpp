@@ -8,32 +8,33 @@
 
 #include "cmdargs.h"
 #include "energy_reader.h"
-#include "dbg.h"
+#include "dbg.hpp"
 #include "macros.h"
 #include "profiler.h"
 #include "target.h"
 #include "util.h"
 
-std::unordered_set<tep::line_addr> get_breakpoint_addresses(
+std::unordered_set<uintptr_t> get_breakpoint_addresses(
     const tep::dbg_line_info& dbg_info,
     std::vector<tep::arguments::breakpoint>& breakpoints)
 {
-    std::unordered_set<tep::line_addr> addresses;
+    std::unordered_set<uintptr_t> addresses;
     if (dbg_info.has_dbg_symbols())
     {
         addresses.reserve(breakpoints.size());
         for (const auto& bp : breakpoints)
         {
-            tep::line_addr addr = dbg_info
-                .cu_by_name(bp.cu_name)
-                .line_first_addr(bp.lineno);
-            addresses.emplace(addr);
+            auto cu = dbg_info.find_cu(bp.cu_name);
+            if (!cu)
+                throw std::runtime_error(cu.error().message);
+            auto addr = cu.value()->line_first_addr(bp.lineno);
+            if (!addr)
+                throw std::runtime_error(addr.error().message);
+            addresses.insert(addr.value());
         }
     }
     else
-    {
         tep::procmsg("no debug symbols found; ignoring breakpoints\n");
-    }
     return addresses;
 }
 
@@ -63,11 +64,17 @@ int main(int argc, char* argv[])
                 throw std::runtime_error("unable to open " +
                     args.outfile + " for writing");
 
-            tep::dbg_line_info dbg_info(argv[idx]);
+            tep::dbg_expected<tep::dbg_line_info> dbg_info = tep::dbg_line_info::create(argv[idx]);
+            if (!dbg_info)
+            {
+                std::cerr << dbg_info.error() << std::endl;
+                return 1;
+            }
+            std::cout << dbg_info.value() << std::endl;
             tep::profiler profiler(child_pid,
                 outfile,
                 std::chrono::milliseconds(args.interval),
-                get_breakpoint_addresses(dbg_info, args.breakpoints),
+                get_breakpoint_addresses(dbg_info.value(), args.breakpoints),
                 tep::make_energy_reader(
                     tep::energy::target::smp,
                     tep::energy::engine::papi));
