@@ -13,6 +13,20 @@
 
 using namespace tep;
 
+
+// begin helper functions
+
+
+std::string get_system_error()
+{
+    char buffer[256];
+    return { strerror_r(errno, buffer, 256) };
+}
+
+
+// end helper functions
+
+
 // begin dbg_error
 
 dbg_error::dbg_error(dbg_error_code c, const char* msg) :
@@ -111,14 +125,14 @@ dbg_line_info::dbg_line_info(const char* filename, dbg_error& err) :
     FILE* img = fopen(filename, "r");
     if (img == NULL)
     {
-        err = { dbg_error_code::SYSTEM_ERROR, strerror(errno) };
+        err = { dbg_error_code::SYSTEM_ERROR, get_system_error() };
         return;
     }
     dbg_error gli_error = get_line_info(fileno(img));
     if (gli_error)
         err = std::move(gli_error);
     if (fclose(img) != 0)
-        err = { dbg_error_code::SYSTEM_ERROR, strerror(errno) };
+        err = { dbg_error_code::SYSTEM_ERROR, get_system_error() };
 }
 
 dbg_expected<const compilation_unit*> dbg_line_info::find_cu(const std::string& name) const

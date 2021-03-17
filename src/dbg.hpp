@@ -29,7 +29,7 @@ namespace tep
     {
         static dbg_error success()
         {
-            return dbg_error(dbg_error_code::SUCCESS, "No error");
+            return { dbg_error_code::SUCCESS, "No error" };
         }
 
         dbg_error_code code;
