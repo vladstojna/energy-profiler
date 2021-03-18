@@ -1,10 +1,44 @@
 // util.cpp
+
 #include "util.h"
 
-#include <stdarg.h>
-#include <stdio.h>
+#include <cstdarg>
+#include <cstdio>
+#include <mutex>
 #include <unistd.h>
 #include <sys/user.h>
+
+
+#define RED "\x1B[31m"
+#define GRN "\x1B[32m"
+#define YEL "\x1B[33m"
+#define BLU "\x1B[34m"
+#define CYN "\x1B[36m"
+#define RST "\x1B[0m"
+
+
+constexpr static const char* levels[] =
+{
+    CYN "debug" RST,
+    BLU "info" RST,
+    GRN "success" RST,
+    YEL "warn" RST,
+    RED "error" RST
+};
+
+
+void tep::log__(const char* file, int line, tep::log_lvl lvl, const char* fmt, ...)
+{
+    static std::mutex log_mutex;
+    std::scoped_lock lock(log_mutex);
+    va_list args;
+    FILE* stream = lvl >= tep::log_lvl::warning ? stderr : stdout;
+    va_start(args, fmt);
+    fprintf(stream, "%s:%d %s: ", file, line, levels[static_cast<unsigned>(lvl)]);
+    vfprintf(stream, fmt, args);
+    fputc('\n', stream);
+    va_end(args);
+}
 
 void tep::procmsg(const char* format, ...)
 {
@@ -28,7 +62,10 @@ uintptr_t tep::get_entrypoint_addr(pid_t pid)
     uintptr_t ptr_start;
     int rv = fscanf(maps, "%" SCNxPTR, &ptr_start);
     if (rv == 0 || rv == EOF)
+    {
+        fclose(maps);
         return 0;
+    }
 
     if (fclose(maps) != 0)
         return 0;
