@@ -11,5 +11,5 @@ namespace nrgprf
 
     template<>
     template<>
-    size_t nrgprf::task::add();
+    execution& nrgprf::task::add();
 }

@@ -6,9 +6,7 @@ using namespace nrgprf;
 
 template<>
 template<>
-size_t task::add()
+execution& task::add()
 {
-    size_t sz = _values.size();
-    _values.emplace_back(sz);
-    return sz;
+    return _values.emplace_back(_values.size());
 }

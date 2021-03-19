@@ -23,7 +23,7 @@ namespace nrgprf
         size_t size() const;
 
         template<typename... Args>
-        size_t add(Args&&... args);
+        T& add(Args&&... args);
 
         const T& get(size_t idx) const;
         const T& first() const;
@@ -41,8 +41,7 @@ namespace nrgprf
 template<typename T>
 nrgprf::holder<T>::holder(uint32_t id) :
     _id(id)
-{
-}
+{}
 
 template<typename T>
 void nrgprf::holder<T>::reserve(uint32_t count)
@@ -64,10 +63,9 @@ size_t nrgprf::holder<T>::size() const
 
 template<typename T>
 template<typename... Args>
-size_t nrgprf::holder<T>::add(Args&&... args)
+T& nrgprf::holder<T>::add(Args&&... args)
 {
-    _values.emplace_back(std::forward<Args>(args)...);
-    return _values.size() - 1;
+    return _values.emplace_back(std::forward<Args>(args)...);
 }
 
 template<typename T>
