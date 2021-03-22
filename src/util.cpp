@@ -34,7 +34,7 @@ void tep::log__(const char* file, int line, tep::log_lvl lvl, const char* fmt, .
     va_list args;
     FILE* stream = lvl >= tep::log_lvl::warning ? stderr : stdout;
     va_start(args, fmt);
-    fprintf(stream, "%s:%d %s: ", file, line, levels[static_cast<unsigned>(lvl)]);
+    fprintf(stream, "%s:%-3d %s: ", file, line, levels[static_cast<unsigned>(lvl)]);
     vfprintf(stream, fmt, args);
     fputc('\n', stream);
     va_end(args);

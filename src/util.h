@@ -20,6 +20,7 @@ namespace tep
     {
         debug,
         info,
+        success,
         warning,
         error
     };
