@@ -14,33 +14,34 @@
 
 int main(int argc, char* argv[])
 {
-    tep::arguments args;
-    int idx = tep::parse_arguments(argc, argv, args);
-    if (idx < 0)
+    cmmn::expected<tep::arguments, tep::arg_error> args = tep::parse_arguments(argc, argv);
+    if (!args)
         return 1;
-    std::cout << args << "\n";
 
-    int error;
-    pid_t child_pid = tep::ptrace_wrapper::instance.fork(error, &tep::run_target, &argv[idx]);
+    int idx = args.value().target_index();
+
+    tep::dbg_expected<tep::dbg_line_info> dbg_info = tep::dbg_line_info::create(argv[idx]);
+    if (!dbg_info)
+    {
+        std::cerr << dbg_info.error() << std::endl;
+        return 1;
+    }
+
+    tep::cfg_result config = tep::load_config(args.value().config());
+    if (!config)
+    {
+        std::cerr << config.error() << std::endl;
+        return 1;
+    }
+
+    std::cout << args.value() << "\n";
+    std::cout << dbg_info.value() << "\n";
+    std::cout << config.value() << std::endl;
+
+    int errnum;
+    pid_t child_pid = tep::ptrace_wrapper::instance.fork(errnum, &tep::run_target, &argv[idx]);
     if (child_pid > 0)
     {
-        tep::dbg_expected<tep::dbg_line_info> dbg_info = tep::dbg_line_info::create(argv[idx]);
-        if (!dbg_info)
-        {
-            std::cerr << dbg_info.error() << std::endl;
-            return 1;
-        }
-
-        tep::cfg_result config = tep::load_config("../random/random.xml");
-        if (!config)
-        {
-            std::cerr << config.error() << std::endl;
-            return 1;
-        }
-
-        std::cout << dbg_info.value() << std::endl;
-        std::cout << config.value() << std::endl;
-
         tep::profiler profiler(child_pid, std::move(dbg_info.value()), std::move(config.value()));
         tep::tracer_error error = profiler.run();
         if (error)
@@ -52,7 +53,7 @@ int main(int argc, char* argv[])
     }
     else if (child_pid == -1)
     {
-        tep::log(tep::log_lvl::error, "fork(): %s", strerror(error));
+        tep::log(tep::log_lvl::error, "fork(): %s", strerror(errnum));
     }
     return 1;
 }

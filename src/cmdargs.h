@@ -1,44 +1,40 @@
 // cmdargs.h
+
 #pragma once
 
-#include <vector>
 #include <string>
+#include <fstream>
 #include <iosfwd>
+
+#include <expected.hpp>
 
 namespace tep
 {
 
-struct arguments
-{
-    struct breakpoint
+    struct arg_error
+    {};
+
+    class arguments
     {
-        std::string cu_name;
-        uint32_t lineno;
+    private:
+        int _target_idx;
+        std::string _outfile;
+        std::string _config;
 
-        breakpoint(const std::string& nm, uint32_t ln);
-        breakpoint(const char* nm, uint32_t ln);
-        breakpoint(std::string&& nm, uint32_t ln);
-        breakpoint(breakpoint&& other);
+    public:
+        arguments(int idx, const std::string& out, const std::string& cfg);
+        arguments(int idx, std::string&& out, const std::string& cfg);
+        arguments(int idx, const std::string& out, std::string&& cfg);
+        arguments(int idx, std::string&& out, std::string&& cfg);
 
-        breakpoint(const breakpoint& other) = delete;
-        breakpoint& operator=(const breakpoint& other) = delete;
+        int target_index() const { return _target_idx; }
+        const std::string& outfile() const { return _outfile; }
+        const std::string& config() const { return _config; }
     };
 
-    uint32_t interval;
-    std::string outfile;
-    std::string target;
-    std::vector<breakpoint> breakpoints;
-    bool quiet;
+    std::ostream& operator<<(std::ostream& os, const arg_error& e);
+    std::ostream& operator<<(std::ostream& os, const arguments& a);
 
-    arguments();
-    arguments(arguments&& other);
-
-    arguments(const arguments& other) = delete;
-    arguments& operator=(const arguments& other) = delete;
-};
-
-std::ostream& operator<<(std::ostream& os, const arguments& args);
-
-int parse_arguments(int argc, char* const argv[], arguments& args);
+    cmmn::expected<arguments, arg_error> parse_arguments(int argc, char* const argv[]);
 
 }
