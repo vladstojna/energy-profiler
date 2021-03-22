@@ -53,7 +53,7 @@ trap_data::trap_data(const config_data::section& sec, long word) :
 
 
 size_t tracer::DEFAULT_EXECS = 16;
-size_t tracer::DEFAULT_SAMPLES = 128;
+size_t tracer::DEFAULT_SAMPLES = 256;
 std::chrono::milliseconds tracer::DEFAULT_INTERVAL(30000);
 std::mutex tracer::TRAP_BARRIER;
 
@@ -125,9 +125,16 @@ tracer_expected<gathered_results> tracer::results()
         tracer_expected<gathered_results> results = child->results();
         if (!results)
             return std::move(results.error());
-        // TODO merge results
+        for (auto& [addr, entry] : results.value())
+        {
+            std::vector<fallible_execution> entries = _results[addr];
+            entries.insert(
+                entries.end(),
+                std::make_move_iterator(entry.begin()),
+                std::make_move_iterator(entry.end()));
+        }
     }
-    return _results;
+    return std::move(_results);
 }
 
 
@@ -353,13 +360,20 @@ tracer_error tracer::trace(const std::unordered_map<uintptr_t, trap_data>* traps
                     _section_finished = true;
                 }
                 _sampler_cnd.notify_one();
-                nrgprf::error error = _sampler_ftr.get();
+                nrgprf::error sampler_error = _sampler_ftr.get();
                 // if sampling thread generated an error, register execution as a failed one
                 // in the gathered results collection
-                if (error)
-                    _results[bp_addr].emplace_back(error);
+                if (sampler_error)
+                {
+                    _results[bp_addr].emplace_back(sampler_error);
+                    log(log_lvl::error, "[%d] sampling thread exited with error", tid);
+                }
                 else
+                {
                     _results[bp_addr].emplace_back(_exec);
+                    log(log_lvl::success, "[%d] sampling thread exited successfully with %zu samples",
+                        tid, _exec.size());
+                }
 
                 // now proceed with the same behaviour as with any other breakpoint:
                 // go back 1 instruction, replace the trap with the correct byte,
@@ -478,10 +492,9 @@ nrgprf::error tracer::evaluate_full_gpu(pid_t tid,
     _sampler_cnd.wait(lock);
     log(log_lvl::info, "[%d] %s: section started", tid, __func__);
 
-    nrgprf::sample& sample = exec.add(nrgprf::now());
-    nrgprf::error error = _rdr_gpu.read(sample);
     do
     {
+        nrgprf::error error = _rdr_gpu.read(exec.add(nrgprf::now()));
         if (error)
         {
             // wait until section or target finishes
@@ -493,8 +506,7 @@ nrgprf::error tracer::evaluate_full_gpu(pid_t tid,
             _sampler_cnd.wait_for(lock, interval);
     } while (!_section_finished);
 
-    sample = exec.add(nrgprf::now());
-    error = _rdr_gpu.read(sample);
+    nrgprf::error error = _rdr_gpu.read(exec.add(nrgprf::now()));
     if (error)
         handle_error(tid, __func__, error);
     return error;
@@ -514,10 +526,9 @@ nrgprf::error tracer::evaluate_full_cpu(pid_t tid,
     _sampler_cnd.wait(lock);
     log(log_lvl::info, "[%d] %s: section started", tid, __func__);
 
-    nrgprf::sample& sample = exec.add(nrgprf::now());
-    nrgprf::error error = _rdr_cpu.read(sample);
     do
     {
+        nrgprf::error error = _rdr_cpu.read(exec.add(nrgprf::now()));
         if (error)
         {
             // wait until section or target finishes
@@ -525,12 +536,10 @@ nrgprf::error tracer::evaluate_full_cpu(pid_t tid,
             _sampler_cnd.wait(lock);
             return error;
         }
-        else
-            _sampler_cnd.wait_for(lock, interval);
+        _sampler_cnd.wait_for(lock, interval);
     } while (!_section_finished);
 
-    sample = exec.add(nrgprf::now());
-    error = _rdr_cpu.read(sample);
+    nrgprf::error error = _rdr_cpu.read(exec.add(nrgprf::now()));
     if (error)
         handle_error(tid, __func__, error);
     return error;

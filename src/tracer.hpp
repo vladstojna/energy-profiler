@@ -19,9 +19,9 @@ namespace tep
     template<typename R>
     using tracer_expected = cmmn::expected<R, tracer_error>;
 
-    using gathered_results = std::unordered_map<
-        uintptr_t,
-        std::vector<cmmn::expected<nrgprf::execution, nrgprf::error>>>;
+    using fallible_execution = cmmn::expected<nrgprf::execution, nrgprf::error>;
+
+    using gathered_results = std::unordered_map<uintptr_t, std::vector<fallible_execution>>;
 
 
     struct trap_data
