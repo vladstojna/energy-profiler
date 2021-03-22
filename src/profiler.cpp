@@ -1,26 +1,17 @@
 // profiler.cpp
 
-#include "profiler.h"
-#include "macros.h"
-#include "util.h"
 #include "error.hpp"
+#include "profiler.h"
 #include "ptrace_wrapper.hpp"
-#include "tracer_collection.hpp"
+#include "util.h"
 
 #include <cassert>
-#include <cinttypes>
-#include <cstddef>
-#include <cstdint>
-#include <cstdio>
-#include <iostream>
 
-#include <errno.h>
-#include <string.h>
 #include <unistd.h>
+#include <sys/types.h>
 #include <sys/ptrace.h>
 #include <sys/wait.h>
 #include <sys/user.h>
-#include <sys/syscall.h>
 
 
 using namespace tep;
