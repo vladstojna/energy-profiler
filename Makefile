@@ -18,7 +18,7 @@ extlibs_incl := $(addprefix $(lib_dir)/, pcm papi/include rocm_smi/include pugix
 extlibs_dirs := $(addprefix $(lib_dir)/, pcm papi/lib rocm_smi/lib pugixml/lib)
 
 export PAPI_ROCMSMI_ROOT=$(shell pwd)/$(lib_dir)/rocm_smi
-export LD_RUN_PATH=$(lib_dir)/pcm:$(lib_dir)/papi/lib:$(lib_dir)/rocm_smi/lib
+export LD_RUN_PATH=$(lib_dir)/pcm:$(lib_dir)/papi/lib:$(lib_dir)/rocm_smi/lib:nrg/lib
 
 # versions
 pugixml_ver := 1.11.4
@@ -41,12 +41,12 @@ else
 cflags += -O3 -DNDEBUG
 endif
 cflags += $(addprefix -I, $(extlibs_incl))
-cflags += $(addprefix -I, util)
+cflags += $(addprefix -I, util nrg/include)
 cflags += -std=$(cppstd)
 
 # linked flags
-ldflags := -pthread -lbfd -ldwarf -lpcm -lpapi -lrocm_smi64 -lpugixml
-ldflags += $(addprefix -L, $(extlibs_dirs))
+ldflags := -pthread -lbfd -ldwarf -lpapi -lpcm -lpugixml -lnrg -lnvidia-ml
+ldflags += $(addprefix -L, $(extlibs_dirs) nrg/lib)
 
 # cmake
 CMAKE := cmake
