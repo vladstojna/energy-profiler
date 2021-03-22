@@ -1,7 +1,9 @@
 // error.cpp
 
 #include "error.hpp"
+#include "util.h"
 
+#include <cstring>
 #include <iostream>
 
 
@@ -69,4 +71,11 @@ std::ostream& tep::operator<<(std::ostream& os, const tracer_error& e)
 }
 
 
-
+tracer_error tep::get_syserror__(const char* file, int line, int errnum,
+    tracer_errcode code, pid_t tid, const char* comment)
+{
+    char error_msg[256];
+    char* msg = strerror_r(errnum, error_msg, sizeof(error_msg));
+    log__(file, line, log_lvl::error, "[%d] %s: %s", tid, comment, msg);
+    return { code, msg };
+}
