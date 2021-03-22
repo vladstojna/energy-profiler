@@ -64,11 +64,21 @@ std::mutex tracer::TRAP_BARRIER;
 tracer::tracer(const std::unordered_map<uintptr_t, trap_data>& traps,
     pid_t tracee_pid, pid_t tracee_tid,
     const nrgprf::reader_rapl& rdr_cpu, const nrgprf::reader_gpu& rdr_gpu, std::launch policy) :
+    tracer(traps, tracee_pid, tracee_tid, rdr_cpu, rdr_gpu, policy, nullptr)
+{}
+
+tracer::tracer(const std::unordered_map<uintptr_t, trap_data>& traps,
+    pid_t tracee_pid, pid_t tracee_tid,
+    const nrgprf::reader_rapl& rdr_cpu, const nrgprf::reader_gpu& rdr_gpu, std::launch policy,
+    const tracer* tracer) :
     _tracer_ftr(),
     _sampler_ftr(),
     _sampler_mtx(),
     _sampler_cnd(),
     _section_finished(false),
+    _children_mx(),
+    _children(),
+    _parent(tracer),
     _rdr_cpu(rdr_cpu),
     _rdr_gpu(rdr_gpu),
     _exec(0),
@@ -126,21 +136,34 @@ void tracer::add_child(const std::unordered_map<uintptr_t, trap_data>& traps, pi
     std::scoped_lock lock(_children_mx);
     _children.push_back(
         std::make_unique<tracer>(traps, _tracee_tgid, new_child,
-            _rdr_cpu, _rdr_gpu, std::launch::async));
+            _rdr_cpu, _rdr_gpu, std::launch::async, this));
     log(log_lvl::info, "[%d] new child created with tid=%d", gettid(), new_child);
 }
 
 
-tracer_error tracer::stop_children() const
+tracer_error tracer::stop_tracees(const tracer& excl) const
 {
     std::scoped_lock lock(_children_mx);
+    int tid = gettid();
+    if (_parent != nullptr && *_parent != excl)
+    {
+        tracer_error error = _parent->stop_tracees(*this);
+        if (error)
+            return error;
+        if (tgkill(_tracee_tgid, _parent->tracee(), SIGSTOP) != 0)
+            return get_syserror(errno, tracer_errcode::SYSTEM_ERROR, tid, "tgkill");
+        log(log_lvl::info, "[%d] stopped parent %d", tid, _parent->tracee());
+    }
     for (const auto& child : _children)
     {
-        tracer_error err = child->stop_children();
+        if (*child == excl)
+            continue;
+        tracer_error err = child->stop_tracees(*this);
         if (err)
             return err;
         if (tgkill(_tracee_tgid, child->tracee(), SIGSTOP) != 0)
-            return get_syserror(errno, tracer_errcode::SYSTEM_ERROR, gettid(), "tgkill");
+            return get_syserror(errno, tracer_errcode::SYSTEM_ERROR, tid, "tgkill");
+        log(log_lvl::info, "[%d] stopped child %d", tid, child->tracee());
     }
     return tracer_error::success();
 }
@@ -230,7 +253,7 @@ tracer_error tracer::trace(const std::unordered_map<uintptr_t, trap_data>* traps
             user_regs_struct regs;
             log(log_lvl::debug, "[%d] entered global tracer barrier", tid);
 
-            tracer_error error = stop_children();
+            tracer_error error = stop_tracees(*this);
             if (error)
                 return error;
 

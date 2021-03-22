@@ -50,6 +50,7 @@ namespace tep
 
         mutable std::mutex _children_mx;
         std::vector<std::unique_ptr<tracer>> _children;
+        const tracer* _parent;
 
         nrgprf::reader_rapl _rdr_cpu;
         nrgprf::reader_gpu _rdr_gpu;
@@ -66,6 +67,12 @@ namespace tep
             const nrgprf::reader_gpu& rdr_gpu,
             std::launch policy);
 
+        tracer(const std::unordered_map<uintptr_t, trap_data>& traps,
+            pid_t tracee_pid, pid_t tracee_tid,
+            const nrgprf::reader_rapl& rdr_cpu,
+            const nrgprf::reader_gpu& rdr_gpu,
+            std::launch policy, const tracer* parent);
+
         ~tracer();
 
         pid_t tracee() const;
@@ -73,12 +80,12 @@ namespace tep
 
         tracer_expected<gathered_results> results();
 
+    private:
         void add_child(const std::unordered_map<uintptr_t, trap_data>& traps, pid_t new_child);
-        tracer_error stop_children() const;
+        tracer_error stop_tracees(const tracer& excl) const;
 
         tracer_error trace(const std::unordered_map<uintptr_t, trap_data>* traps);
 
-    private:
         nrgprf::execution prepare_new_exec(const config_data::section& section) const;
         void launch_async_sampling(const config_data::section& sec);
 
