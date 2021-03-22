@@ -5,7 +5,7 @@
 #include <iostream>
 #include <unordered_set>
 
-#include "cmdargs.h"
+#include "cmdargs.hpp"
 #include "dbg.hpp"
 #include "profiler.h"
 #include "ptrace_wrapper.hpp"
