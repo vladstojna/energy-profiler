@@ -190,5 +190,6 @@ namespace tep
     // functions
 
     cfg_result load_config(const char* file);
+    cfg_result load_config(const std::string& file);
 
 }

@@ -331,6 +331,11 @@ cfg_expected<config_data> tep::load_config(const char* file)
     return cfgdata;
 }
 
+cfg_result tep::load_config(const std::string& file)
+{
+    return load_config(file.c_str());
+}
+
 // operator overloads
 
 std::ostream& tep::operator<<(std::ostream& os, const cfg_error& res)
