@@ -1,71 +1,31 @@
 // profiler.h
+
 #pragma once
 
-#include <cstdint>
-
-#include <condition_variable>
-#include <mutex>
-#include <thread>
-#include <unordered_set>
 #include <unordered_map>
+
+#include "config.hpp"
+#include "dbg.hpp"
+#include "tracer.hpp"
 
 namespace tep
 {
 
-class energy_reader;
+    class profiler
+    {
+    private:
+        pid_t _child;
+        dbg_line_info _dli;
+        config_data _cd;
+        std::unordered_map<uintptr_t, trap_data> _traps;
 
-class profiler_exception : public std::runtime_error
-{
-public:
-    profiler_exception() :
-        std::runtime_error("profiler finished unsuccessfully") {}
-    profiler_exception(const std::string& what) :
-        std::runtime_error(what) {}
-    profiler_exception(const char* what) :
-        std::runtime_error(what) {}
-};
+    public:
+        profiler(pid_t child, const dbg_line_info& dli, const config_data& cd);
+        profiler(pid_t child, const dbg_line_info& dli, config_data&& cd);
+        profiler(pid_t child, dbg_line_info&& dli, const config_data& cd);
+        profiler(pid_t child, dbg_line_info&& dli, config_data&& cd);
 
-class profiler
-{
-private:
-    std::thread _sampler_thread;
-    mutable std::mutex _sampler_mutex;
-    mutable std::condition_variable _sampler_cond;
-    bool _task_finished;
-    bool _target_finished;
-
-    const pid_t _child_pid;
-    const std::unordered_set<uintptr_t> _bp_addresses;
-
-    uint64_t _trap_count;
-    std::unordered_map<pid_t, bool> _children;
-    bool _unsuccess;
-
-    std::unique_ptr<tep::energy_reader> _energy_reader;
-
-public:
-    profiler(pid_t child_pid,
-        std::ostream& outstream,
-        const std::chrono::milliseconds& interval,
-        const std::unordered_set<uintptr_t>& addresses,
-        std::unique_ptr<tep::energy_reader>&& energy_reader);
-
-    ~profiler();
-
-    // disable copying
-    profiler(const profiler& other) = delete;
-    profiler& operator=(const profiler& other) = delete;
-
-    void run();
-
-private:
-    void sampler_routine(std::ostream* os,
-        tep::energy_reader* energy_reader,
-        const std::chrono::milliseconds& interval);
-
-    void notify_task();
-    void notify_target_finished();
-    bool signal_other_threads(pid_t tgid, pid_t caller_tid, int signal);
-};
+        tracer_error run();
+    };
 
 }
