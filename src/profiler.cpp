@@ -57,6 +57,19 @@ tracer_error handle_reader_error(pid_t pid, const nrgprf::error& error)
 
 // end helper functions
 
+
+section_results::section_results(config_data::section&& sec, std::vector<fallible_execution>&& execs) :
+    section(std::move(sec)),
+    executions(std::move(execs))
+{}
+
+profiling_results::profiling_results(nrgprf::reader_rapl&& rr, nrgprf::reader_gpu&& rg) :
+    rdr_cpu(std::move(rr)),
+    rdr_gpu(std::move(rg)),
+    results()
+{}
+
+
 profiler::profiler(pid_t child, const dbg_line_info& dli, const config_data& cd) :
     _child(child),
     _dli(dli),
@@ -85,7 +98,7 @@ profiler::profiler(pid_t child, dbg_line_info&& dli, config_data&& cd) :
     _traps()
 {}
 
-tracer_error profiler::run()
+tracer_expected<profiling_results> profiler::run()
 {
     int wait_status;
     int tid = gettid();
@@ -100,8 +113,8 @@ tracer_error profiler::run()
     if (!WIFSTOPPED(wait_status))
     {
         log(log_lvl::error, "[%d] ptrace(PTRACE_TRACEME, ...) called but target was not stopped", tid);
-        return { tracer_errcode::PTRACE_ERROR,
-            "Tracee not stopped despite being attached with ptrace" };
+        return tracer_error(tracer_errcode::PTRACE_ERROR,
+            "Tracee not stopped despite being attached with ptrace");
     }
 
     int errnum;
@@ -125,7 +138,7 @@ tracer_error profiler::run()
     if (!_dli.has_dbg_symbols())
     {
         log(log_lvl::error, "[%d] no debugging information found", tid);
-        return { tracer_errcode::NO_SYMBOL, "No debugging information found" };
+        return tracer_error(tracer_errcode::NO_SYMBOL, "No debugging information found");
     }
 
     for (const auto& sec : _cd.sections)
@@ -138,27 +151,27 @@ tracer_error profiler::run()
         {
             log(log_lvl::error, "[%d] start compilation unit: %s",
                 tid, start_cu.error().message.c_str());
-            return { tracer_errcode::NO_SYMBOL, std::move(start_cu.error().message) };
+            return tracer_error(tracer_errcode::NO_SYMBOL, std::move(start_cu.error().message));
         }
         auto end_cu = _dli.find_cu(end.compilation_unit);
         if (!end_cu)
         {
             log(log_lvl::error, "[%d] end compilation unit: %s",
                 tid, end_cu.error().message.c_str());
-            return { tracer_errcode::NO_SYMBOL, std::move(end_cu.error().message) };
+            return tracer_error(tracer_errcode::NO_SYMBOL, std::move(end_cu.error().message));
         }
 
         auto start_offset = start_cu.value()->line_first_addr(start.line);
         if (!start_offset)
         {
             log(log_lvl::error, "[%d] start compilation unit: invalid line %" PRIu32, tid, start.line);
-            return { tracer_errcode::NO_SYMBOL, std::move(start_offset.error().message) };
+            return tracer_error(tracer_errcode::NO_SYMBOL, std::move(start_offset.error().message));
         }
         auto end_offset = end_cu.value()->line_first_addr(end.line);
         if (!end_offset)
         {
             log(log_lvl::error, "[%d] start compilation unit: invalid line %" PRIu32, tid, end.line);
-            return { tracer_errcode::NO_SYMBOL, std::move(end_offset.error().message) };
+            return tracer_error(tracer_errcode::NO_SYMBOL, std::move(end_offset.error().message));
         }
 
         log(log_lvl::debug, "[%d] start offset 0x%" PRIxPTR, tid, start_offset.value());
@@ -195,10 +208,16 @@ tracer_error profiler::run()
     log(log_lvl::success, "[%d] created GPU reader", tid);
 
     // first tracer has the same tracee tgidand tid, since there is only one tracee at this point
-    tracer trc{ _traps, _child, _child, rdr_cpu, rdr_gpu, std::launch::deferred };
-
+    tracer trc(_traps, _child, _child, rdr_cpu, rdr_gpu, std::launch::deferred);
     tracer_expected<gathered_results> results = trc.results();
     if (!results)
         return std::move(results.error());
-    return tracer_error::success();
+
+    profiling_results retval(std::move(rdr_cpu), std::move(rdr_gpu));
+    for (auto& [addr, execs] : results.value())
+    {
+        config_data::section& sec = _traps.at(addr).section;
+        retval.results.emplace_back(std::move(sec), std::move(execs));
+    }
+    return retval;
 }

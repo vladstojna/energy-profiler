@@ -14,20 +14,21 @@
 
 int main(int argc, char* argv[])
 {
-    cmmn::expected<tep::arguments, tep::arg_error> args = tep::parse_arguments(argc, argv);
+    using namespace tep;
+    cmmn::expected<arguments, arg_error> args = parse_arguments(argc, argv);
     if (!args)
         return 1;
 
     int idx = args.value().target_index();
 
-    tep::dbg_expected<tep::dbg_line_info> dbg_info = tep::dbg_line_info::create(argv[idx]);
+    dbg_expected<dbg_line_info> dbg_info = dbg_line_info::create(argv[idx]);
     if (!dbg_info)
     {
         std::cerr << dbg_info.error() << std::endl;
         return 1;
     }
 
-    tep::cfg_result config = tep::load_config(args.value().config());
+    cfg_result config = load_config(args.value().config());
     if (!config)
     {
         std::cerr << config.error() << std::endl;
@@ -39,21 +40,21 @@ int main(int argc, char* argv[])
     std::cout << config.value() << std::endl;
 
     int errnum;
-    pid_t child_pid = tep::ptrace_wrapper::instance.fork(errnum, &tep::run_target, &argv[idx]);
+    pid_t child_pid = ptrace_wrapper::instance.fork(errnum, &run_target, &argv[idx]);
     if (child_pid > 0)
     {
-        tep::profiler profiler(child_pid, std::move(dbg_info.value()), std::move(config.value()));
-        tep::tracer_error error = profiler.run();
-        if (error)
+        profiler profiler(child_pid, std::move(dbg_info.value()), std::move(config.value()));
+        tracer_expected<profiling_results> results = profiler.run();
+        if (!results)
         {
-            std::cerr << error << std::endl;
+            std::cerr << results.error() << std::endl;
             return 1;
         }
         return 0;
     }
     else if (child_pid == -1)
     {
-        tep::log(tep::log_lvl::error, "fork(): %s", strerror(errnum));
+        log(log_lvl::error, "fork(): %s", strerror(errnum));
     }
     return 1;
 }

@@ -3,6 +3,7 @@
 #pragma once
 
 #include <unordered_map>
+#include <vector>
 
 #include "config.hpp"
 #include "dbg.hpp"
@@ -10,6 +11,22 @@
 
 namespace tep
 {
+    struct section_results
+    {
+        config_data::section section;
+        std::vector<fallible_execution> executions;
+
+        section_results(config_data::section&& sec, std::vector<fallible_execution>&& execs);
+    };
+
+    struct profiling_results
+    {
+        nrgprf::reader_rapl rdr_cpu;
+        nrgprf::reader_gpu rdr_gpu;
+        std::vector<section_results> results;
+
+        profiling_results(nrgprf::reader_rapl&& rr, nrgprf::reader_gpu&& rg);
+    };
 
     class profiler
     {
@@ -25,7 +42,7 @@ namespace tep
         profiler(pid_t child, dbg_line_info&& dli, const config_data& cd);
         profiler(pid_t child, dbg_line_info&& dli, config_data&& cd);
 
-        tracer_error run();
+        tracer_expected<profiling_results> run();
     };
 
 }
