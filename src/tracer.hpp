@@ -83,6 +83,7 @@ namespace tep
     private:
         void add_child(const std::unordered_map<uintptr_t, trap_data>& traps, pid_t new_child);
         tracer_error stop_tracees(const tracer& excl) const;
+        tracer_error stop_self() const;
 
         tracer_error trace(const std::unordered_map<uintptr_t, trap_data>* traps);
 

@@ -157,8 +157,9 @@ tracer_error tracer::stop_tracees(const tracer& excl) const
         tracer_error error = _parent->stop_tracees(*this);
         if (error)
             return error;
-        if (tgkill(_tracee_tgid, _parent->tracee(), SIGSTOP) != 0)
-            return get_syserror(errno, tracer_errcode::SYSTEM_ERROR, tid, "tgkill");
+        error = _parent->stop_self();
+        if (error)
+            return error;
         log(log_lvl::info, "[%d] stopped parent %d", tid, _parent->tracee());
     }
     for (const auto& child : _children)
@@ -168,12 +169,21 @@ tracer_error tracer::stop_tracees(const tracer& excl) const
         tracer_error err = child->stop_tracees(*this);
         if (err)
             return err;
-        if (tgkill(_tracee_tgid, child->tracee(), SIGSTOP) != 0)
-            return get_syserror(errno, tracer_errcode::SYSTEM_ERROR, tid, "tgkill");
+        err = child->stop_self();
+        if (err)
+            return err;
         log(log_lvl::info, "[%d] stopped child %d", tid, child->tracee());
     }
     return tracer_error::success();
 }
+
+tracer_error tracer::stop_self() const
+{
+    if (tgkill(_tracee_tgid, _tracee, SIGSTOP) != 0 && errno != ESRCH)
+        return get_syserror(errno, tracer_errcode::SYSTEM_ERROR, gettid(), "tgkill");
+    return tracer_error::success();
+}
+
 
 nrgprf::execution tracer::prepare_new_exec(const config_data::section& section) const
 {
@@ -226,8 +236,16 @@ tracer_error tracer::trace(const std::unordered_map<uintptr_t, trap_data>* traps
 
     int wait_status;
     int tid = gettid();
-    log(log_lvl::debug, "[%d] started tracer for tracee with tid %d", tid, _tracee);
+    uintptr_t entrypoint = get_entrypoint_addr(_tracee_tgid);
+    if (!entrypoint)
+        return get_syserror(errno, tracer_errcode::SYSTEM_ERROR, tid, "get_entrypoint_addr");
 
+    // TODO need to verify whether this is correct
+    {
+        std::scoped_lock lock(TRAP_BARRIER);
+    }
+    log(log_lvl::debug, "[%d] started tracer for tracee with tid %d, entrypoint @ 0x%" PRIxPTR,
+        tid, _tracee, entrypoint);
     while (true)
     {
         int errnum;
@@ -264,11 +282,6 @@ tracer_error tracer::trace(const std::unordered_map<uintptr_t, trap_data>* traps
             if (error)
                 return error;
 
-            uintptr_t entrypoint = get_entrypoint_addr(getpid());
-
-            if (!entrypoint)
-                return get_syserror(errno, tracer_errcode::SYSTEM_ERROR, tid, "get_entrypoint_addr");
-
             if (pw.ptrace(errnum, PTRACE_GETREGS, waited_pid, 0, &regs) == -1)
                 return get_syserror(errnum, tracer_errcode::PTRACE_ERROR, tid, "PTRACE_GETREGS");
             log(log_lvl::info, "[%d] reached breakpoint @ 0x%016llx (0x%llx)", tid,
@@ -276,9 +289,9 @@ tracer_error tracer::trace(const std::unordered_map<uintptr_t, trap_data>* traps
 
             // decrease the ip by 1 byte, since this is the size of the trap instruction
             set_ip(regs, get_ip(regs) - 1);
-            uintptr_t bp_addr = get_ip(regs);
+            uintptr_t start_bp_addr = get_ip(regs);
 
-            const config_data::section& section = traps->at(bp_addr).section;
+            const config_data::section& section = traps->at(start_bp_addr).section;
             _exec = prepare_new_exec(section);
             launch_async_sampling(section);
 
@@ -292,14 +305,14 @@ tracer_error tracer::trace(const std::unordered_map<uintptr_t, trap_data>* traps
             // set the registers and write the original word
             if (pw.ptrace(errnum, PTRACE_SETREGS, waited_pid, 0, &regs) == -1)
                 return get_syserror(errnum, tracer_errcode::PTRACE_ERROR, tid, "PTRACE_SETREGS");
-            if (pw.ptrace(errnum, PTRACE_POKEDATA, waited_pid, get_ip(regs),
-                traps->at(get_ip(regs)).original_word) == -1)
+            if (pw.ptrace(errnum, PTRACE_POKEDATA, waited_pid, start_bp_addr,
+                traps->at(start_bp_addr).original_word) == -1)
             {
                 return get_syserror(errnum, tracer_errcode::PTRACE_ERROR, tid, "PTRACE_POKEDATA");
             }
             log(log_lvl::debug, "[%d] reset original word @ 0x%016llx (0x%llx), %016llx -> 0x%016llx",
                 tid, get_ip(regs), get_ip(regs) - entrypoint,
-                trap_word, traps->at(get_ip(regs)).original_word);
+                trap_word, traps->at(start_bp_addr).original_word);
 
             // single-step and reset the trap instruction
             if (pw.ptrace(errnum, PTRACE_SINGLESTEP, waited_pid, 0, 0) == -1)
@@ -326,11 +339,10 @@ tracer_error tracer::trace(const std::unordered_map<uintptr_t, trap_data>* traps
                 get_ip(regs), get_ip(regs) - entrypoint);
 
             // reset the trap byte
-            uintptr_t prev = get_ip(regs) - 1;
-            if (pw.ptrace(errnum, PTRACE_POKEDATA, waited_pid, prev, trap_word) == -1)
+            if (pw.ptrace(errnum, PTRACE_POKEDATA, waited_pid, start_bp_addr, trap_word) == -1)
                 return get_syserror(errnum, tracer_errcode::PTRACE_ERROR, tid, "PTRACE_POKEDATA");
-            log(log_lvl::debug, "[%d] reset trap word @ 0x%016llx (0x%llx), %016llx -> 0x%016llx",
-                tid, prev, prev - entrypoint, traps->at(prev).original_word, trap_word);
+            log(log_lvl::debug, "[%d] reset trap word @ 0x%016llx (0x%llx), 0x%016llx -> 0x%016llx",
+                tid, start_bp_addr, start_bp_addr - entrypoint, traps->at(start_bp_addr).original_word, trap_word);
 
             // notify sampling thread
             {
@@ -365,12 +377,12 @@ tracer_error tracer::trace(const std::unordered_map<uintptr_t, trap_data>* traps
                 // in the gathered results collection
                 if (sampler_error)
                 {
-                    _results[bp_addr].emplace_back(sampler_error);
+                    _results[start_bp_addr].emplace_back(sampler_error);
                     log(log_lvl::error, "[%d] sampling thread exited with error", tid);
                 }
                 else
                 {
-                    _results[bp_addr].emplace_back(_exec);
+                    _results[start_bp_addr].emplace_back(_exec);
                     log(log_lvl::success, "[%d] sampling thread exited successfully with %zu samples",
                         tid, _exec.size());
                 }
@@ -384,6 +396,7 @@ tracer_error tracer::trace(const std::unordered_map<uintptr_t, trap_data>* traps
                     get_ip(regs), get_ip(regs) - entrypoint);
 
                 set_ip(regs, get_ip(regs) - 1);
+                uintptr_t end_bp_addr = get_ip(regs);
 
                 long trap_word = pw.ptrace(errnum, PTRACE_PEEKDATA, _tracee, get_ip(regs), 0);
                 if (errnum)
@@ -395,13 +408,13 @@ tracer_error tracer::trace(const std::unordered_map<uintptr_t, trap_data>* traps
                 if (pw.ptrace(errnum, PTRACE_SETREGS, waited_pid, 0, &regs) == -1)
                     return get_syserror(errnum, tracer_errcode::PTRACE_ERROR, tid, "PTRACE_SETREGS");
                 if (pw.ptrace(errnum, PTRACE_POKEDATA, waited_pid, get_ip(regs),
-                    traps->at(get_ip(regs)).original_word) == -1)
+                    traps->at(end_bp_addr).original_word) == -1)
                 {
                     return get_syserror(errnum, tracer_errcode::PTRACE_ERROR, tid, "PTRACE_POKEDATA");
                 }
                 log(log_lvl::debug, "[%d] reset original word @ 0x%016llx (0x%llx), %016llx -> 0x%016llx",
                     tid, get_ip(regs), get_ip(regs) - entrypoint,
-                    trap_word, traps->at(get_ip(regs)).original_word);
+                    trap_word, traps->at(end_bp_addr).original_word);
 
                 // single-step and reset the trap instruction
                 if (pw.ptrace(errnum, PTRACE_SINGLESTEP, waited_pid, 0, 0) == -1)
@@ -428,11 +441,10 @@ tracer_error tracer::trace(const std::unordered_map<uintptr_t, trap_data>* traps
                     get_ip(regs), get_ip(regs) - entrypoint);
 
                 // reset the trap byte
-                uintptr_t prev = get_ip(regs) - 1;
-                if (pw.ptrace(errnum, PTRACE_POKEDATA, waited_pid, prev, trap_word) == -1)
+                if (pw.ptrace(errnum, PTRACE_POKEDATA, waited_pid, end_bp_addr, trap_word) == -1)
                     return get_syserror(errnum, tracer_errcode::PTRACE_ERROR, tid, "PTRACE_POKEDATA");
                 log(log_lvl::debug, "[%d] reset trap word @ 0x%016llx (0x%llx), %016llx -> 0x%016llx",
-                    tid, prev, prev - entrypoint, traps->at(prev).original_word, trap_word);
+                    tid, end_bp_addr, end_bp_addr - entrypoint, traps->at(end_bp_addr).original_word, trap_word);
             }
             else
             {
@@ -450,6 +462,7 @@ tracer_error tracer::trace(const std::unordered_map<uintptr_t, trap_data>* traps
             // try to acquire barrier
             log(log_lvl::info, "[%d] stopped tracee with tid=%d", tid, _tracee);
             std::scoped_lock lock(TRAP_BARRIER);
+            log(log_lvl::info, "[%d] continued tracee with tid=%d", tid, _tracee);
         }
         else if (WIFEXITED(wait_status))
         {
