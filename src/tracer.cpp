@@ -211,6 +211,7 @@ tracer_error tracer::handle_breakpoint(user_regs_struct& regs, uintptr_t ep, lon
 {
     ptrace_wrapper& pw = ptrace_wrapper::instance;
     int errnum;
+    int wait_status;
     pid_t tid = gettid();
     uintptr_t bp_addr = get_ip(regs);
 
@@ -232,28 +233,25 @@ tracer_error tracer::handle_breakpoint(user_regs_struct& regs, uintptr_t ep, lon
     // single-step and reset the trap instruction
     if (pw.ptrace(errnum, PTRACE_SINGLESTEP, _tracee, 0, 0) == -1)
         return get_syserror(errnum, tracer_errcode::PTRACE_ERROR, tid, "PTRACE_SINGLESTEP");
-
-    int wait_status;
     tracer_error werror = wait_for_tracee(wait_status);
     if (werror)
         return werror;
 
+    // if a SIGSTOP was queued up when multiple threads concurrently entered a section
+    // singlestep again to suppress it
     if (WIFSTOPPED(wait_status) && WSTOPSIG(wait_status) == SIGSTOP)
     {
         log(log_lvl::warning, "[%d] tracee %d stopped during single-step because of a SIGSTOP",
             tid, _tracee);
-        if (pw.ptrace(errnum, PTRACE_CONT, _tracee, 0, 0) == -1)
-            return get_syserror(errnum, tracer_errcode::PTRACE_ERROR, tid, "PTRACE_CONT");
-
+        if (pw.ptrace(errnum, PTRACE_SINGLESTEP, _tracee, 0, 0) == -1)
+            return get_syserror(errnum, tracer_errcode::PTRACE_ERROR, tid, "PTRACE_SINGLESTEP");
         tracer_error werror = wait_for_tracee(wait_status);
         if (werror)
             return werror;
-
-        log(log_lvl::warning, "[%d] suppressed SIGSTOP of tracee %d", tid, _tracee);
         user_regs_struct regs;
         if (pw.ptrace(errnum, PTRACE_GETREGS, _tracee, 0, &regs) == -1)
             return get_syserror(errnum, tracer_errcode::PTRACE_ERROR, tid, "PTRACE_GETREGS");
-        log(log_lvl::warning, "[%d] signal suppressed @ 0x%" PRIxPTR " (0x%" PRIxPTR ")", tid,
+        log(log_lvl::warning, "[%d] SIGSTOP signal suppressed @ 0x%" PRIxPTR " (0x%" PRIxPTR ")", tid,
             get_ip(regs), get_ip(regs) - ep);
     }
 
@@ -379,7 +377,15 @@ tracer_error tracer::trace(const std::unordered_map<uintptr_t, trap_data>* traps
         ptrace_wrapper& pw = ptrace_wrapper::instance;
         // continue the trace with our newly created tid
         if (pw.ptrace(errnum, PTRACE_CONT, _tracee, 0, 0) == -1)
+        {
+            if (errnum == ESRCH)
+            {
+                log(log_lvl::warning, "[%d] PTRACE_CONT: tracee %d does not exist,"
+                    " assumed as exited and returning success", tid, _tracee);
+                break;
+            }
             return get_syserror(errnum, tracer_errcode::PTRACE_ERROR, tid, "PTRACE_CONT");
+        }
 
         tracer_error error = wait_for_tracee(wait_status);
         if (error)
@@ -396,6 +402,7 @@ tracer_error tracer::trace(const std::unordered_map<uintptr_t, trap_data>* traps
         }
         else if (is_exit_event(wait_status))
         {
+            std::scoped_lock lock(TRAP_BARRIER);
             unsigned long exit_status;
             if (pw.ptrace(errnum, PTRACE_GETEVENTMSG, _tracee, 0, &exit_status) == -1)
                 return get_syserror(errnum, tracer_errcode::PTRACE_ERROR, tid, "PTRACE_GETEVENTMSG");
