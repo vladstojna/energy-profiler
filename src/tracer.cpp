@@ -1,5 +1,6 @@
 // tracer.cpp
 
+#include "ptrace_restarter.hpp"
 #include "ptrace_wrapper.hpp"
 #include "tracer.hpp"
 #include "util.h"
@@ -255,7 +256,7 @@ tracer_error tracer::handle_breakpoint(user_regs_struct& regs, uintptr_t ep, lon
             get_ip(regs), get_ip(regs) - ep);
     }
 
-    if (!(WIFSTOPPED(wait_status) && WSTOPSIG(wait_status) == SIGTRAP))
+    if (!is_breakpoint_trap(wait_status))
     {
         log(log_lvl::error, "[%d] tried to single-step but process ended"
             " unexpectedly and, as such, tracing cannot continue", tid);
@@ -410,7 +411,7 @@ tracer_error tracer::trace(const std::unordered_map<uintptr_t, trap_data>* traps
                 static_cast<int>(exit_status));
             break;
         }
-        else if (WIFSTOPPED(wait_status) && WSTOPSIG(wait_status) == SIGTRAP)
+        else if (is_breakpoint_trap(wait_status))
         {
             user_regs_struct regs;
             if (pw.ptrace(errnum, PTRACE_GETREGS, _tracee, 0, &regs) == -1)
@@ -448,7 +449,7 @@ tracer_error tracer::trace(const std::unordered_map<uintptr_t, trap_data>* traps
                 return error;
 
             // reached end breakpoint
-            if (WIFSTOPPED(wait_status) && WSTOPSIG(wait_status) == SIGTRAP)
+            if (is_breakpoint_trap(wait_status))
             {
                 notify_end();
                 register_results(start_bp_addr);

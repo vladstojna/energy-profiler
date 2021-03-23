@@ -5,6 +5,7 @@
 #include <cinttypes>
 #include <signal.h>
 #include <sys/ptrace.h>
+#include <sys/wait.h>
 
 
 #define log(lvl, fmt, ...) \
@@ -64,6 +65,13 @@ namespace tep
     constexpr bool is_exit_event(int wait_status)
     {
         return wait_status >> 8 == (SIGTRAP | (PTRACE_EVENT_EXIT << 8));
+    }
+
+    constexpr bool is_breakpoint_trap(int wait_status)
+    {
+        return WIFSTOPPED(wait_status) &&
+            !(WSTOPSIG(wait_status) & 0x80) &&
+            (WSTOPSIG(wait_status) == SIGTRAP);
     }
 
     constexpr unsigned long lsb_mask()

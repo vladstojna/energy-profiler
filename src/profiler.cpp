@@ -31,7 +31,8 @@ constexpr int get_ptrace_opts()
     opts |= PTRACE_O_TRACEVFORK;
     // trace when a tracee exits
     opts |= PTRACE_O_TRACEEXIT;
-
+    // distinguish normal traps from syscall traps
+    opts |= PTRACE_O_TRACESYSGOOD;
     return opts;
 }
 
