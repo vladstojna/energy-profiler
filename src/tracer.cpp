@@ -424,9 +424,8 @@ tracer_error tracer::trace(const std::unordered_map<uintptr_t, trap_data>* traps
             unsigned long exit_status;
             if (pw.ptrace(errnum, PTRACE_GETEVENTMSG, _tracee, 0, &exit_status) == -1)
                 return get_syserror(errnum, tracer_errcode::PTRACE_ERROR, tid, "PTRACE_GETEVENTMSG");
-            log(log_lvl::success, "[%d] tracee %d exited with status %d", tid, _tracee,
+            log(log_lvl::debug, "[%d] tracee %d PTRACE_O_TRACEEXIT status %d", tid, _tracee,
                 static_cast<int>(exit_status));
-            break;
         }
         else if (is_breakpoint_trap(wait_status))
         {
