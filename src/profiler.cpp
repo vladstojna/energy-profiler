@@ -29,6 +29,8 @@ constexpr int get_ptrace_opts()
     opts |= PTRACE_O_TRACEFORK;
     // trace children spawned with vfork() i.e. clone() with CLONE_VFORK
     opts |= PTRACE_O_TRACEVFORK;
+    // trace when a tracee exits
+    opts |= PTRACE_O_TRACEEXIT;
 
     return opts;
 }

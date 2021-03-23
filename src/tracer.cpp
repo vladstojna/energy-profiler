@@ -28,6 +28,14 @@ inline int tgkill(pid_t tgid, pid_t tid, int signal)
 }
 
 
+// gettid wrapper
+
+inline pid_t gettid()
+{
+    return syscall(SYS_gettid);
+}
+
+
 // begin helper functions
 
 
@@ -179,16 +187,101 @@ tracer_error tracer::stop_tracees(const tracer& excl) const
 
 tracer_error tracer::stop_self() const
 {
-    if (tgkill(_tracee_tgid, _tracee, SIGSTOP) != 0 && errno != ESRCH)
-        return get_syserror(errno, tracer_errcode::SYSTEM_ERROR, gettid(), "tgkill");
+    if (tgkill(_tracee_tgid, _tracee, SIGSTOP) != 0)
+    {
+        if (errno == ESRCH)
+            log(log_lvl::warning, "[%d] tgkill: no process %d found but continuing anyway",
+                gettid(), _tracee);
+        else
+            return get_syserror(errno, tracer_errcode::SYSTEM_ERROR, gettid(), "tgkill");
+    }
     return tracer_error::success();
 }
 
+tracer_error tracer::wait_for_tracee(int& wait_status) const
+{
+    pid_t waited_pid = waitpid(_tracee, &wait_status, 0);
+    if (waited_pid == -1)
+        return get_syserror(errno, tracer_errcode::SYSTEM_ERROR, gettid(), "waitpid");
+    assert(waited_pid == _tracee);
+    return tracer_error::success();
+}
+
+tracer_error tracer::handle_breakpoint(user_regs_struct& regs, uintptr_t ep, long origw) const
+{
+    ptrace_wrapper& pw = ptrace_wrapper::instance;
+    int errnum;
+    pid_t tid = gettid();
+    uintptr_t bp_addr = get_ip(regs);
+
+    // save the word with the trap byte
+    long trap_word = pw.ptrace(errnum, PTRACE_PEEKDATA, _tracee, bp_addr, 0);
+    if (errnum)
+        return get_syserror(errnum, tracer_errcode::PTRACE_ERROR, tid, "PTRACE_PEEKDATA");
+    log(log_lvl::debug, "[%d] peeked word @ 0x%" PRIxPTR " (0x%" PRIxPTR ") with value 0x%lx",
+        tid, bp_addr, bp_addr - ep, trap_word);
+
+    // set the registers and write the original word
+    if (pw.ptrace(errnum, PTRACE_SETREGS, _tracee, 0, &regs) == -1)
+        return get_syserror(errnum, tracer_errcode::PTRACE_ERROR, tid, "PTRACE_SETREGS");
+    if (pw.ptrace(errnum, PTRACE_POKEDATA, _tracee, bp_addr, origw) == -1)
+        return get_syserror(errnum, tracer_errcode::PTRACE_ERROR, tid, "PTRACE_POKEDATA");
+    log(log_lvl::debug, "[%d] reset original word @ 0x%" PRIxPTR " (0x%" PRIxPTR "), 0x%lx -> 0x%lx",
+        tid, bp_addr, bp_addr - ep, trap_word, origw);
+
+    // single-step and reset the trap instruction
+    if (pw.ptrace(errnum, PTRACE_SINGLESTEP, _tracee, 0, 0) == -1)
+        return get_syserror(errnum, tracer_errcode::PTRACE_ERROR, tid, "PTRACE_SINGLESTEP");
+
+    int wait_status;
+    tracer_error werror = wait_for_tracee(wait_status);
+    if (werror)
+        return werror;
+
+    if (WIFSTOPPED(wait_status) && WSTOPSIG(wait_status) == SIGSTOP)
+    {
+        log(log_lvl::warning, "[%d] tracee %d stopped during single-step because of a SIGSTOP",
+            tid, _tracee);
+        if (pw.ptrace(errnum, PTRACE_CONT, _tracee, 0, 0) == -1)
+            return get_syserror(errnum, tracer_errcode::PTRACE_ERROR, tid, "PTRACE_CONT");
+
+        tracer_error werror = wait_for_tracee(wait_status);
+        if (werror)
+            return werror;
+
+        log(log_lvl::warning, "[%d] suppressed SIGSTOP of tracee %d", tid, _tracee);
+        user_regs_struct regs;
+        if (pw.ptrace(errnum, PTRACE_GETREGS, _tracee, 0, &regs) == -1)
+            return get_syserror(errnum, tracer_errcode::PTRACE_ERROR, tid, "PTRACE_GETREGS");
+        log(log_lvl::warning, "[%d] signal suppressed @ 0x%" PRIxPTR " (0x%" PRIxPTR ")", tid,
+            get_ip(regs), get_ip(regs) - ep);
+    }
+
+    if (!(WIFSTOPPED(wait_status) && WSTOPSIG(wait_status) == SIGTRAP))
+    {
+        log(log_lvl::error, "[%d] tried to single-step but process ended"
+            " unexpectedly and, as such, tracing cannot continue", tid);
+        return tracer_error(tracer_errcode::UNKNOWN_ERROR);
+    }
+
+    if (pw.ptrace(errnum, PTRACE_GETREGS, _tracee, 0, &regs) == -1)
+        return get_syserror(errnum, tracer_errcode::PTRACE_ERROR, tid, "PTRACE_GETREGS");
+    log(log_lvl::info, "[%d] single-stepped @ 0x%" PRIxPTR " (0x%" PRIxPTR ")", tid,
+        get_ip(regs), get_ip(regs) - ep);
+
+    // reset the trap byte
+    if (pw.ptrace(errnum, PTRACE_POKEDATA, _tracee, bp_addr, trap_word) == -1)
+        return get_syserror(errnum, tracer_errcode::PTRACE_ERROR, tid, "PTRACE_POKEDATA");
+    log(log_lvl::debug, "[%d] reset trap word @ 0x%" PRIxPTR " (0x%" PRIxPTR "), 0x%lx -> 0x%lx",
+        tid, bp_addr, bp_addr - ep, origw, trap_word);
+
+    return tracer_error::success();
+}
 
 nrgprf::execution tracer::prepare_new_exec(const config_data::section& section) const
 {
     int tid = gettid();
-    nrgprf::execution exec(_exec.id() + 1);
+    nrgprf::execution exec(0);
     switch (section.method)
     {
     case config_data::profiling_method::energy_total:
@@ -229,6 +322,44 @@ void tracer::launch_async_sampling(const config_data::section& section)
     }
 }
 
+void tracer::notify_start()
+{
+    {
+        std::unique_lock lock(_sampler_mtx);
+        _section_finished = false;
+    }
+    log(log_lvl::debug, "[%d] notified sampling thread to start", gettid());
+    _sampler_cnd.notify_one();
+}
+
+void tracer::notify_end()
+{
+    {
+        std::unique_lock lock(_sampler_mtx);
+        _section_finished = true;
+    }
+    log(log_lvl::debug, "[%d] notified sampling thread to end", gettid());
+    _sampler_cnd.notify_one();
+}
+
+void tracer::register_results(uintptr_t bp)
+{
+    pid_t tid = gettid();
+    nrgprf::error sampler_error = _sampler_ftr.get();
+    // if sampling thread generated an error, register execution as a failed one
+    // in the gathered results collection
+    if (sampler_error)
+    {
+        _results[bp].emplace_back(sampler_error);
+        log(log_lvl::error, "[%d] sampling thread exited with error", tid);
+    }
+    else
+    {
+        size_t sz = _exec.size();
+        _results[bp].emplace_back(std::move(_exec));
+        log(log_lvl::success, "[%d] sampling thread exited successfully with %zu samples", tid, sz);
+    }
+}
 
 tracer_error tracer::trace(const std::unordered_map<uintptr_t, trap_data>* traps)
 {
@@ -240,10 +371,6 @@ tracer_error tracer::trace(const std::unordered_map<uintptr_t, trap_data>* traps
     if (!entrypoint)
         return get_syserror(errno, tracer_errcode::SYSTEM_ERROR, tid, "get_entrypoint_addr");
 
-    // TODO need to verify whether this is correct
-    {
-        std::scoped_lock lock(TRAP_BARRIER);
-    }
     log(log_lvl::debug, "[%d] started tracer for tracee with tid %d, entrypoint @ 0x%" PRIxPTR,
         tid, _tracee, entrypoint);
     while (true)
@@ -254,203 +381,89 @@ tracer_error tracer::trace(const std::unordered_map<uintptr_t, trap_data>* traps
         if (pw.ptrace(errnum, PTRACE_CONT, _tracee, 0, 0) == -1)
             return get_syserror(errnum, tracer_errcode::PTRACE_ERROR, tid, "PTRACE_CONT");
 
-        // wait for the exact tid of this thread
-        pid_t waited_pid = waitpid(_tracee, &wait_status, 0);
-        if (waited_pid == -1)
-            return get_syserror(errno, tracer_errcode::SYSTEM_ERROR, tid, "waitpid");
-        assert(waited_pid == _tracee);
+        tracer_error error = wait_for_tracee(wait_status);
+        if (error)
+            return error;
 
-        // if the tracee spawned a child
-        if (tep::is_clone_event(wait_status) ||
-            tep::is_vfork_event(wait_status) ||
-            tep::is_fork_event(wait_status))
-        {
-            pid_t new_child;
-            if (pw.ptrace(errnum, PTRACE_GETEVENTMSG, waited_pid, 0, &new_child) == -1)
-                return get_syserror(errnum, tracer_errcode::PTRACE_ERROR, tid, "PTRACE_GETEVENTMSG");
-
-            add_child(*traps, new_child);
-        }
-        // breakpoint reached
-        else if (WIFSTOPPED(wait_status) && WSTOPSIG(wait_status) == SIGTRAP)
+        if (is_child_event(wait_status))
         {
             std::scoped_lock lock(TRAP_BARRIER);
+            unsigned long new_child;
+            if (pw.ptrace(errnum, PTRACE_GETEVENTMSG, _tracee, 0, &new_child) == -1)
+                return get_syserror(errnum, tracer_errcode::PTRACE_ERROR, tid, "PTRACE_GETEVENTMSG");
+
+            add_child(*traps, static_cast<pid_t>(new_child));
+        }
+        else if (is_exit_event(wait_status))
+        {
+            unsigned long exit_status;
+            if (pw.ptrace(errnum, PTRACE_GETEVENTMSG, _tracee, 0, &exit_status) == -1)
+                return get_syserror(errnum, tracer_errcode::PTRACE_ERROR, tid, "PTRACE_GETEVENTMSG");
+            log(log_lvl::success, "[%d] tracee %d exited with status %d", tid, _tracee,
+                static_cast<int>(exit_status));
+            break;
+        }
+        else if (WIFSTOPPED(wait_status) && WSTOPSIG(wait_status) == SIGTRAP)
+        {
             user_regs_struct regs;
+            if (pw.ptrace(errnum, PTRACE_GETREGS, _tracee, 0, &regs) == -1)
+                return get_syserror(errnum, tracer_errcode::PTRACE_ERROR, tid, "PTRACE_GETREGS");
+            log(log_lvl::info, "[%d] reached breakpoint @ 0x%" PRIxPTR " (0x%" PRIxPTR ")", tid,
+                get_ip(regs), get_ip(regs) - entrypoint);
+
+            std::scoped_lock lock(TRAP_BARRIER);
             log(log_lvl::debug, "[%d] entered global tracer barrier", tid);
 
             tracer_error error = stop_tracees(*this);
             if (error)
                 return error;
 
-            if (pw.ptrace(errnum, PTRACE_GETREGS, waited_pid, 0, &regs) == -1)
-                return get_syserror(errnum, tracer_errcode::PTRACE_ERROR, tid, "PTRACE_GETREGS");
-            log(log_lvl::info, "[%d] reached breakpoint @ 0x%016llx (0x%llx)", tid,
-                get_ip(regs), get_ip(regs) - entrypoint);
-
             // decrease the ip by 1 byte, since this is the size of the trap instruction
             set_ip(regs, get_ip(regs) - 1);
             uintptr_t start_bp_addr = get_ip(regs);
-
+            long original_word = traps->at(start_bp_addr).original_word;
             const config_data::section& section = traps->at(start_bp_addr).section;
+
             _exec = prepare_new_exec(section);
             launch_async_sampling(section);
 
-            // save the word with the trap byte
-            long trap_word = pw.ptrace(errnum, PTRACE_PEEKDATA, _tracee, get_ip(regs), 0);
-            if (errnum)
-                return get_syserror(errnum, tracer_errcode::PTRACE_ERROR, tid, "PTRACE_PEEKDATA");
-            log(log_lvl::debug, "[%d] peeked word @ 0x%016llx (0x%llx) with value 0x%016llx",
-                tid, get_ip(regs), get_ip(regs) - entrypoint, trap_word);
+            error = handle_breakpoint(regs, entrypoint, original_word);
+            if (error)
+                return error;
+            notify_start();
 
-            // set the registers and write the original word
-            if (pw.ptrace(errnum, PTRACE_SETREGS, waited_pid, 0, &regs) == -1)
-                return get_syserror(errnum, tracer_errcode::PTRACE_ERROR, tid, "PTRACE_SETREGS");
-            if (pw.ptrace(errnum, PTRACE_POKEDATA, waited_pid, start_bp_addr,
-                traps->at(start_bp_addr).original_word) == -1)
-            {
-                return get_syserror(errnum, tracer_errcode::PTRACE_ERROR, tid, "PTRACE_POKEDATA");
-            }
-            log(log_lvl::debug, "[%d] reset original word @ 0x%016llx (0x%llx), %016llx -> 0x%016llx",
-                tid, get_ip(regs), get_ip(regs) - entrypoint,
-                trap_word, traps->at(start_bp_addr).original_word);
-
-            // single-step and reset the trap instruction
-            if (pw.ptrace(errnum, PTRACE_SINGLESTEP, waited_pid, 0, 0) == -1)
-                return get_syserror(errnum, tracer_errcode::PTRACE_ERROR, tid, "PTRACE_SINGLESTEP");
-
-            // wait again for the single step
-            waited_pid = waitpid(_tracee, &wait_status, 0);
-            if (waited_pid == -1)
-                return get_syserror(errno, tracer_errcode::SYSTEM_ERROR, tid, "waitpid");
-            assert(waited_pid == _tracee);
-
-            // if not SIGTRAP from the single-step
-            // the process somehow ended unexpectedly
-            if (!(WIFSTOPPED(wait_status) && WSTOPSIG(wait_status) == SIGTRAP))
-            {
-                log(log_lvl::error, "[%d] tried to single-step but process ended"
-                    " unexpectedly and, as such, tracing cannot continue", tid);
-                return { tracer_errcode::UNKNOWN_ERROR };
-            }
-
-            if (pw.ptrace(errnum, PTRACE_GETREGS, waited_pid, 0, &regs) == -1)
-                return get_syserror(errnum, tracer_errcode::PTRACE_ERROR, tid, "PTRACE_GETREGS");
-            log(log_lvl::info, "[%d] single-stepped @ 0x%016llx (0x%llx)", tid,
-                get_ip(regs), get_ip(regs) - entrypoint);
-
-            // reset the trap byte
-            if (pw.ptrace(errnum, PTRACE_POKEDATA, waited_pid, start_bp_addr, trap_word) == -1)
-                return get_syserror(errnum, tracer_errcode::PTRACE_ERROR, tid, "PTRACE_POKEDATA");
-            log(log_lvl::debug, "[%d] reset trap word @ 0x%016llx (0x%llx), 0x%016llx -> 0x%016llx",
-                tid, start_bp_addr, start_bp_addr - entrypoint, traps->at(start_bp_addr).original_word, trap_word);
-
-            // notify sampling thread
-            {
-                log(log_lvl::debug, "[%d] notifying sampling thread to start", tid);
-                std::unique_lock lock(_sampler_mtx);
-                _section_finished = false;
-            }
-            _sampler_cnd.notify_one();
-
-            // continue the tracee execution
             // it is during this time that the energy readings are done
             if (pw.ptrace(errnum, PTRACE_CONT, _tracee, 0, 0) == -1)
                 return get_syserror(errnum, tracer_errcode::PTRACE_ERROR, tid, "PTRACE_CONT");
 
-            pid_t waited_pid = waitpid(_tracee, &wait_status, 0);
-            if (waited_pid == -1)
-                return get_syserror(errno, tracer_errcode::SYSTEM_ERROR, tid, "waitpid");
-            assert(waited_pid == _tracee);
+            error = wait_for_tracee(wait_status);
+            if (error)
+                return error;
 
             // reached end breakpoint
             if (WIFSTOPPED(wait_status) && WSTOPSIG(wait_status) == SIGTRAP)
             {
-                // notify sampling thread that section has finished
-                {
-                    log(log_lvl::debug, "[%d] notifying sampling thread to finish", tid);
-                    std::unique_lock lock(_sampler_mtx);
-                    _section_finished = true;
-                }
-                _sampler_cnd.notify_one();
-                nrgprf::error sampler_error = _sampler_ftr.get();
-                // if sampling thread generated an error, register execution as a failed one
-                // in the gathered results collection
-                if (sampler_error)
-                {
-                    _results[start_bp_addr].emplace_back(sampler_error);
-                    log(log_lvl::error, "[%d] sampling thread exited with error", tid);
-                }
-                else
-                {
-                    _results[start_bp_addr].emplace_back(_exec);
-                    log(log_lvl::success, "[%d] sampling thread exited successfully with %zu samples",
-                        tid, _exec.size());
-                }
+                notify_end();
+                register_results(start_bp_addr);
 
-                // now proceed with the same behaviour as with any other breakpoint:
-                // go back 1 instruction, replace the trap with the correct byte,
-                // single-step, reset the trap and continue execution
-                if (pw.ptrace(errnum, PTRACE_GETREGS, waited_pid, 0, &regs) == -1)
+                if (pw.ptrace(errnum, PTRACE_GETREGS, _tracee, 0, &regs) == -1)
                     return get_syserror(errnum, tracer_errcode::PTRACE_ERROR, tid, "PTRACE_GETREGS");
-                log(log_lvl::info, "[%d] reached breakpoint @ 0x%016llx (0x%llx)", tid,
+                log(log_lvl::info, "[%d] reached breakpoint @ 0x%" PRIxPTR " (0x%" PRIxPTR ")", tid,
                     get_ip(regs), get_ip(regs) - entrypoint);
 
                 set_ip(regs, get_ip(regs) - 1);
                 uintptr_t end_bp_addr = get_ip(regs);
+                long original_word = traps->at(end_bp_addr).original_word;
 
-                long trap_word = pw.ptrace(errnum, PTRACE_PEEKDATA, _tracee, get_ip(regs), 0);
-                if (errnum)
-                    return get_syserror(errnum, tracer_errcode::PTRACE_ERROR, tid, "PTRACE_PEEKDATA");
-                log(log_lvl::debug, "[%d] peeked word @ 0x%016llx (0x%llx) with value 0x%016llx",
-                    tid, get_ip(regs), get_ip(regs) - entrypoint, trap_word);
-
-                // set the registers and write the original word
-                if (pw.ptrace(errnum, PTRACE_SETREGS, waited_pid, 0, &regs) == -1)
-                    return get_syserror(errnum, tracer_errcode::PTRACE_ERROR, tid, "PTRACE_SETREGS");
-                if (pw.ptrace(errnum, PTRACE_POKEDATA, waited_pid, get_ip(regs),
-                    traps->at(end_bp_addr).original_word) == -1)
-                {
-                    return get_syserror(errnum, tracer_errcode::PTRACE_ERROR, tid, "PTRACE_POKEDATA");
-                }
-                log(log_lvl::debug, "[%d] reset original word @ 0x%016llx (0x%llx), %016llx -> 0x%016llx",
-                    tid, get_ip(regs), get_ip(regs) - entrypoint,
-                    trap_word, traps->at(end_bp_addr).original_word);
-
-                // single-step and reset the trap instruction
-                if (pw.ptrace(errnum, PTRACE_SINGLESTEP, waited_pid, 0, 0) == -1)
-                    return get_syserror(errnum, tracer_errcode::PTRACE_ERROR, tid, "PTRACE_SINGLESTEP");
-
-                // wait again for the single step
-                waited_pid = waitpid(_tracee, &wait_status, 0);
-                if (waited_pid == -1)
-                    return get_syserror(errno, tracer_errcode::SYSTEM_ERROR, tid, "waitpid");
-                assert(waited_pid == _tracee);
-
-                // if not SIGTRAP from the single-step
-                // the process somehow ended unexpectedly
-                if (!(WIFSTOPPED(wait_status) && WSTOPSIG(wait_status) == SIGTRAP))
-                {
-                    log(log_lvl::error, "[%d] tried to single-step but process ended"
-                        " unexpectedly and, as such, tracing cannot continue", tid);
-                    return { tracer_errcode::UNKNOWN_ERROR };
-                }
-
-                if (pw.ptrace(errnum, PTRACE_GETREGS, waited_pid, 0, &regs) == -1)
-                    return get_syserror(errnum, tracer_errcode::PTRACE_ERROR, tid, "PTRACE_GETREGS");
-                log(log_lvl::info, "[%d] single-stepped @ 0x%016llx (0x%llx)", tid,
-                    get_ip(regs), get_ip(regs) - entrypoint);
-
-                // reset the trap byte
-                if (pw.ptrace(errnum, PTRACE_POKEDATA, waited_pid, end_bp_addr, trap_word) == -1)
-                    return get_syserror(errnum, tracer_errcode::PTRACE_ERROR, tid, "PTRACE_POKEDATA");
-                log(log_lvl::debug, "[%d] reset trap word @ 0x%016llx (0x%llx), %016llx -> 0x%016llx",
-                    tid, end_bp_addr, end_bp_addr - entrypoint, traps->at(end_bp_addr).original_word, trap_word);
+                error = handle_breakpoint(regs, entrypoint, original_word);
+                if (error)
+                    return error;
             }
             else
             {
-                if (pw.ptrace(errnum, PTRACE_GETREGS, waited_pid, 0, &regs) == -1)
+                if (pw.ptrace(errnum, PTRACE_GETREGS, _tracee, 0, &regs) == -1)
                     return get_syserror(errnum, tracer_errcode::PTRACE_ERROR, tid, "PTRACE_GETREGS");
-                log(log_lvl::error, "[%d] received a signal mid-section: %s @ 0x%016llx", tid,
+                log(log_lvl::error, "[%d] received a signal mid-section: %s @ 0x%" PRIxPTR, tid,
                     strsignal(WSTOPSIG(wait_status)), get_ip(regs));
                 return { tracer_errcode::SIGNAL_DURING_SECTION_ERROR,
                     "Tracee received signal during section execution" };
@@ -479,9 +492,9 @@ tracer_error tracer::trace(const std::unordered_map<uintptr_t, trap_data>* traps
         else
         {
             user_regs_struct regs;
-            if (pw.ptrace(errnum, PTRACE_GETREGS, waited_pid, 0, &regs) == -1)
+            if (pw.ptrace(errnum, PTRACE_GETREGS, _tracee, 0, &regs) == -1)
                 return get_syserror(errnum, tracer_errcode::PTRACE_ERROR, tid, "PTRACE_GETREGS");
-            log(log_lvl::debug, "[%d] tracee %d received a signal: %s @ 0x%016llx", tid, _tracee,
+            log(log_lvl::debug, "[%d] tracee %d received a signal: %s @ 0x%" PRIxPTR, tid, _tracee,
                 strsignal(WSTOPSIG(wait_status)), get_ip(regs));
         }
     }

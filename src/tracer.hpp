@@ -13,6 +13,8 @@
 #include "config.hpp"
 #include "error.hpp"
 
+struct user_regs_struct;
+
 namespace tep
 {
 
@@ -84,11 +86,17 @@ namespace tep
         void add_child(const std::unordered_map<uintptr_t, trap_data>& traps, pid_t new_child);
         tracer_error stop_tracees(const tracer& excl) const;
         tracer_error stop_self() const;
+        tracer_error wait_for_tracee(int& wait_status) const;
+        tracer_error handle_breakpoint(user_regs_struct& regs, uintptr_t ep, long origw) const;
 
         tracer_error trace(const std::unordered_map<uintptr_t, trap_data>* traps);
 
         nrgprf::execution prepare_new_exec(const config_data::section& section) const;
         void launch_async_sampling(const config_data::section& sec);
+
+        void notify_start();
+        void notify_end();
+        void register_results(uintptr_t bp);
 
         nrgprf::error evaluate_full_gpu(pid_t tid,
             const std::chrono::milliseconds& interval,
