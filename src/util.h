@@ -54,6 +54,18 @@ namespace tep
         return wait_status >> 8 == (SIGTRAP | (PTRACE_EVENT_FORK << 8));
     }
 
+    constexpr bool is_child_event(int wait_status)
+    {
+        return is_clone_event(wait_status) ||
+            is_vfork_event(wait_status) ||
+            is_fork_event(wait_status);
+    }
+
+    constexpr bool is_exit_event(int wait_status)
+    {
+        return wait_status >> 8 == (SIGTRAP | (PTRACE_EVENT_EXIT << 8));
+    }
+
     constexpr unsigned long lsb_mask()
     {
         return ~0xff;
