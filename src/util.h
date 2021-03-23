@@ -28,6 +28,8 @@ namespace tep
 
     void log__(const char* file, int line, log_lvl lvl, const char* fmt, ...);
 
+    bool timestamp(char* buff, size_t sz);
+
     void procmsg(const char* format, ...);
 
     uintptr_t get_entrypoint_addr(pid_t pid);
