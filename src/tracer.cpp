@@ -376,21 +376,38 @@ tracer_error tracer::trace(const std::unordered_map<uintptr_t, trap_data>* traps
     {
         int errnum;
         ptrace_wrapper& pw = ptrace_wrapper::instance;
-        // continue the trace with our newly created tid
+
+        // sometimes PTRACE_CONT may fail with ESRCH despite the tracee existing
+        // in /proc/<pid>/tasks, so the tracee is manually waited for if errno equals ESRCH
+        // perhaps polling with WNOHANG and limited iterations would be better to avoid situations
+        // where waiting is infinite
         if (pw.ptrace(errnum, PTRACE_CONT, _tracee, 0, 0) == -1)
         {
-            if (errnum == ESRCH)
-            {
-                log(log_lvl::warning, "[%d] PTRACE_CONT: tracee %d does not exist,"
-                    " assumed as exited and returning success", tid, _tracee);
-                break;
-            }
-            return get_syserror(errnum, tracer_errcode::PTRACE_ERROR, tid, "PTRACE_CONT");
+            if (errnum != ESRCH)
+                return get_syserror(errnum, tracer_errcode::PTRACE_ERROR, tid, "PTRACE_CONT");
+            log(log_lvl::warning, "[%d] PTRACE_CONT failed with ESRCH: waiting for tracee %d",
+                tid, _tracee);
+
+            tracer_error error = wait_for_tracee(wait_status);
+            if (error)
+                return error;
+            user_regs_struct regs;
+            if (pw.ptrace(errnum, PTRACE_GETREGS, _tracee, 0, &regs) == -1)
+                return get_syserror(errnum, tracer_errcode::PTRACE_ERROR, tid, "PTRACE_GETREGS");
+
+            log(log_lvl::warning, "[%d] waited for tracee %d with signal: %s (status 0x%x),"
+                " rip @ 0x%" PRIxPTR " (0x%" PRIxPTR ")", tid, _tracee,
+                sigabbrev_np(WSTOPSIG(wait_status)), wait_status, get_ip(regs), get_ip(regs) - entrypoint);
+
+            if (pw.ptrace(errnum, PTRACE_CONT, _tracee, 0, 0) == -1)
+                return get_syserror(errnum, tracer_errcode::PTRACE_ERROR, tid, "PTRACE_CONT");
         }
 
         tracer_error error = wait_for_tracee(wait_status);
         if (error)
             return error;
+        log(log_lvl::debug, "[%d] waited for tracee %d with signal: %s (status 0x%x)", tid, _tracee,
+            sigabbrev_np(WSTOPSIG(wait_status)), wait_status);
 
         if (is_child_event(wait_status))
         {
@@ -494,7 +511,7 @@ tracer_error tracer::trace(const std::unordered_map<uintptr_t, trap_data>* traps
         else if (WIFSIGNALED(wait_status))
         {
             log(log_lvl::success, "[%d] tracee %d exited with status %d", tid, _tracee,
-                strsignal(WTERMSIG(wait_status)));
+                sigabbrev_np(WTERMSIG(wait_status)));
             break;
         }
         else

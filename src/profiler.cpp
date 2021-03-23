@@ -48,7 +48,7 @@ tracer_expected<long> insert_trap(pid_t pid, uintptr_t addr)
     long new_word = (word & lsb_mask()) | trap_code();
     if (pw.ptrace(error, PTRACE_POKEDATA, pid, addr, new_word) < 0)
         return get_syserror(error, tracer_errcode::PTRACE_ERROR, pid, "insert_trap: PTRACE_POKEDATA");
-    log(log_lvl::debug, "0x%016" PRIxPTR ": %lx -> %lx", addr, word, new_word);
+    log(log_lvl::debug, "0x%" PRIxPTR ": %lx -> %lx", addr, word, new_word);
     return word;
 }
 
@@ -130,7 +130,7 @@ tracer_expected<profiling_results> profiler::run()
     if (!entrypoint)
         return get_syserror(errno, tracer_errcode::SYSTEM_ERROR, tid, "get_entrypoint_addr");
 
-    log(log_lvl::info, "[%d] tracee %d rip @ 0x%016llx, entrypoint @ 0x%016llx",
+    log(log_lvl::info, "[%d] tracee %d rip @ 0x%" PRIxPTR ", entrypoint @ 0x%" PRIxPTR,
         tid, waited_pid, get_ip(regs), entrypoint);
 
     if (pw.ptrace(errnum, PTRACE_SETOPTIONS, waited_pid, 0, get_ptrace_opts()) == -1)
@@ -189,10 +189,10 @@ tracer_expected<profiling_results> profiler::run()
         if (!insert_result_end)
             return std::move(insert_result_end.error());
         _traps.try_emplace(start_addr, sec, insert_result_start.value());
-        log(log_lvl::info, "[%d] inserted trap @ 0x%016" PRIxPTR " (offset 0x%" PRIxPTR ")",
+        log(log_lvl::info, "[%d] inserted trap @ 0x%" PRIxPTR " (offset 0x%" PRIxPTR ")",
             tid, start_addr, start_addr - entrypoint);
         _traps.try_emplace(end_addr, sec, insert_result_end.value());
-        log(log_lvl::info, "[%d] inserted trap @ 0x%016" PRIxPTR " (offset 0x%" PRIxPTR ")",
+        log(log_lvl::info, "[%d] inserted trap @ 0x%" PRIxPTR " (offset 0x%" PRIxPTR ")",
             tid, end_addr, end_addr - entrypoint);
     }
 
