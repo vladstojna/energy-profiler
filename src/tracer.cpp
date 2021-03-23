@@ -159,7 +159,7 @@ void tracer::add_child(const std::unordered_map<uintptr_t, trap_data>& traps, pi
 tracer_error tracer::stop_tracees(const tracer& excl) const
 {
     std::scoped_lock lock(_children_mx);
-    int tid = gettid();
+    pid_t tid = gettid();
     if (_parent != nullptr && *_parent != excl)
     {
         tracer_error error = _parent->stop_tracees(*this);
@@ -278,7 +278,7 @@ tracer_error tracer::handle_breakpoint(user_regs_struct& regs, uintptr_t ep, lon
 
 nrgprf::execution tracer::prepare_new_exec(const config_data::section& section) const
 {
-    int tid = gettid();
+    pid_t tid = gettid();
     nrgprf::execution exec(0);
     switch (section.method)
     {
@@ -300,7 +300,7 @@ nrgprf::execution tracer::prepare_new_exec(const config_data::section& section) 
 
 void tracer::launch_async_sampling(const config_data::section& section)
 {
-    int tid = gettid();
+    pid_t tid = gettid();
     switch (section.target)
     {
     case config_data::target::cpu:
@@ -364,7 +364,7 @@ tracer_error tracer::trace(const std::unordered_map<uintptr_t, trap_data>* traps
     assert(traps != nullptr);
 
     int wait_status;
-    int tid = gettid();
+    pid_t tid = gettid();
     uintptr_t entrypoint = get_entrypoint_addr(_tracee_tgid);
     if (!entrypoint)
         return get_syserror(errno, tracer_errcode::SYSTEM_ERROR, tid, "get_entrypoint_addr");
