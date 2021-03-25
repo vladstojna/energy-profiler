@@ -22,7 +22,6 @@ using namespace tep;
 
 // tgkill wrapper
 
-
 inline int tgkill(pid_t tgid, pid_t tid, int signal)
 {
     return syscall(SYS_tgkill, tgid, tid, signal);
@@ -372,36 +371,14 @@ tracer_error tracer::trace(const std::unordered_map<uintptr_t, trap_data>* traps
 
     log(log_lvl::debug, "[%d] started tracer for tracee with tid %d, entrypoint @ 0x%" PRIxPTR,
         tid, _tracee, entrypoint);
+    tracer_expected<ptrace_restarter> pr = ptrace_restarter::create();
     while (true)
     {
         int errnum;
         ptrace_wrapper& pw = ptrace_wrapper::instance;
-
-        // sometimes PTRACE_CONT may fail with ESRCH despite the tracee existing
-        // in /proc/<pid>/tasks, so the tracee is manually waited for if errno equals ESRCH
-        // perhaps polling with WNOHANG and limited iterations would be better to avoid situations
-        // where waiting is infinite
-        if (pw.ptrace(errnum, PTRACE_CONT, _tracee, 0, 0) == -1)
-        {
-            if (errnum != ESRCH)
-                return get_syserror(errnum, tracer_errcode::PTRACE_ERROR, tid, "PTRACE_CONT");
-            log(log_lvl::warning, "[%d] PTRACE_CONT failed with ESRCH: waiting for tracee %d",
-                tid, _tracee);
-
-            tracer_error error = wait_for_tracee(wait_status);
-            if (error)
-                return error;
-            user_regs_struct regs;
-            if (pw.ptrace(errnum, PTRACE_GETREGS, _tracee, 0, &regs) == -1)
-                return get_syserror(errnum, tracer_errcode::PTRACE_ERROR, tid, "PTRACE_GETREGS");
-
-            log(log_lvl::warning, "[%d] waited for tracee %d with signal: %s (status 0x%x),"
-                " rip @ 0x%" PRIxPTR " (0x%" PRIxPTR ")", tid, _tracee,
-                sigabbrev_np(WSTOPSIG(wait_status)), wait_status, get_ip(regs), get_ip(regs) - entrypoint);
-
-            if (pw.ptrace(errnum, PTRACE_CONT, _tracee, 0, 0) == -1)
-                return get_syserror(errnum, tracer_errcode::PTRACE_ERROR, tid, "PTRACE_CONT");
-        }
+        pr = ptrace_restarter::create(tid, _tracee, pw);
+        if (!pr)
+            return std::move(pr.error());
 
         tracer_error error = wait_for_tracee(wait_status);
         if (error)
