@@ -17,6 +17,7 @@ namespace tep
         READER_ERROR,
         SIGNAL_DURING_SECTION_ERROR,
         NO_SYMBOL,
+        NO_TRAP,
         UNKNOWN_ERROR,
     };
 
