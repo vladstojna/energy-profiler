@@ -1,7 +1,6 @@
 // ptrace_wrapper.cpp
 
 #include "ptrace_wrapper.hpp"
-#include "util.h"
 
 #include <cstdarg>
 #include <unistd.h>

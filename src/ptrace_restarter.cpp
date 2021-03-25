@@ -3,7 +3,7 @@
 #include "ptrace_restarter.hpp"
 #include "ptrace_wrapper.hpp"
 #include "error.hpp"
-#include "util.h"
+#include "util.hpp"
 
 #include <cassert>
 #include <cstring>

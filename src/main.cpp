@@ -10,7 +10,7 @@
 #include "profiler.hpp"
 #include "ptrace_wrapper.hpp"
 #include "target.hpp"
-#include "util.h"
+#include "util.hpp"
 
 int main(int argc, char* argv[])
 {

@@ -1,7 +1,7 @@
 // target.cpp
 
 #include "target.hpp"
-#include "util.h"
+#include "util.hpp"
 
 #include <cstring>
 #include <cerrno>

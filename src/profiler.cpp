@@ -3,7 +3,7 @@
 #include "error.hpp"
 #include "profiler.hpp"
 #include "ptrace_wrapper.hpp"
-#include "util.h"
+#include "util.hpp"
 #include "tracer.hpp"
 
 #include <algorithm>

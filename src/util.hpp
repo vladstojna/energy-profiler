@@ -1,4 +1,5 @@
-// util.h
+// util.hpp
+
 #pragma once
 
 #include <cstdint>
