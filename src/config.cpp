@@ -594,3 +594,29 @@ std::ostream& tep::operator<<(std::ostream& os, const config_data& cd)
         os << "\n----------\n" << section;
     return os;
 }
+
+
+bool tep::operator==(const config_data::params& lhs, const config_data::params& rhs)
+{
+    return lhs.domain_mask() == rhs.domain_mask() &&
+        lhs.socket_mask() == rhs.socket_mask() &&
+        lhs.device_mask() == rhs.device_mask();
+}
+
+bool tep::operator==(const config_data::position& lhs, const config_data::position& rhs)
+{
+    return lhs.compilation_unit() == rhs.compilation_unit() && lhs.line() == rhs.line();
+}
+
+bool tep::operator==(const config_data::bounds& lhs, const config_data::bounds& rhs)
+{
+    return lhs.start() == rhs.start() && lhs.end() == rhs.end();
+}
+
+bool tep::operator==(const config_data::section& lhs, const config_data::section& rhs)
+{
+    return lhs.name() == rhs.name() && lhs.extra() == rhs.extra() &&
+        lhs.target() == rhs.target() && lhs.method() == rhs.method() &&
+        lhs.bounds() == rhs.bounds() && lhs.interval() == rhs.interval() &&
+        lhs.executions() == rhs.executions() && lhs.samples() == lhs.samples();
+}

@@ -208,6 +208,11 @@ namespace tep
     std::ostream& operator<<(std::ostream& os, const config_data::section& s);
     std::ostream& operator<<(std::ostream& os, const config_data& cd);
 
+    bool operator==(const config_data::params& lhs, const config_data::params& rhs);
+    bool operator==(const config_data::position& lhs, const config_data::position& rhs);
+    bool operator==(const config_data::bounds& lhs, const config_data::bounds& rhs);
+    bool operator==(const config_data::section& lhs, const config_data::section& rhs);
+
     // types
 
     using cfg_result = cmmn::expected<config_data, cfg_error>;
