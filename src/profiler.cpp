@@ -144,19 +144,19 @@ tracer_expected<profiling_results> profiler::run()
         return tracer_error(tracer_errcode::NO_SYMBOL, "No debugging information found");
     }
 
-    for (const auto& sec : _cd.sections)
+    for (const auto& sec : _cd.sections())
     {
-        const config_data::position& start = sec.bounds.start;
-        const config_data::position& end = sec.bounds.end;
+        const config_data::position& start = sec.bounds().start();
+        const config_data::position& end = sec.bounds().end();
 
-        auto start_cu = _dli.find_cu(start.compilation_unit);
+        auto start_cu = _dli.find_cu(start.compilation_unit());
         if (!start_cu)
         {
             log(log_lvl::error, "[%d] start compilation unit: %s",
                 tid, start_cu.error().message.c_str());
             return tracer_error(tracer_errcode::NO_SYMBOL, std::move(start_cu.error().message));
         }
-        auto end_cu = _dli.find_cu(end.compilation_unit);
+        auto end_cu = _dli.find_cu(end.compilation_unit());
         if (!end_cu)
         {
             log(log_lvl::error, "[%d] end compilation unit: %s",
@@ -164,16 +164,16 @@ tracer_expected<profiling_results> profiler::run()
             return tracer_error(tracer_errcode::NO_SYMBOL, std::move(end_cu.error().message));
         }
 
-        auto start_offset = start_cu.value()->line_first_addr(start.line);
+        auto start_offset = start_cu.value()->line_first_addr(start.line());
         if (!start_offset)
         {
-            log(log_lvl::error, "[%d] start compilation unit: invalid line %" PRIu32, tid, start.line);
+            log(log_lvl::error, "[%d] start compilation unit: invalid line %" PRIu32, tid, start.line());
             return tracer_error(tracer_errcode::NO_SYMBOL, std::move(start_offset.error().message));
         }
-        auto end_offset = end_cu.value()->line_first_addr(end.line);
+        auto end_offset = end_cu.value()->line_first_addr(end.line());
         if (!end_offset)
         {
-            log(log_lvl::error, "[%d] start compilation unit: invalid line %" PRIu32, tid, end.line);
+            log(log_lvl::error, "[%d] start compilation unit: invalid line %" PRIu32, tid, end.line());
             return tracer_error(tracer_errcode::NO_SYMBOL, std::move(end_offset.error().message));
         }
 
@@ -197,15 +197,15 @@ tracer_expected<profiling_results> profiler::run()
     }
 
     // create readers
-    log(log_lvl::debug, "[%d] params: 0x%x 0x%x 0x%x", tid, _cd.parameters.domain_mask,
-        _cd.parameters.socket_mask, _cd.parameters.device_mask);
+    log(log_lvl::debug, "[%d] params: 0x%x 0x%x 0x%x", tid, _cd.parameters().domain_mask(),
+        _cd.parameters().socket_mask(), _cd.parameters().device_mask());
     nrgprf::error error = nrgprf::error::success();
-    nrgprf::reader_rapl rdr_cpu(static_cast<nrgprf::rapl_domain>(_cd.parameters.domain_mask & 0xff),
-        static_cast<uint8_t>(_cd.parameters.socket_mask & 0xff), error);
+    nrgprf::reader_rapl rdr_cpu(static_cast<nrgprf::rapl_domain>(_cd.parameters().domain_mask() & 0xff),
+        static_cast<uint8_t>(_cd.parameters().socket_mask() & 0xff), error);
     if (error)
         return handle_reader_error(tid, error);
     log(log_lvl::success, "[%d] created RAPL reader", tid);
-    nrgprf::reader_gpu rdr_gpu(static_cast<uint8_t>(_cd.parameters.device_mask & 0xff), error);
+    nrgprf::reader_gpu rdr_gpu(static_cast<uint8_t>(_cd.parameters().device_mask() & 0xff), error);
     if (error)
         return handle_reader_error(tid, error);
     log(log_lvl::success, "[%d] created GPU reader", tid);

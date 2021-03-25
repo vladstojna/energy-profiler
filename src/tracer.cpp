@@ -280,7 +280,7 @@ nrgprf::execution tracer::prepare_new_exec(const config_data::section& section) 
 {
     pid_t tid = gettid();
     nrgprf::execution exec(0);
-    switch (section.method)
+    switch (section.method())
     {
     case config_data::profiling_method::energy_total:
     {
@@ -290,7 +290,7 @@ nrgprf::execution tracer::prepare_new_exec(const config_data::section& section) 
     } break;
     case config_data::profiling_method::energy_profile:
     {
-        size_t samples_reserved = section.samples == 0 ? DEFAULT_SAMPLES : section.samples;
+        size_t samples_reserved = section.samples() == 0 ? DEFAULT_SAMPLES : section.samples();
         exec.reserve(samples_reserved);
         log(log_lvl::debug, "[%d] reserved %zu samples for execution", tid, samples_reserved);
     } break;
@@ -301,13 +301,13 @@ nrgprf::execution tracer::prepare_new_exec(const config_data::section& section) 
 void tracer::launch_async_sampling(const config_data::section& section)
 {
     pid_t tid = gettid();
-    switch (section.target)
+    switch (section.target())
     {
     case config_data::target::cpu:
     {
-        if (section.method == config_data::profiling_method::energy_profile)
+        if (section.method() == config_data::profiling_method::energy_profile)
             _sampler_ftr = std::async(std::launch::async, &tracer::evaluate_full_cpu, this,
-                tid, section.interval, &_exec);
+                tid, section.interval(), &_exec);
         else
             _sampler_ftr = std::async(std::launch::async, &tracer::evaluate_simple, this,
                 tid, DEFAULT_INTERVAL, &_exec.first(), &_exec.last());
@@ -315,7 +315,7 @@ void tracer::launch_async_sampling(const config_data::section& section)
     case config_data::target::gpu:
     {
         _sampler_ftr = std::async(std::launch::async, &tracer::evaluate_full_gpu, this,
-            tid, section.interval, &_exec);
+            tid, section.interval(), &_exec);
     } break;
     }
 }

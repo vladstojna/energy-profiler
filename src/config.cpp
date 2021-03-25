@@ -51,6 +51,7 @@ static const char* error_messages[] =
     "Invalid line number: must be a positive integer"
 };
 
+
 // begin helper functions
 
 cfg_expected<config_data::target> get_target(const pugi::xml_node& nsection)
@@ -257,14 +258,190 @@ cfg_expected<config_data::section> get_section(const pugi::xml_node& nsection)
         nname.child_value(),
         nxtra.child_value(),
         target.value(),
-        interval.value(),
         method,
         std::move(bounds.value()),
+        std::move(interval.value()),
         execs,
         samples.value() };
 }
 
 // end helper functions
+
+
+// position
+
+config_data::position::position(const std::string& cu, uint32_t ln) :
+    _cu(cu),
+    _line(ln)
+{}
+
+config_data::position::position(std::string&& cu, uint32_t ln) :
+    _cu(std::move(cu)),
+    _line(ln)
+{}
+
+config_data::position::position(const char* cu, uint32_t ln) :
+    _cu(cu),
+    _line(ln)
+{}
+
+const std::string& config_data::position::compilation_unit() const
+{
+    return _cu;
+}
+
+uint32_t config_data::position::line() const
+{
+    return _line;
+}
+
+
+// bounds
+
+template<typename S, typename E>
+config_data::bounds::bounds(S&& s, E&& e) :
+    _start(std::forward<S>(s)),
+    _end(std::forward<E>(e))
+{}
+
+template
+config_data::bounds::bounds(const config_data::position&, const config_data::position&);
+
+template
+config_data::bounds::bounds(const config_data::position&, config_data::position&&);
+
+template
+config_data::bounds::bounds(config_data::position&&, const config_data::position&);
+
+template
+config_data::bounds::bounds(config_data::position&&, config_data::position&&);
+
+const config_data::position& config_data::bounds::start() const
+{
+    return _start;
+}
+
+const config_data::position& config_data::bounds::end() const
+{
+    return _end;
+}
+
+
+// params
+
+config_data::params::params() :
+    params(~0x0, ~0x0, ~0x0)
+{}
+
+config_data::params::params(unsigned int dommask, unsigned int sktmask, unsigned int devmask) :
+    _domain_mask(dommask),
+    _socket_mask(sktmask),
+    _device_mask(devmask)
+{}
+
+unsigned int config_data::params::domain_mask() const
+{
+    return _domain_mask;
+}
+
+unsigned int config_data::params::socket_mask() const
+{
+    return _socket_mask;
+}
+
+unsigned int config_data::params::device_mask() const
+{
+    return _device_mask;
+}
+
+
+// section
+
+const std::string& config_data::section::name() const
+{
+    return _name;
+}
+
+const std::string& config_data::section::extra() const
+{
+    return _extra;
+}
+
+config_data::target config_data::section::target() const
+{
+    return _target;
+}
+
+config_data::profiling_method config_data::section::method() const
+{
+    return _method;
+}
+
+const config_data::bounds& config_data::section::bounds() const
+{
+    return _bounds;
+}
+
+const std::chrono::milliseconds& config_data::section::interval() const
+{
+    return _interval;
+}
+
+uint32_t config_data::section::executions() const
+{
+    return _executions;
+}
+
+uint32_t config_data::section::samples() const
+{
+    return _samples;
+}
+
+bool config_data::section::has_name() const
+{
+    return !_name.empty();
+}
+
+bool config_data::section::has_extra() const
+{
+    return !_extra.empty();
+}
+
+
+// config_data
+
+uint32_t config_data::threads() const
+{
+    return _threads;
+}
+
+void config_data::threads(uint32_t t)
+{
+    _threads = t;
+}
+
+void config_data::parameters(const config_data::params& p)
+{
+    _parameters = p;
+}
+
+const config_data::params& config_data::parameters() const
+{
+    return _parameters;
+}
+
+std::vector<config_data::section>& config_data::sections()
+{
+    return _sections;
+}
+
+const std::vector<config_data::section>& config_data::sections() const
+{
+    return _sections;
+}
+
+
+// load_config
 
 cfg_expected<config_data> tep::load_config(const char* file)
 {
@@ -306,7 +483,7 @@ cfg_expected<config_data> tep::load_config(const char* file)
         cfg_expected<config_data::params> custom_params = get_params(nparams);
         if (!custom_params)
             return std::move(custom_params.error());
-        cfgdata.parameters = custom_params.value();
+        cfgdata.parameters(custom_params.value());
     }
 
     // iterate all sections
@@ -321,13 +498,13 @@ cfg_expected<config_data> tep::load_config(const char* file)
             cfg_expected<config_data::section> section = get_section(nsection);
             if (!section)
                 return std::move(section.error());
-            cfgdata.sections.push_back(std::move(section.value()));
+            cfgdata.sections().push_back(std::move(section.value()));
         }
         if (sec_count == 0)
             return cfg_error(cfg_error_code::SEC_LIST_EMPTY);
     }
 
-    cfgdata.threads = threads;
+    cfgdata.threads(threads);
     return cfgdata;
 }
 
@@ -362,9 +539,9 @@ std::ostream& tep::operator<<(std::ostream& os, const config_data::target& tgt)
 std::ostream& tep::operator<<(std::ostream& os, const config_data::params& p)
 {
     std::ios::fmtflags flags(os.flags());
-    os << "domains: " << "0x" << std::hex << p.domain_mask;
-    os << "\nsockets: " << "0x" << p.socket_mask;
-    os << "\ndevices: " << "0x" << p.device_mask;
+    os << "domains: " << "0x" << std::hex << p.domain_mask();
+    os << "\nsockets: " << "0x" << p.socket_mask();
+    os << "\ndevices: " << "0x" << p.device_mask();
     os.flags(flags);
     return os;
 }
@@ -385,35 +562,35 @@ std::ostream& tep::operator<<(std::ostream& os, const config_data::profiling_met
 
 std::ostream& tep::operator<<(std::ostream& os, const config_data::position& p)
 {
-    os << p.compilation_unit << ":" << p.line;
+    os << p.compilation_unit() << ":" << p.line();
     return os;
 }
 
 std::ostream& tep::operator<<(std::ostream& os, const config_data::bounds& s)
 {
-    os << s.start << " - " << s.end;
+    os << s.start() << " - " << s.end();
     return os;
 }
 
 std::ostream& tep::operator<<(std::ostream& os, const config_data::section& s)
 {
-    os << "name: " << (s.name.empty() ? "-" : s.name);
-    os << "\nextra: " << (s.extra.empty() ? "-" : s.extra);
-    os << "\ntarget: " << s.target;
-    os << "\ninterval: " << s.interval.count() << " ms";
-    os << "\nmethod: " << s.method;
-    os << "\nbounds: " << s.bounds;
-    os << "\nexecutions: " << s.executions;
-    os << "\nsamples: " << s.samples;
+    os << "name: " << (s.has_name() ? s.name() : "-");
+    os << "\nextra: " << (s.has_extra() ? s.extra() : "-");
+    os << "\ntarget: " << s.target();
+    os << "\ninterval: " << s.interval().count() << " ms";
+    os << "\nmethod: " << s.method();
+    os << "\nbounds: " << s.bounds();
+    os << "\nexecutions: " << s.executions();
+    os << "\nsamples: " << s.samples();
     return os;
 }
 
 std::ostream& tep::operator<<(std::ostream& os, const config_data& cd)
 {
-    os << "threads: " << cd.threads;
-    os << "\n" << cd.parameters;
+    os << "threads: " << cd.threads();
+    os << "\n" << cd.parameters();
     os << "\nsections:";
-    for (const auto& section : cd.sections)
+    for (const auto& section : cd.sections())
         os << "\n----------\n" << section;
     return os;
 }
