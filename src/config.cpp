@@ -4,9 +4,9 @@
 
 #include <iostream>
 #include <cstring>
-#include <cassert>
 
 #include <pugixml.hpp>
+#include <expected.hpp>
 
 using namespace tep;
 

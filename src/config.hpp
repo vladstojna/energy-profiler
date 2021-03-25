@@ -7,7 +7,12 @@
 #include <string>
 #include <vector>
 
-#include <expected.hpp>
+
+namespace cmmn
+{
+    template<typename R, typename E>
+    class expected;
+}
 
 namespace tep
 {
