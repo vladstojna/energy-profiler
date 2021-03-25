@@ -13,34 +13,125 @@ extern int optopt;
 extern int optind;
 extern char* optarg;
 
-arguments::arguments(int idx, const std::string& out, const std::string& cfg) :
+enum class output_file::tag
+{
+    file,
+    stdstream
+};
+
+void output_file::init()
+{
+    if (_filename.empty() || _filename == "stdout")
+    {
+        _tag = tag::stdstream;
+        _outstream = &std::cout;
+    }
+    else if (_filename == "stderr")
+    {
+        _tag = tag::stdstream;
+        _outstream = &std::cerr;
+    }
+    else
+    {
+        _tag = tag::file;
+        _outstream = new std::ofstream(_filename);
+    }
+}
+
+output_file::output_file(const std::string& file) :
+    _tag(tag::file),
+    _filename(file),
+    _outstream(nullptr)
+{
+    init();
+}
+
+output_file::output_file(std::string&& file) :
+    _tag(tag::file),
+    _filename(std::move(file)),
+    _outstream(nullptr)
+{
+    init();
+}
+
+output_file::~output_file()
+{
+    if (_tag == tag::file)
+        delete _outstream;
+}
+
+output_file::output_file(output_file&& other) :
+    _tag(std::exchange(other._tag, tag::stdstream)),
+    _filename(std::move(other._filename)),
+    _outstream(std::exchange(other._outstream, nullptr))
+{}
+
+output_file& output_file::operator=(output_file&& other)
+{
+    _tag = std::exchange(other._tag, tag::stdstream);
+    _filename = std::move(other._filename);
+    _outstream = std::exchange(other._outstream, nullptr);
+    return *this;
+}
+
+std::ostream& output_file::stream()
+{
+    return *_outstream;
+}
+
+const std::string& output_file::filename() const
+{
+    return _filename;
+}
+
+output_file::operator bool() const
+{
+    if (_outstream == nullptr)
+        return false;
+    return bool(*_outstream);
+}
+
+arguments::arguments(int idx, output_file&& of, const std::string& cfg) :
     _target_idx(idx),
-    _outfile(out),
+    _outfile(std::move(of)),
     _config(cfg)
 {}
 
-arguments::arguments(int idx, std::string&& out, const std::string& cfg) :
+arguments::arguments(int idx, output_file&& of, std::string&& cfg) :
     _target_idx(idx),
-    _outfile(std::move(out)),
-    _config(cfg)
-{}
-
-arguments::arguments(int idx, const std::string& out, std::string&& cfg) :
-    _target_idx(idx),
-    _outfile(out),
+    _outfile(std::move(of)),
     _config(std::move(cfg))
 {}
 
-arguments::arguments(int idx, std::string&& out, std::string&& cfg) :
-    _target_idx(idx),
-    _outfile(std::move(out)),
-    _config(std::move(cfg))
-{}
+int arguments::target_index() const
+{
+    return _target_idx;
+}
+
+output_file& arguments::outfile()
+{
+    return _outfile;
+}
+
+const output_file& arguments::outfile() const
+{
+    return _outfile;
+}
+
+const std::string& arguments::config() const
+{
+    return _config;
+}
+
+std::ostream& tep::operator<<(std::ostream& os, const output_file& of)
+{
+    return os << (of.filename().empty() ? "stdout" : of.filename());
+}
 
 std::ostream& tep::operator<<(std::ostream& os, const arguments& args)
 {
     os << "target @ index " << args.target_index();
-    os << ", output: " << (args.outfile().empty() ? "stdout" : args.outfile());
+    os << ", output: " << args.outfile();
     os << ", config file: " << args.config();
     return os;
 }
@@ -101,11 +192,18 @@ cmmn::expected<arguments, arg_error> tep::parse_arguments(int argc, char* const 
         return arg_error();
     }
 
+    output_file of(std::move(output));
+    if (!of)
+    {
+        std::cerr << "error opening output file " << of;
+        return arg_error();
+    }
+
     if (config.empty())
     {
         std::cerr << "configuration file name cannot be empty\n";
         return arg_error();
     }
 
-    return { optind, std::move(output), std::move(config) };
+    return { optind, std::move(of), std::move(config) };
 }
