@@ -254,9 +254,13 @@ detail::event_data::event_data(file_descriptor&& fd, uint64_t p, uint64_t m) :
 
 
 reader_rapl::reader_rapl(rapl_domain dmask, uint8_t skt_mask, error& ec) :
-    _event_map{ -1 },
+    _event_map(),
     _active_events()
 {
+    for (uint8_t skt = 0; skt < MAX_SOCKETS; skt++)
+        for (uint8_t ev = 0; ev < MAX_RAPL_DOMAINS; ev++)
+            _event_map[skt][ev] = -1;
+
     result<uint8_t> num_skts = count_sockets();
     if (!num_skts)
     {
