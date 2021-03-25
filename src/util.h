@@ -31,8 +31,6 @@ namespace tep
 
     bool timestamp(char* buff, size_t sz);
 
-    void procmsg(const char* format, ...);
-
     uintptr_t get_entrypoint_addr(pid_t pid);
 
     uintptr_t get_ip(const user_regs_struct& regs);

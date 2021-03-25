@@ -1,52 +1,63 @@
 // target.cpp
-#include "target.h"
-#include "util.h"
-#include "macros.h"
 
-#include <stdio.h>
+#include "target.hpp"
+#include "util.h"
+
+#include <cstring>
+#include <cerrno>
 #include <unistd.h>
-#include <sys/personality.h>
 #include <sys/ptrace.h>
 
-#if !defined(ASLR)
-#define ASLR 1
+#if defined(NO_ASLR)
+
+#include <sys/personality.h>
+
+int disable_aslr(pid_t pid)
+{
+    int old = personality(0xffffffff);
+    if (old == -1)
+    {
+        tep::log(tep::log_lvl::error, "[%d] error retrieving current persona: %s", pid, strerror(errno));
+        return old;
+    }
+    int result = personality(old | ADDR_NO_RANDOMIZE);
+    if (result == -1)
+    {
+        tep::log(tep::log_lvl::error, "[%d] error disabling ASLR: %s", pid, strerror(errno));
+        return result;
+    }
+    tep::log(tep::log_lvl::success, "[%d] disabled ASLR", pid);
+    return result;
+}
+
+#else
+
+int disable_aslr(pid_t pid)
+{
+    (void)pid;
+    return 0;
+}
+
 #endif
 
 void tep::run_target(char* const argv[])
 {
-#if !defined(NDEBUG)
-    tep::procmsg("running target:");
-    for (size_t ix = 0; argv[ix] != NULL; ix++)
-    {
-        fprintf(stdout, " %s", argv[ix]);
-    }
-    fputc('\n', stdout);
-#endif
+    pid_t pid = getpid();
+    tep::log(log_lvl::info, "[%d] running target: %s", pid, argv[0]);
+    for (size_t ix = 1; argv[ix] != NULL; ix++)
+        tep::log(log_lvl::info, "[%d] argument %zu: %s", pid, ix, argv[ix]);
 
     // set target process to be traced
-    if (ptrace(PTRACE_TRACEME, 0, 0, 0) < 0)
+    if (ptrace(PTRACE_TRACEME, 0, 0, 0) == -1)
     {
-        perror(fileline("target ptrace"));
+        tep::log(log_lvl::error, "[%d] PTRACE_TRACEME: %s", pid, strerror(errno));
         return;
     }
 
-#if !ASLR
-    // disable ASLR for target process
-    if (personality(ADDR_NO_RANDOMIZE) < 0)
-    {
-        // run again due to some kernel versions
-        // being unable to return an error value
-        if (personality(ADDR_NO_RANDOMIZE) < 0)
-        {
-            perror(fileline("personality"));
-            return;
-        }
-    }
-#endif
+    if (disable_aslr(pid))
+        return;
 
     // execute target executable
     if (execv(argv[0], argv) == -1)
-    {
-        perror(fileline("target execv"));
-    }
+        tep::log(log_lvl::error, "[%d] execv error: %s", pid, strerror(errno));
 }

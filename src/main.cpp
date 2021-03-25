@@ -9,7 +9,7 @@
 #include "error.hpp"
 #include "profiler.h"
 #include "ptrace_wrapper.hpp"
-#include "target.h"
+#include "target.hpp"
 #include "util.h"
 
 int main(int argc, char* argv[])

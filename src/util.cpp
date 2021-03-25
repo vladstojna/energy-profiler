@@ -64,15 +64,6 @@ bool tep::timestamp(char* buff, size_t sz)
     return true;
 }
 
-void tep::procmsg(const char* format, ...)
-{
-    va_list ap;
-    fprintf(stdout, "[%d] ", getpid());
-    va_start(ap, format);
-    vfprintf(stdout, format, ap);
-    va_end(ap);
-}
-
 uintptr_t tep::get_entrypoint_addr(pid_t pid)
 {
     char filename[24];
