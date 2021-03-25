@@ -7,7 +7,7 @@
 #include "cmdargs.hpp"
 #include "dbg.hpp"
 #include "error.hpp"
-#include "profiler.h"
+#include "profiler.hpp"
 #include "ptrace_wrapper.hpp"
 #include "target.hpp"
 #include "util.h"

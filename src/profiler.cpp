@@ -1,7 +1,7 @@
 // profiler.cpp
 
 #include "error.hpp"
-#include "profiler.h"
+#include "profiler.hpp"
 #include "ptrace_wrapper.hpp"
 #include "util.h"
 #include "tracer.hpp"

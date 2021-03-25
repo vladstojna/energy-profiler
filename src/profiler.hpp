@@ -1,4 +1,4 @@
-// profiler.h
+// profiler.hpp
 
 #pragma once
 
