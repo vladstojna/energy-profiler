@@ -3,10 +3,10 @@
 #include <cstring>
 #include <fstream>
 #include <iostream>
-#include <unordered_set>
 
 #include "cmdargs.hpp"
 #include "dbg.hpp"
+#include "error.hpp"
 #include "profiler.h"
 #include "ptrace_wrapper.hpp"
 #include "target.h"
@@ -44,7 +44,7 @@ int main(int argc, char* argv[])
     if (child_pid > 0)
     {
         profiler profiler(child_pid, std::move(dbg_info.value()), std::move(config.value()));
-        tracer_expected<profiling_results> results = profiler.run();
+        cmmn::expected<profiling_results, tracer_error> results = profiler.run();
         if (!results)
         {
             std::cerr << results.error() << std::endl;

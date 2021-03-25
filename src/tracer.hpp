@@ -6,12 +6,12 @@
 #include <future>
 #include <mutex>
 #include <unordered_map>
-#include <thread>
 
 #include <nrg.hpp>
 
 #include "config.hpp"
 #include "error.hpp"
+#include "trap.hpp"
 
 struct user_regs_struct;
 
@@ -24,16 +24,6 @@ namespace tep
     using fallible_execution = cmmn::expected<nrgprf::execution, nrgprf::error>;
 
     using gathered_results = std::unordered_map<uintptr_t, std::vector<fallible_execution>>;
-
-
-    struct trap_data
-    {
-        config_data::section section;
-        long original_word;
-
-        trap_data(const config_data::section& sec, long word);
-    };
-
 
     class tracer
     {
@@ -63,13 +53,13 @@ namespace tep
         gathered_results _results;
 
     public:
-        tracer(const std::unordered_map<uintptr_t, trap_data>& traps,
+        tracer(const trap_set& traps,
             pid_t tracee_pid, pid_t tracee_tid,
             const nrgprf::reader_rapl& rdr_cpu,
             const nrgprf::reader_gpu& rdr_gpu,
             std::launch policy);
 
-        tracer(const std::unordered_map<uintptr_t, trap_data>& traps,
+        tracer(const trap_set& traps,
             pid_t tracee_pid, pid_t tracee_tid,
             const nrgprf::reader_rapl& rdr_cpu,
             const nrgprf::reader_gpu& rdr_gpu,
@@ -83,13 +73,13 @@ namespace tep
         tracer_expected<gathered_results> results();
 
     private:
-        void add_child(const std::unordered_map<uintptr_t, trap_data>& traps, pid_t new_child);
+        void add_child(const trap_set& traps, pid_t new_child);
         tracer_error stop_tracees(const tracer& excl) const;
         tracer_error stop_self() const;
         tracer_error wait_for_tracee(int& wait_status) const;
         tracer_error handle_breakpoint(user_regs_struct& regs, uintptr_t ep, long origw) const;
 
-        tracer_error trace(const std::unordered_map<uintptr_t, trap_data>* traps);
+        tracer_error trace(const trap_set* traps);
 
         nrgprf::execution prepare_new_exec(const config_data::section& section) const;
         void launch_async_sampling(const config_data::section& sec);

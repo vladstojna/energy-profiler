@@ -4,7 +4,9 @@
 #include "profiler.h"
 #include "ptrace_wrapper.hpp"
 #include "util.h"
+#include "tracer.hpp"
 
+#include <algorithm>
 #include <cassert>
 
 #include <unistd.h>
@@ -61,10 +63,26 @@ tracer_error handle_reader_error(pid_t pid, const nrgprf::error& error)
 // end helper functions
 
 
-section_results::section_results(config_data::section&& sec, std::vector<fallible_execution>&& execs) :
-    section(std::move(sec)),
-    executions(std::move(execs))
+section_results::section_results(const config_data::section& sec) :
+    section(sec),
+    readings(0)
 {}
+
+bool tep::operator==(const section_results& lhs, const section_results& rhs)
+{
+    return lhs.section == rhs.section;
+}
+
+bool tep::operator==(const section_results& lhs, const config_data::section& rhs)
+{
+    return lhs.section == rhs;
+}
+
+bool tep::operator==(const config_data::section& lhs, const section_results& rhs)
+{
+    return lhs == rhs.section;
+}
+
 
 profiling_results::profiling_results(nrgprf::reader_rapl&& rr, nrgprf::reader_gpu&& rg) :
     rdr_cpu(std::move(rr)),
@@ -100,6 +118,21 @@ profiler::profiler(pid_t child, dbg_line_info&& dli, config_data&& cd) :
     _cd(std::move(cd)),
     _traps()
 {}
+
+const dbg_line_info& profiler::debug_line_info() const
+{
+    return _dli;
+}
+
+const config_data& profiler::config() const
+{
+    return _cd;
+}
+
+const trap_set& profiler::traps() const
+{
+    return _traps;
+}
 
 tracer_expected<profiling_results> profiler::run()
 {
@@ -182,16 +215,16 @@ tracer_expected<profiling_results> profiler::run()
 
         uintptr_t start_addr = entrypoint + start_offset.value();
         uintptr_t end_addr = entrypoint + end_offset.value();
-        auto insert_result_start = insert_trap(waited_pid, start_addr);
-        if (!insert_result_start)
-            return std::move(insert_result_start.error());
-        auto insert_result_end = insert_trap(waited_pid, end_addr);
-        if (!insert_result_end)
-            return std::move(insert_result_end.error());
-        _traps.try_emplace(start_addr, sec, insert_result_start.value());
+        auto orig_word_start = insert_trap(waited_pid, start_addr);
+        if (!orig_word_start)
+            return std::move(orig_word_start.error());
+        auto orig_word_end = insert_trap(waited_pid, end_addr);
+        if (!orig_word_end)
+            return std::move(orig_word_end.error());
+        _traps.emplace(start_addr, orig_word_start.value(), sec);
         log(log_lvl::info, "[%d] inserted trap @ 0x%" PRIxPTR " (offset 0x%" PRIxPTR ")",
             tid, start_addr, start_addr - entrypoint);
-        _traps.try_emplace(end_addr, sec, insert_result_end.value());
+        _traps.emplace(end_addr, orig_word_end.value(), sec);
         log(log_lvl::info, "[%d] inserted trap @ 0x%" PRIxPTR " (offset 0x%" PRIxPTR ")",
             tid, end_addr, end_addr - entrypoint);
     }
@@ -219,8 +252,30 @@ tracer_expected<profiling_results> profiler::run()
     profiling_results retval(std::move(rdr_cpu), std::move(rdr_gpu));
     for (auto& [addr, execs] : results.value())
     {
-        config_data::section& sec = _traps.at(addr).section;
-        retval.results.emplace_back(std::move(sec), std::move(execs));
+        trap_set::iterator trap = _traps.find(addr);
+        assert(trap != _traps.end());
+
+        std::vector<section_results>::iterator srit =
+            std::find(retval.results.begin(), retval.results.end(), trap->section());
+
+        section_results& sr = srit == retval.results.end() ?
+            retval.results.emplace_back(trap->section()) :
+            *srit;
+
+        for (auto& exec : execs)
+        {
+            if (exec)
+            {
+                sr.readings.add(std::move(exec.value()));
+                log(log_lvl::success, "[%d] registered execution of section @ 0x%" PRIxPTR
+                    " (offset = 0x%" PRIxPTR ") as successful", tid, addr, addr - entrypoint);
+            }
+            else
+            {
+                log(log_lvl::error, "[%d] failed to gather results for execution of section @ 0x%"
+                    PRIxPTR " (offset = 0x%" PRIxPTR ")", tid, addr, addr - entrypoint);
+            }
+        }
     }
     return retval;
 }

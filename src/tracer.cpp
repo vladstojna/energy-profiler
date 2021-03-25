@@ -47,18 +47,23 @@ void handle_error(pid_t tid, const char* comment, const nrgprf::error& e)
         tid, comment, sstream.str().c_str());
 }
 
+tracer_expected<trap_set::iterator> get_trap(const trap_set& traps, pid_t tid, uintptr_t addr, uintptr_t ep)
+{
+    trap_set::iterator it = traps.find(addr);
+    if (it == traps.end())
+    {
+        log(log_lvl::error, "[%d] reached trap which is not registered @ 0x%" PRIxPTR
+            " (offset = 0x%" PRIxPTR ")", tid, addr, addr - ep);
+        return tracer_error(tracer_errcode::NO_TRAP, "No such trap registered");
+    }
+    return it;
+}
+
 
 // end helper functions
 
 
-trap_data::trap_data(const config_data::section& sec, long word) :
-    section(sec),
-    original_word(word)
-{}
-
-
 // definition of static variables
-
 
 size_t tracer::DEFAULT_EXECS = 16;
 size_t tracer::DEFAULT_SAMPLES = 256;
@@ -69,13 +74,13 @@ std::mutex tracer::TRAP_BARRIER;
 // methods
 
 
-tracer::tracer(const std::unordered_map<uintptr_t, trap_data>& traps,
+tracer::tracer(const trap_set& traps,
     pid_t tracee_pid, pid_t tracee_tid,
     const nrgprf::reader_rapl& rdr_cpu, const nrgprf::reader_gpu& rdr_gpu, std::launch policy) :
     tracer(traps, tracee_pid, tracee_tid, rdr_cpu, rdr_gpu, policy, nullptr)
 {}
 
-tracer::tracer(const std::unordered_map<uintptr_t, trap_data>& traps,
+tracer::tracer(const trap_set& traps,
     pid_t tracee_pid, pid_t tracee_tid,
     const nrgprf::reader_rapl& rdr_cpu, const nrgprf::reader_gpu& rdr_gpu, std::launch policy,
     const tracer* tracer) :
@@ -135,7 +140,7 @@ tracer_expected<gathered_results> tracer::results()
             return std::move(results.error());
         for (auto& [addr, entry] : results.value())
         {
-            std::vector<fallible_execution> entries = _results[addr];
+            std::vector<fallible_execution>& entries = _results[addr];
             entries.insert(
                 entries.end(),
                 std::make_move_iterator(entry.begin()),
@@ -146,7 +151,7 @@ tracer_expected<gathered_results> tracer::results()
 }
 
 
-void tracer::add_child(const std::unordered_map<uintptr_t, trap_data>& traps, pid_t new_child)
+void tracer::add_child(const trap_set& traps, pid_t new_child)
 {
     std::scoped_lock lock(_children_mx);
     _children.push_back(
@@ -359,7 +364,7 @@ void tracer::register_results(uintptr_t bp)
     }
 }
 
-tracer_error tracer::trace(const std::unordered_map<uintptr_t, trap_data>* traps)
+tracer_error tracer::trace(const trap_set* traps)
 {
     assert(traps != nullptr);
 
@@ -422,13 +427,13 @@ tracer_error tracer::trace(const std::unordered_map<uintptr_t, trap_data>* traps
             // decrease the ip by 1 byte, since this is the size of the trap instruction
             set_ip(regs, get_ip(regs) - 1);
             uintptr_t start_bp_addr = get_ip(regs);
-            long original_word = traps->at(start_bp_addr).original_word;
-            const config_data::section& section = traps->at(start_bp_addr).section;
-
-            _exec = prepare_new_exec(section);
-            launch_async_sampling(section);
-
-            error = handle_breakpoint(regs, entrypoint, original_word);
+            tracer_expected<trap_set::iterator> trap =
+                get_trap(*traps, tid, start_bp_addr, entrypoint);
+            if (!trap)
+                return std::move(trap.error());
+            _exec = prepare_new_exec(trap.value()->section());
+            launch_async_sampling(trap.value()->section());
+            error = handle_breakpoint(regs, entrypoint, trap.value()->original_word());
             if (error)
                 return error;
             notify_start();
@@ -454,9 +459,11 @@ tracer_error tracer::trace(const std::unordered_map<uintptr_t, trap_data>* traps
 
                 set_ip(regs, get_ip(regs) - 1);
                 uintptr_t end_bp_addr = get_ip(regs);
-                long original_word = traps->at(end_bp_addr).original_word;
-
-                error = handle_breakpoint(regs, entrypoint, original_word);
+                tracer_expected<trap_set::iterator> trap =
+                    get_trap(*traps, tid, end_bp_addr, entrypoint);
+                if (!trap)
+                    return std::move(trap.error());
+                error = handle_breakpoint(regs, entrypoint, trap.value()->original_word());
                 if (error)
                     return error;
             }
