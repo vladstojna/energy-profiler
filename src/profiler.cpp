@@ -1,358 +1,281 @@
 // profiler.cpp
-#include "profiler.h"
 
-#include <chrono>
-#include <ostream>
+#include "error.hpp"
+#include "profiler.hpp"
+#include "ptrace_wrapper.hpp"
+#include "util.hpp"
+#include "tracer.hpp"
 
+#include <algorithm>
 #include <cassert>
-#include <cinttypes>
-#include <cstddef>
-#include <cstdint>
 
-#include <errno.h>
-#include <string.h>
 #include <unistd.h>
+#include <sys/types.h>
 #include <sys/ptrace.h>
 #include <sys/wait.h>
 #include <sys/user.h>
-#include <sys/syscall.h>
 
-#include "energy_reader.h"
-#include "macros.h"
-#include "trap.h"
-#include "util.h"
 
-// tgkill wrapper
+using namespace tep;
 
-inline int tgkill(pid_t tgid, pid_t tid, int signal)
-{
-    return syscall(SYS_tgkill, tgid, tid, signal);
-}
-
-// declarations
-
-bool add_child(std::unordered_map<pid_t, bool>& children, pid_t pid);
-bool insert_trap(pid_t pid, uintptr_t addr, long& word);
 
 // start helper functions
 
-constexpr uint32_t get_ptrace_opts()
+constexpr int get_ptrace_opts()
 {
     // kill the tracee when the profiler errors
-    uint32_t opts = PTRACE_O_EXITKILL;
+    int opts = PTRACE_O_EXITKILL;
     // trace threads being spawned using clone()
     opts |= PTRACE_O_TRACECLONE;
     // trace children spawned with fork(): will most likely be useless
     opts |= PTRACE_O_TRACEFORK;
     // trace children spawned with vfork() i.e. clone() with CLONE_VFORK
     opts |= PTRACE_O_TRACEVFORK;
-
+    // trace when a tracee exits
+    opts |= PTRACE_O_TRACEEXIT;
+    // distinguish normal traps from syscall traps
+    opts |= PTRACE_O_TRACESYSGOOD;
     return opts;
 }
 
-bool add_child(std::unordered_map<pid_t, bool>& children, pid_t pid)
+// inserts trap at 'addr'
+// returns either error or original word at address 'addr'
+tracer_expected<long> insert_trap(pid_t pid, uintptr_t addr)
 {
-    auto pair = children.try_emplace(pid, false);
-    dbg(tep::procmsg("child %d created (total = %lu)\n", pid, children.size()));
-    return pair.second;
+    ptrace_wrapper& pw = ptrace_wrapper::instance;
+    int error;
+    long word = pw.ptrace(error, PTRACE_PEEKDATA, pid, addr, 0);
+    if (error)
+        return get_syserror(error, tracer_errcode::PTRACE_ERROR, pid, "insert_trap: PTRACE_PEEKDATA");
+    long new_word = (word & lsb_mask()) | trap_code();
+    if (pw.ptrace(error, PTRACE_POKEDATA, pid, addr, new_word) < 0)
+        return get_syserror(error, tracer_errcode::PTRACE_ERROR, pid, "insert_trap: PTRACE_POKEDATA");
+    log(log_lvl::debug, "0x%" PRIxPTR ": %lx -> %lx", addr, word, new_word);
+    return word;
 }
 
-bool insert_trap(pid_t pid, uintptr_t addr, long& word)
+tracer_error handle_reader_error(pid_t pid, const nrgprf::error& error)
 {
-    // clear errno before call
-    errno = 0;
-    word = ptrace(PTRACE_PEEKDATA, pid, addr, 0);
-    if (errno) // check if errno is set
-    {
-        perror(fileline("PTRACE_PEEKDATA"));
-        return false;
-    }
-    long new_word = (word & tep::lsb_mask()) | tep::trap::code();
-    if (ptrace(PTRACE_POKEDATA, pid, addr, new_word) < 0)
-    {
-        perror(fileline("PTRACE_POKEDATA"));
-        return false;
-    }
-    return true;
+    log(log_lvl::error, "[%d] could not create reader: %s", pid, error.msg().c_str());
+    return { tracer_errcode::READER_ERROR, error.msg() };
 }
 
 // end helper functions
 
-tep::profiler::profiler(pid_t child_pid,
-    std::ostream& outstream,
-    const std::chrono::milliseconds& interval,
-    const std::unordered_set<uintptr_t>& addresses,
-    std::unique_ptr<tep::energy_reader>&& energy_reader) :
-    _sampler_thread(),
-    _sampler_mutex(),
-    _sampler_cond(),
-    _task_finished(false),
-    _target_finished(false),
-    _child_pid(child_pid),
-    _bp_addresses(addresses),
-    _trap_count(0),
-    _children(),
-    _unsuccess(true),
-    _energy_reader(std::move(energy_reader))
+
+section_results::section_results(const config_data::section& sec) :
+    section(sec),
+    readings(0)
+{}
+
+bool tep::operator==(const section_results& lhs, const section_results& rhs)
 {
-    // start pooled sampling thread
-    _sampler_thread = std::thread(&profiler::sampler_routine,
-        this, &outstream, _energy_reader.get(), interval);
+    return lhs.section == rhs.section;
 }
 
-tep::profiler::~profiler()
+bool tep::operator==(const section_results& lhs, const config_data::section& rhs)
 {
-    notify_target_finished();
-    _sampler_thread.join();
-
-    for (auto [tid, _] : _children)
-    {
-        if (_unsuccess)
-        {
-        #ifdef NDEBUG
-            tgkill(_child_pid, tid, SIGKILL);
-        #else
-            int rv = tgkill(_child_pid, tid, SIGKILL);
-            assert(rv == 0);
-            dbg(tep::procmsg("killed child %d\n", tid));
-        #endif
-        }
-        else
-        {
-        #ifdef NDEBUG
-            wait(NULL);
-        #else
-            pid_t child_pid = wait(NULL);
-            assert(child_pid != -1);
-            dbg(tep::procmsg("waited for child %d\n", child_pid));
-        #endif
-        }
-    }
+    return lhs.section == rhs;
 }
 
-void tep::profiler::notify_task()
+bool tep::operator==(const config_data::section& lhs, const section_results& rhs)
 {
-    {
-        std::scoped_lock lock(_sampler_mutex);
-        _task_finished = bool(_trap_count++ % 2);
-    }
-    _sampler_cond.notify_one();
+    return lhs == rhs.section;
 }
 
-void tep::profiler::notify_target_finished()
+
+profiling_results::profiling_results(nrgprf::reader_rapl&& rr, nrgprf::reader_gpu&& rg) :
+    rdr_cpu(std::move(rr)),
+    rdr_gpu(std::move(rg)),
+    results()
+{}
+
+
+profiler::profiler(pid_t child, const dbg_line_info& dli, const config_data& cd) :
+    _child(child),
+    _dli(dli),
+    _cd(cd),
+    _traps()
+{}
+
+profiler::profiler(pid_t child, const dbg_line_info& dli, config_data&& cd) :
+    _child(child),
+    _dli(dli),
+    _cd(std::move(cd)),
+    _traps()
+{}
+
+profiler::profiler(pid_t child, dbg_line_info&& dli, const config_data& cd) :
+    _child(child),
+    _dli(std::move(dli)),
+    _cd(cd),
+    _traps()
+{}
+
+profiler::profiler(pid_t child, dbg_line_info&& dli, config_data&& cd) :
+    _child(child),
+    _dli(std::move(dli)),
+    _cd(std::move(cd)),
+    _traps()
+{}
+
+const dbg_line_info& profiler::debug_line_info() const
 {
-    {
-        std::scoped_lock lock(_sampler_mutex);
-        _target_finished = true;
-    }
-    _sampler_cond.notify_one();
+    return _dli;
 }
 
-void tep::profiler::sampler_routine(std::ostream* os,
-    tep::energy_reader* energy_reader,
-    const std::chrono::milliseconds& interval)
+const config_data& profiler::config() const
 {
-    assert(os != nullptr);
-    assert(energy_reader != nullptr);
-    while (true)
-    {
-        {
-            std::unique_lock lock(_sampler_mutex);
-            _sampler_cond.wait(lock);
-            if (_target_finished)
-                return;
-            energy_reader->start();
-        }
-        {
-            while (true)
-            {
-                std::unique_lock lock(_sampler_mutex);
-                _sampler_cond.wait_for(lock, interval,
-                    [this] { return _task_finished || _target_finished; });
-                if (_target_finished)
-                {
-                    energy_reader->stop();
-                    *os << *energy_reader;
-                    if (os->fail())
-                        fprintf(stderr, fileline("error writing to output stream\n"));
-                    return;
-                }
-                if (_task_finished)
-                {
-                    energy_reader->stop();
-                    *os << *energy_reader;
-                    if (os->fail())
-                        fprintf(stderr, fileline("error writing to output stream\n"));
-                    break;
-                }
-                energy_reader->sample();
-            }
-        }
-    }
+    return _cd;
 }
 
-bool tep::profiler::signal_other_threads(pid_t tgid, pid_t caller_tid, int signal)
+const trap_set& profiler::traps() const
 {
-    for (auto& [tid, stopped] : _children)
-    {
-        if (tid != caller_tid)
-        {
-            stopped = true;
-            if (tgkill(tgid, tid, signal))
-            {
-                perror(fileline("tgkill"));
-                return false;
-            }
-        }
-    }
-    return true;
+    return _traps;
 }
 
-void tep::profiler::run()
+tracer_expected<profiling_results> profiler::run()
 {
     int wait_status;
-    pid_t waited_pid;
-    pid_t tgid;
-    uint32_t ptrace_opts;
-    uintptr_t entrypoint_addr;
-    user_regs_struct regs;
-    std::unordered_map<uintptr_t, long> original_words;
+    int tid = gettid();
 
-    // not necessary if running once: clear any children previously encountered
-    _children.clear();
-    ptrace_opts = get_ptrace_opts();
+    pid_t waited_pid = waitpid(_child, &wait_status, 0);
+    if (waited_pid == -1)
+        return get_syserror(errno, tracer_errcode::SYSTEM_ERROR, tid, "waitpid");
+    assert(waited_pid == _child);
 
-    // the thread group id is the global pid
-    tgid = _child_pid;
-    waited_pid = waitpid(_child_pid, &wait_status, 0);
-    assert(waited_pid == _child_pid);
+    log(log_lvl::info, "[%d] started the profiling procedure for child %d", tid, waited_pid);
+
     if (!WIFSTOPPED(wait_status))
     {
-        throw profiler_exception(fileline("target not stopped"));
-    }
-    ptrace(PTRACE_GETREGS, waited_pid, 0, &regs);
-    dbg(tep::procmsg("target %d rip @ 0x%016llx\n", waited_pid, tep::get_ip(regs)));
-    if ((entrypoint_addr = tep::get_entrypoint_addr(waited_pid)) == 0)
-    {
-        perror(fileline("get_entrypoint_addr"));
-        throw profiler_exception();
-    }
-    dbg(tep::procmsg("target %d entrypoint @ 0x%016llx\n", waited_pid, entrypoint_addr));
-    ptrace(PTRACE_SETOPTIONS, waited_pid, NULL, ptrace_opts);
-    if (!add_child(_children, waited_pid))
-    {
-        fprintf(stderr, "child %d already exists!", waited_pid);
-        throw profiler_exception();
+        log(log_lvl::error, "[%d] ptrace(PTRACE_TRACEME, ...) called but target was not stopped", tid);
+        return tracer_error(tracer_errcode::PTRACE_ERROR,
+            "Tracee not stopped despite being attached with ptrace");
     }
 
-    // set breakpoints
-    for (uintptr_t addr : _bp_addresses)
+    int errnum;
+    ptrace_wrapper& pw = ptrace_wrapper::instance;
+    user_regs_struct regs;
+    if (pw.ptrace(errnum, PTRACE_GETREGS, waited_pid, 0, &regs) == -1)
+        return get_syserror(errnum, tracer_errcode::PTRACE_ERROR, tid, "PTRACE_GETREGS");
+
+    uintptr_t entrypoint = get_entrypoint_addr(waited_pid);
+    if (!entrypoint)
+        return get_syserror(errno, tracer_errcode::SYSTEM_ERROR, tid, "get_entrypoint_addr");
+
+    log(log_lvl::info, "[%d] tracee %d rip @ 0x%" PRIxPTR ", entrypoint @ 0x%" PRIxPTR,
+        tid, waited_pid, get_ip(regs), entrypoint);
+
+    if (pw.ptrace(errnum, PTRACE_SETOPTIONS, waited_pid, 0, get_ptrace_opts()) == -1)
+        return get_syserror(errnum, tracer_errcode::PTRACE_ERROR, tid, "PTRACE_SETOPTIONS");
+    log(log_lvl::debug, "[%d] ptrace options successfully set", tid);
+
+    // iterate the sections defined in the config and insert their respective breakpoints
+    if (!_dli.has_dbg_symbols())
     {
-        long word;
-        uintptr_t final_addr = entrypoint_addr + addr;
-        // if trap insertion was successful & the address did not exist yet
-        if (insert_trap(_child_pid, final_addr, word) &&
-            original_words.try_emplace(final_addr, word).second)
-        {
-            dbg(tep::procmsg("inserted trap @ 0x%016llx\n", final_addr));
-        }
-        else
-        {
-            throw profiler_exception(fileline("error setting breakpoints"));
-        }
+        log(log_lvl::error, "[%d] no debugging information found", tid);
+        return tracer_error(tracer_errcode::NO_SYMBOL, "No debugging information found");
     }
 
-    // if no breakpoint addresses: measure the whole program
-    if (_bp_addresses.empty())
+    for (const auto& sec : _cd.sections())
     {
-        notify_task();
+        const config_data::position& start = sec.bounds().start();
+        const config_data::position& end = sec.bounds().end();
+
+        auto start_cu = _dli.find_cu(start.compilation_unit());
+        if (!start_cu)
+        {
+            log(log_lvl::error, "[%d] start compilation unit: %s",
+                tid, start_cu.error().message.c_str());
+            return tracer_error(tracer_errcode::NO_SYMBOL, std::move(start_cu.error().message));
+        }
+        auto end_cu = _dli.find_cu(end.compilation_unit());
+        if (!end_cu)
+        {
+            log(log_lvl::error, "[%d] end compilation unit: %s",
+                tid, end_cu.error().message.c_str());
+            return tracer_error(tracer_errcode::NO_SYMBOL, std::move(end_cu.error().message));
+        }
+
+        auto start_offset = start_cu.value()->line_first_addr(start.line());
+        if (!start_offset)
+        {
+            log(log_lvl::error, "[%d] start compilation unit: invalid line %" PRIu32, tid, start.line());
+            return tracer_error(tracer_errcode::NO_SYMBOL, std::move(start_offset.error().message));
+        }
+        auto end_offset = end_cu.value()->line_first_addr(end.line());
+        if (!end_offset)
+        {
+            log(log_lvl::error, "[%d] start compilation unit: invalid line %" PRIu32, tid, end.line());
+            return tracer_error(tracer_errcode::NO_SYMBOL, std::move(end_offset.error().message));
+        }
+
+        log(log_lvl::debug, "[%d] start offset 0x%" PRIxPTR, tid, start_offset.value());
+        log(log_lvl::debug, "[%d] end offset 0x%" PRIxPTR, tid, end_offset.value());
+
+        uintptr_t start_addr = entrypoint + start_offset.value();
+        uintptr_t end_addr = entrypoint + end_offset.value();
+        auto orig_word_start = insert_trap(waited_pid, start_addr);
+        if (!orig_word_start)
+            return std::move(orig_word_start.error());
+        auto orig_word_end = insert_trap(waited_pid, end_addr);
+        if (!orig_word_end)
+            return std::move(orig_word_end.error());
+        _traps.emplace(start_addr, orig_word_start.value(), sec);
+        log(log_lvl::info, "[%d] inserted trap @ 0x%" PRIxPTR " (offset 0x%" PRIxPTR ")",
+            tid, start_addr, start_addr - entrypoint);
+        _traps.emplace(end_addr, orig_word_end.value(), sec);
+        log(log_lvl::info, "[%d] inserted trap @ 0x%" PRIxPTR " (offset 0x%" PRIxPTR ")",
+            tid, end_addr, end_addr - entrypoint);
     }
 
-    // main tracing loop
-    while (WIFSTOPPED(wait_status))
-    {
-        if (ptrace(PTRACE_CONT, waited_pid, 0, 0) < 0)
-        {
-            perror(fileline("PTRACE_CONT"));
-            throw profiler_exception();
-        }
-        waited_pid = waitpid(-1, &wait_status, 0);
-        if (tep::is_clone_event(wait_status) ||
-            tep::is_vfork_event(wait_status) ||
-            tep::is_fork_event(wait_status))
-        {
-            pid_t new_child;
-            if (ptrace(PTRACE_GETEVENTMSG, waited_pid, 0, &new_child) < 0)
-            {
-                perror(fileline("PTRACE_GETEVENTMSG"));
-                throw profiler_exception();
-            }
-            if (!add_child(_children, new_child))
-            {
-                fprintf(stderr, "child %d already exists!", waited_pid);
-                throw profiler_exception();
-            }
-        }
-        else if (WIFSTOPPED(wait_status) && WSTOPSIG(wait_status) == SIGTRAP)
-        {
-            ptrace(PTRACE_GETREGS, waited_pid, 0, &regs);
-            tep::procmsg("child %d trapped @ 0x%016llx (0x%llx)\n", waited_pid,
-                tep::get_ip(regs), tep::get_ip(regs) - entrypoint_addr);
+    // create readers
+    log(log_lvl::debug, "[%d] params: 0x%x 0x%x 0x%x", tid, _cd.parameters().domain_mask(),
+        _cd.parameters().socket_mask(), _cd.parameters().device_mask());
+    nrgprf::error error = nrgprf::error::success();
+    nrgprf::reader_rapl rdr_cpu(static_cast<nrgprf::rapl_domain>(_cd.parameters().domain_mask() & 0xff),
+        static_cast<uint8_t>(_cd.parameters().socket_mask() & 0xff), error);
+    if (error)
+        return handle_reader_error(tid, error);
+    log(log_lvl::success, "[%d] created RAPL reader", tid);
+    nrgprf::reader_gpu rdr_gpu(static_cast<uint8_t>(_cd.parameters().device_mask() & 0xff), error);
+    if (error)
+        return handle_reader_error(tid, error);
+    log(log_lvl::success, "[%d] created GPU reader", tid);
 
-            // rewind the PC 1 byte (trap instruction size)
-            // no matter the thread and update the registers
-            tep::set_ip(regs, tep::get_ip(regs) - 1);
-            if (ptrace(PTRACE_SETREGS, waited_pid, 0, &regs) < 0)
+    // first tracer has the same tracee tgidand tid, since there is only one tracee at this point
+    tracer trc(_traps, _child, _child, rdr_cpu, rdr_gpu, std::launch::deferred);
+    tracer_expected<gathered_results> results = trc.results();
+    if (!results)
+        return std::move(results.error());
+
+    profiling_results retval(std::move(rdr_cpu), std::move(rdr_gpu));
+    for (auto& [addr, execs] : results.value())
+    {
+        trap_set::iterator trap = _traps.find(addr);
+        assert(trap != _traps.end());
+
+        std::vector<section_results>::iterator srit =
+            std::find(retval.results.begin(), retval.results.end(), trap->section());
+
+        section_results& sr = srit == retval.results.end() ?
+            retval.results.emplace_back(trap->section()) :
+            *srit;
+
+        for (auto& exec : execs)
+        {
+            if (exec)
             {
-                perror(fileline("PTRACE_SETREGS"));
-                throw profiler_exception();
+                sr.readings.add(std::move(exec.value()));
+                log(log_lvl::success, "[%d] registered execution of section @ 0x%" PRIxPTR
+                    " (offset = 0x%" PRIxPTR ") as successful", tid, addr, addr - entrypoint);
             }
-            // if child has not been marked as stopped then
-            // it is the first thread to reach this code
-            assert(_children.find(waited_pid) != _children.end());
-            if (!_children.at(waited_pid))
-            {
-                if (!signal_other_threads(tgid, waited_pid, SIGSTOP))
-                    throw profiler_exception();
-                // replace the trap with the original word
-                if (ptrace(PTRACE_POKEDATA, waited_pid, tep::get_ip(regs), original_words.at(tep::get_ip(regs))) < 0)
-                {
-                    perror(fileline("PTRACE_POKEDATA"));
-                    throw profiler_exception();
-                };
-                notify_task();
-            }
-            // if child has been stopped, "unstop" it
             else
             {
-                _children.at(waited_pid) = false;
+                log(log_lvl::error, "[%d] failed to gather results for execution of section @ 0x%"
+                    PRIxPTR " (offset = 0x%" PRIxPTR ")", tid, addr, addr - entrypoint);
             }
         }
-        else if (WIFEXITED(wait_status))
-        {
-            _children.erase(waited_pid);
-            tep::procmsg("child %d exited with status %d\n", waited_pid,
-                WEXITSTATUS(wait_status));
-        }
-        else if (WIFSIGNALED(wait_status))
-        {
-            _children.erase(waited_pid);
-            tep::procmsg("child %d terminated by signal: %s\n", waited_pid,
-                strsignal(WTERMSIG(wait_status)));
-        }
-    #if !defined(NDEBUG)
-        else
-        {
-            if (ptrace(PTRACE_GETREGS, waited_pid, 0, &regs) < 0)
-            {
-                perror(fileline("PTRACE_GETREGS"));
-                throw profiler_exception();
-            }
-            tep::procmsg("child %d got a signal: %s @ 0x%016llx\n", waited_pid,
-                strsignal(WSTOPSIG(wait_status)), tep::get_ip(regs));
-        }
-    #endif
     }
-    // successfully profiled
-    _unsuccess = false;
+    return retval;
 }

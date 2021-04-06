@@ -7,7 +7,12 @@
 #include <string>
 #include <vector>
 
-#include <expected.hpp>
+
+namespace cmmn
+{
+    template<typename R, typename E>
+    class expected;
+}
 
 namespace tep
 {
@@ -75,8 +80,9 @@ namespace tep
 
     // structs
 
-    struct config_data
+    class config_data
     {
+    public:
         enum class profiling_method
         {
             energy_profile,
@@ -89,87 +95,106 @@ namespace tep
             gpu
         };
 
-        struct position
+        class position
         {
-            std::string compilation_unit;
-            uint32_t line;
+        private:
+            std::string _cu;
+            uint32_t _line;
 
-            position(const std::string& cu, uint32_t ln) :
-                compilation_unit(cu), line(ln)
-            {}
+        public:
+            position(const std::string& cu, uint32_t ln);
+            position(std::string&& cu, uint32_t ln);
+            position(const char* cu, uint32_t ln);
 
-            position(std::string&& cu, uint32_t ln) :
-                compilation_unit(std::move(cu)), line(ln)
-            {}
-
-            position(const char* cu, uint32_t ln) :
-                compilation_unit(cu), line(ln)
-            {}
+            const std::string& compilation_unit() const;
+            uint32_t line() const;
         };
 
-        struct bounds
+        class bounds
         {
-            config_data::position start;
-            config_data::position end;
+        private:
+            config_data::position _start;
+            config_data::position _end;
 
-            template<typename T, std::enable_if_t<std::is_same_v<T, config_data::position>, bool> = true>
-            bounds(T&& s, T&& e) :
-                start(std::forward<T>(s)), end(std::forward<T>(e))
-            {}
+        public:
+            template<typename S, typename E>
+            bounds(S&& s, E&& e);
+
+            const config_data::position& start() const;
+            const config_data::position& end() const;
         };
 
-        struct params
+        class params
         {
-            unsigned int domain_mask;
-            unsigned int socket_mask;
-            unsigned int device_mask;
+        private:
+            unsigned int _domain_mask;
+            unsigned int _socket_mask;
+            unsigned int _device_mask;
 
-            params() : params(~0x0, ~0x0, ~0x0)
-            {}
+        public:
+            params();
+            params(unsigned int dommask, unsigned int sktmask, unsigned int devmask);
 
-            params(unsigned int dommask, unsigned int sktmask, unsigned int devmask) :
-                domain_mask(dommask),
-                socket_mask(sktmask),
-                device_mask(devmask)
-            {}
+            unsigned int domain_mask() const;
+            unsigned int socket_mask() const;
+            unsigned int device_mask() const;
         };
 
-        struct section
+        class section
         {
-            std::string name;
-            std::string extra;
-            config_data::target target;
-            std::chrono::milliseconds interval;
-            config_data::profiling_method method;
-            config_data::bounds bounds;
-            uint32_t executions;
-            uint32_t samples;
+        private:
+            std::string _name;
+            std::string _extra;
+            config_data::target _target;
+            config_data::profiling_method _method;
+            config_data::bounds _bounds;
+            std::chrono::milliseconds _interval;
+            uint32_t _executions;
+            uint32_t _samples;
 
-            template<typename T1, typename T2, typename T3, std::enable_if_t<
-                std::is_same_v<T1, std::string> || std::is_same_v<T1, const char*> ||
-                std::is_same_v<T2, std::string> || std::is_same_v<T2, const char*> ||
-                std::is_same_v<T3, config_data::bounds>, bool> = true
-            > section(T1&& nm, T2&& extr,
-                config_data::target tgt,
-                const std::chrono::milliseconds& intrv,
-                config_data::profiling_method mthd,
-                T3&& bnd,
-                uint32_t execs,
-                uint32_t smp) :
-                name(std::forward<T1>(nm)),
-                extra(std::forward<T2>(extr)),
-                target(tgt),
-                interval(intrv),
-                method(mthd),
-                bounds(std::forward<T3>(bnd)),
-                executions(execs),
-                samples(smp)
+        public:
+            template<typename N, typename E, typename B, typename I>
+            section(N&& nm, E&& extr, config_data::target tgt, config_data::profiling_method mthd,
+                B&& bnd, I&& intrv, uint32_t execs, uint32_t smp) :
+                _name(std::forward<N>(nm)),
+                _extra(std::forward<E>(extr)),
+                _target(tgt),
+                _method(mthd),
+                _bounds(std::forward<B>(bnd)),
+                _interval(std::forward<I>(intrv)),
+                _executions(execs),
+                _samples(smp)
             {}
+
+            const std::string& name() const;
+            const std::string& extra() const;
+
+            config_data::target target() const;
+            config_data::profiling_method method() const;
+            const config_data::bounds& bounds() const;
+
+            const std::chrono::milliseconds& interval() const;
+            uint32_t executions() const;
+            uint32_t samples() const;
+
+            bool has_name() const;
+            bool has_extra() const;
         };
 
-        uint32_t threads;
-        config_data::params parameters;
-        std::vector<section> sections;
+    private:
+        uint32_t _threads;
+        config_data::params _parameters;
+        std::vector<section> _sections;
+
+    public:
+        uint32_t threads() const;
+        void threads(uint32_t t);
+
+        void parameters(const config_data::params& p);
+        const config_data::params& parameters() const;
+
+        std::vector<section>& sections();
+        const std::vector<section>& sections() const;
     };
 
     // operator overloads
@@ -183,6 +208,11 @@ namespace tep
     std::ostream& operator<<(std::ostream& os, const config_data::section& s);
     std::ostream& operator<<(std::ostream& os, const config_data& cd);
 
+    bool operator==(const config_data::params& lhs, const config_data::params& rhs);
+    bool operator==(const config_data::position& lhs, const config_data::position& rhs);
+    bool operator==(const config_data::bounds& lhs, const config_data::bounds& rhs);
+    bool operator==(const config_data::section& lhs, const config_data::section& rhs);
+
     // types
 
     using cfg_result = cmmn::expected<config_data, cfg_error>;
@@ -190,5 +220,6 @@ namespace tep
     // functions
 
     cfg_result load_config(const char* file);
+    cfg_result load_config(const std::string& file);
 
 }
