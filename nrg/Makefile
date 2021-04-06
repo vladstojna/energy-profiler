@@ -1,10 +1,3 @@
-# get number of processors
-ifeq ($(shell uname -s),Linux)
-nprocs := $(shell grep -c ^processor /proc/cpuinfo)
-else
-nprocs := 1
-endif
-
 # directories
 src_dir  := src
 tgt_dir  := lib

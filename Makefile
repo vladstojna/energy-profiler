@@ -13,16 +13,14 @@ obj_dir := obj
 dep_dir := $(obj_dir)/.deps
 
 # external libs
-extlibs_tgt  := $(addprefix $(lib_dir)/, pcm papi rocm_smi pugixml)
-extlibs_incl := $(addprefix $(lib_dir)/, pcm papi/include rocm_smi/include pugixml/include)
-extlibs_dirs := $(addprefix $(lib_dir)/, pcm papi/lib rocm_smi/lib pugixml/lib)
+extlibs_tgt  := $(addprefix $(lib_dir)/, pugixml)
+extlibs_incl := $(addprefix $(lib_dir)/, pugixml/include)
+extlibs_dirs := $(addprefix $(lib_dir)/, pugixml/lib)
 
-export PAPI_ROCMSMI_ROOT=$(shell pwd)/$(lib_dir)/rocm_smi
-export LD_RUN_PATH=$(lib_dir)/pcm:$(lib_dir)/papi/lib:$(lib_dir)/rocm_smi/lib:nrg/lib
+export LD_RUN_PATH=nrg/lib
 
 # versions
 pugixml_ver := 1.11.4
-papi_ver    := 6-0-0-1
 
 # files
 src  := $(wildcard src/*.cpp)
@@ -45,7 +43,7 @@ cflags += $(addprefix -I, util nrg/include)
 cflags += -std=$(cppstd)
 
 # linked flags
-ldflags := -pthread -lbfd -ldwarf -lpapi -lpcm -lpugixml -lnrg -lnvidia-ml
+ldflags := -pthread -lbfd -ldwarf -lpugixml -lnrg -lnvidia-ml
 ldflags += $(addprefix -L, $(extlibs_dirs) nrg/lib)
 
 # cmake
@@ -69,34 +67,6 @@ $(dep_dir):
 	@mkdir -p $@
 $(lib_dir):
 	@mkdir -p $@
-
-lib/pcm: | $(lib_dir)
-	@rm -rf $@
-	cd $(lib_dir) && git clone https://github.com/opcm/pcm.git $(@F)
-	$(MAKE) -C $@ -j $(nprocs)
-
-lib/papi: lib/rocm_smi | $(lib_dir)
-	@rm -rf $@
-	# download the release and extract the archive
-	cd $(lib_dir) && \
-		wget https://bitbucket.org/icl/papi/get/papi-$(papi_ver)-t.tar.gz && \
-		tar xf papi-$(papi_ver)-t.tar.gz --one-top-level=$(@F) --strip-components=1 && \
-		rm -f papi-$(papi_ver)-t.tar.gz
-	# build
-	installdir=$(shell pwd)/$@ && \
-		cd $@/src && \
-		./configure --prefix=$$installdir --with-components="rapl rocm_smi"
-	$(MAKE) -C $@/src -j $(nprocs)
-	$(MAKE) -C $@/src install
-
-lib/rocm_smi: | $(lib_dir)
-	@rm -rf $@
-	cd $(lib_dir) && git clone https://github.com/RadeonOpenCompute/rocm_smi_lib.git $(@F);
-	installdir=$(shell pwd)/$@ && \
-		cd $@ && mkdir -p build && cd build && \
-		$(CMAKE) -DCMAKE_INSTALL_PREFIX=$$installdir -Wdev -Wdeprecated -S ..
-	$(MAKE) -C $@/build -j $(nprocs)
-	$(MAKE) -C $@/build install
 
 lib/pugixml: | $(lib_dir)
 	@rm -rf $@
