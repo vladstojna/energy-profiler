@@ -6,39 +6,16 @@
 #include "reader_rapl.hpp"
 #include "sample.hpp"
 
-#define GPU_NV
-
-#if defined(GPU_NV)
-typedef struct nvmlDevice_st* nvmlDevice_t;
-#endif
+#include <memory>
 
 namespace nrgprf
 {
 
-    namespace detail
-    {
-
-        struct nvml_handle
-        {
-            nvml_handle(error& ec);
-            ~nvml_handle() noexcept;
-
-            nvml_handle(const nvml_handle& other) noexcept;
-            nvml_handle(nvml_handle&& other) noexcept;
-
-            nvml_handle& operator=(const nvml_handle& other) noexcept;
-            nvml_handle& operator=(nvml_handle&& other) noexcept;
-        };
-
-    }
-
     class reader_gpu
     {
     private:
-        detail::nvml_handle _nvml_handle;
-        size_t _offset;
-        int8_t _event_map[MAX_SOCKETS];
-        std::vector<nvmlDevice_t> _active_handles;
+        struct impl;
+        std::shared_ptr<impl> _impl;
 
     public:
         reader_gpu(error& ec);

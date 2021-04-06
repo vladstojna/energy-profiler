@@ -13,20 +13,30 @@ obj  := $(patsubst $(src_dir)/%.cpp, $(obj_dir)/%.o, $(src))
 deps := $(patsubst $(src_dir)/%.cpp, $(dep_dir)/%.d, $(src))
 tgt  := $(tgt_dir)/libnrg.so
 
+DEBUG ?=
+gpu ?=
+
 # compiler flags
 cc := g++
-DEBUG ?=
 cflags := -Wall -Wextra -Wno-unknown-pragmas -fPIC -g
+cflags += $(addprefix -I, $(incl))
+cflags += -std=c++17
+
 ifdef DEBUG
 cflags += -O0
 else
 cflags += -O3 -DNDEBUG
 endif
-cflags += $(addprefix -I, $(incl))
-cflags += -std=c++17
+
+ifdef gpu
+cflags += $(addprefix -D, $(gpu))
+endif
 
 # linker flags
 ldflags := -shared
+ifdef gpu
+ldflags += -lnvidia-ml
+endif
 
 # rules -----------------------------------------------------------------------
 

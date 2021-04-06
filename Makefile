@@ -28,22 +28,25 @@ obj  := $(patsubst $(src_dir)/%.cpp, $(obj_dir)/%.o, $(src))
 deps := $(patsubst $(src_dir)/%.cpp, $(dep_dir)/%.d, $(src))
 tgt  := $(tgt_dir)/profiler
 
+DEBUG ?=
+
 # compiler flags
 cc := g++
 cppstd := c++17
-DEBUG ?=
+
 cflags := -Wall -Wextra -Wno-unknown-pragmas -fPIE -g
-ifeq ($(DEBUG),true)
-cflags += -O0
-else
-cflags += -O3 -DNDEBUG
-endif
 cflags += $(addprefix -I, $(extlibs_incl))
 cflags += $(addprefix -I, util nrg/include)
 cflags += -std=$(cppstd)
 
+ifdef DEBUG
+cflags += -O0
+else
+cflags += -O3 -DNDEBUG
+endif
+
 # linked flags
-ldflags := -pthread -lbfd -ldwarf -lpugixml -lnrg -lnvidia-ml
+ldflags := -pthread -lbfd -ldwarf -lpugixml -lnrg
 ldflags += $(addprefix -L, $(extlibs_dirs) nrg/lib)
 
 # cmake
