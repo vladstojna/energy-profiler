@@ -80,8 +80,9 @@ lib/pugixml: | $(lib_dir)
 		rm -f pugixml-$(pugixml_ver).tar.gz
 	# build
 	installdir=$(shell pwd)/$@ && \
-		cd $@ && mkdir -p build && \
-		$(CMAKE) -DCMAKE_INSTALL_PREFIX=$$installdir -Wdev -Wdeprecated -S . -B build
+		cd $@ && mkdir -p build && cd build && \
+		$(CMAKE) -DCMAKE_INSTALL_PREFIX=$$installdir -DCMAKE_INSTALL_LIBDIR=lib \
+			-Wdev -Wdeprecated ..
 	$(MAKE) -j $(nprocs) -C $@/build install
 
 $(tgt): $(obj) | $(tgt_dir)
