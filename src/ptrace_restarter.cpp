@@ -67,7 +67,7 @@ tep::ptrace_restarter::ptrace_restarter(pid_t tid, pid_t tracee, ptrace_wrapper&
 
     log(log_lvl::warning, "[%d] waited for tracee %d with signal: %s (status 0x%x),"
         " rip @ 0x%" PRIxPTR, tid, tracee,
-        sigabbrev_np(WSTOPSIG(wait_status)), wait_status, get_ip(regs));
+        sig_str(WSTOPSIG(wait_status)), wait_status, get_ip(regs));
 
     if (pw.ptrace(errnum, PTRACE_CONT, tracee, 0, 0) == -1)
     {

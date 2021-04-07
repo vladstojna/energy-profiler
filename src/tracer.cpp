@@ -389,7 +389,7 @@ tracer_error tracer::trace(const trap_set* traps)
         if (error)
             return error;
         log(log_lvl::debug, "[%d] waited for tracee %d with signal: %s (status 0x%x)", tid, _tracee,
-            sigabbrev_np(WSTOPSIG(wait_status)), wait_status);
+            sig_str(WSTOPSIG(wait_status)), wait_status);
 
         if (is_child_event(wait_status))
         {
@@ -494,7 +494,7 @@ tracer_error tracer::trace(const trap_set* traps)
         else if (WIFSIGNALED(wait_status))
         {
             log(log_lvl::success, "[%d] tracee %d exited with status %d", tid, _tracee,
-                sigabbrev_np(WTERMSIG(wait_status)));
+                sig_str(WTERMSIG(wait_status)));
             break;
         }
         else

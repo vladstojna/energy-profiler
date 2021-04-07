@@ -40,17 +40,23 @@ constexpr int get_ptrace_opts()
 
 // inserts trap at 'addr'
 // returns either error or original word at address 'addr'
-tracer_expected<long> insert_trap(pid_t pid, uintptr_t addr)
+tracer_expected<long> insert_trap(pid_t my_tid, pid_t pid, uintptr_t addr)
 {
     ptrace_wrapper& pw = ptrace_wrapper::instance;
     int error;
     long word = pw.ptrace(error, PTRACE_PEEKDATA, pid, addr, 0);
     if (error)
-        return get_syserror(error, tracer_errcode::PTRACE_ERROR, pid, "insert_trap: PTRACE_PEEKDATA");
+    {
+        log(log_lvl::error, "[%d] error inserting trap @ 0x%" PRIxPTR, my_tid, addr);
+        return get_syserror(error, tracer_errcode::PTRACE_ERROR, my_tid, "insert_trap: PTRACE_PEEKDATA");
+    }
     long new_word = (word & lsb_mask()) | trap_code();
     if (pw.ptrace(error, PTRACE_POKEDATA, pid, addr, new_word) < 0)
-        return get_syserror(error, tracer_errcode::PTRACE_ERROR, pid, "insert_trap: PTRACE_POKEDATA");
-    log(log_lvl::debug, "0x%" PRIxPTR ": %lx -> %lx", addr, word, new_word);
+    {
+        log(log_lvl::error, "[%d] error inserting trap @ 0x%" PRIxPTR, my_tid, addr);
+        return get_syserror(error, tracer_errcode::PTRACE_ERROR, my_tid, "insert_trap: PTRACE_POKEDATA");
+    }
+    log(log_lvl::debug, "[%d] 0x%" PRIxPTR ": %lx -> %lx", my_tid, addr, word, new_word);
     return word;
 }
 
@@ -215,10 +221,10 @@ tracer_expected<profiling_results> profiler::run()
 
         uintptr_t start_addr = entrypoint + start_offset.value();
         uintptr_t end_addr = entrypoint + end_offset.value();
-        auto orig_word_start = insert_trap(waited_pid, start_addr);
+        auto orig_word_start = insert_trap(tid, waited_pid, start_addr);
         if (!orig_word_start)
             return std::move(orig_word_start.error());
-        auto orig_word_end = insert_trap(waited_pid, end_addr);
+        auto orig_word_end = insert_trap(tid, waited_pid, end_addr);
         if (!orig_word_end)
             return std::move(orig_word_end.error());
         _traps.emplace(start_addr, orig_word_start.value(), sec);
