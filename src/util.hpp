@@ -9,6 +9,15 @@
 #include <sys/wait.h>
 
 
+#if __GLIBC__ == 2 && __GLIBC_MINOR__ < 30
+#include <sys/syscall.h>
+inline pid_t gettid()
+{
+    return syscall(SYS_gettid);
+}
+#endif
+
+
 #define log(lvl, fmt, ...) \
     log__(__FILE__, __LINE__, lvl, fmt, __VA_ARGS__)
 
@@ -82,5 +91,7 @@ namespace tep
     {
         return 0xcc;
     }
+
+    const char* sig_str(int signal);
 
 }
