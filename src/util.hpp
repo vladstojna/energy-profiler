@@ -10,6 +10,7 @@
 
 
 #if __GLIBC__ == 2 && __GLIBC_MINOR__ < 30
+#include <unistd.h>
 #include <sys/syscall.h>
 inline pid_t gettid()
 {

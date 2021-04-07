@@ -28,14 +28,6 @@ inline int tgkill(pid_t tgid, pid_t tid, int signal)
 }
 
 
-// gettid wrapper
-
-inline pid_t gettid()
-{
-    return syscall(SYS_gettid);
-}
-
-
 // begin helper functions
 
 
