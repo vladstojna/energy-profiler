@@ -28,22 +28,25 @@ obj  := $(patsubst $(src_dir)/%.cpp, $(obj_dir)/%.o, $(src))
 deps := $(patsubst $(src_dir)/%.cpp, $(dep_dir)/%.d, $(src))
 tgt  := $(tgt_dir)/profiler
 
+DEBUG ?=
+
 # compiler flags
 cc := g++
 cppstd := c++17
-DEBUG ?=
+
 cflags := -Wall -Wextra -Wno-unknown-pragmas -fPIE -g
-ifeq ($(DEBUG),true)
-cflags += -O0
-else
-cflags += -O3 -DNDEBUG
-endif
 cflags += $(addprefix -I, $(extlibs_incl))
 cflags += $(addprefix -I, util nrg/include)
 cflags += -std=$(cppstd)
 
+ifdef DEBUG
+cflags += -O0
+else
+cflags += -O3 -DNDEBUG
+endif
+
 # linked flags
-ldflags := -pthread -lbfd -ldwarf -lpugixml -lnrg -lnvidia-ml
+ldflags := -pthread -lbfd -ldwarf -lpugixml -lnrg
 ldflags += $(addprefix -L, $(extlibs_dirs) nrg/lib)
 
 # cmake
@@ -77,8 +80,9 @@ lib/pugixml: | $(lib_dir)
 		rm -f pugixml-$(pugixml_ver).tar.gz
 	# build
 	installdir=$(shell pwd)/$@ && \
-		cd $@ && mkdir -p build && \
-		$(CMAKE) -DCMAKE_INSTALL_PREFIX=$$installdir -Wdev -Wdeprecated -S . -B build
+		cd $@ && mkdir -p build && cd build && \
+		$(CMAKE) -DCMAKE_INSTALL_PREFIX=$$installdir -DCMAKE_INSTALL_LIBDIR=lib \
+			-Wdev -Wdeprecated ..
 	$(MAKE) -j $(nprocs) -C $@/build install
 
 $(tgt): $(obj) | $(tgt_dir)

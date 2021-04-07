@@ -5,6 +5,7 @@
 #include <cstdarg>
 #include <cstdio>
 #include <ctime>
+#include <cstring>
 #include <mutex>
 #include <unistd.h>
 #include <sys/user.h>
@@ -109,3 +110,19 @@ void tep::set_ip(user_regs_struct& regs, uintptr_t addr)
     // empty
 #endif
 }
+
+#if __GLIBC__ == 2 && __GLIBC_MINOR__ < 32
+
+const char* tep::sig_str(int signal)
+{
+    return strsignal(signal);
+}
+
+#else
+
+const char* tep::sig_str(int signal)
+{
+    return sigabbrev_np(signal);
+}
+
+#endif
