@@ -267,7 +267,7 @@ reader_rapl::reader_rapl(rapl_domain dmask, uint8_t skt_mask, error& ec) :
         ec = std::move(num_skts.error());
         return;
     }
-    std::cout << "found " << num_skts << " sockets\n";
+    std::cout << "found " << +num_skts.value() << " sockets\n";
     for (uint8_t skt = 0; skt < num_skts.value(); skt++)
     {
         if (!(skt_mask & (1 << skt)))
