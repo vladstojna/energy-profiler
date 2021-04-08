@@ -58,13 +58,13 @@ namespace tep
 
             for (uint8_t dev = 0; dev < nrgprf::MAX_SOCKETS; dev++)
             {
+                os << " dev=" << +dev;
                 double total_energy = 0.0;
                 for (size_t s = 1; s < exec.size(); s++)
                 {
                     const nrgprf::sample& prev = exec.get(s - 1);
                     const nrgprf::sample& curr = exec.get(s);
 
-                    os << " dev=" << +dev;
                     nrgprf::result<uint64_t> pwr_prev = rt.reader().get_board_power(prev, dev);
                     nrgprf::result<uint64_t> pwr_curr = rt.reader().get_board_power(curr, dev);
                     if (pwr_prev && pwr_curr)
@@ -77,10 +77,11 @@ namespace tep
                         break;
                 }
                 if (total_energy == 0.0)
-                    os << ", N/A";
+                    os << ", N/A |";
                 else
-                    os << total_energy << " J";
+                    os << ", " << total_energy << " J |";
             }
+            os << "\n";
         }
         return os;
     }
