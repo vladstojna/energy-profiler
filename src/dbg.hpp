@@ -8,7 +8,6 @@
 #include <iosfwd>
 #include <vector>
 #include <map>
-#include <unordered_set>
 
 namespace tep
 {
@@ -21,6 +20,7 @@ namespace tep
         SYSTEM_ERROR,
         DEBUG_SYMBOLS_NOT_FOUND,
         COMPILATION_UNIT_NOT_FOUND,
+        COMPILATION_UNIT_AMBIGUOUS,
         INVALID_LINE,
         DWARF_ERROR
     };
@@ -54,22 +54,6 @@ namespace tep
 
     class compilation_unit
     {
-    public:
-        struct hash
-        {
-            using is_transparent = void;
-            size_t operator()(const compilation_unit& cu) const;
-            size_t operator()(const std::string& name) const;
-        };
-
-        struct equal
-        {
-            using is_transparent = void;
-            bool operator()(const compilation_unit& lhs, const compilation_unit& rhs) const;
-            bool operator()(const compilation_unit& lhs, const std::string& rhs) const;
-            bool operator()(const std::string& lhs, const compilation_unit& rhs) const;
-        };
-
     private:
         std::string _name;
         std::map<uint32_t, std::vector<uintptr_t>> _lines;
@@ -93,15 +77,17 @@ namespace tep
         static dbg_expected<dbg_line_info> create(const char* filename);
 
     private:
-        std::unordered_set<
-            compilation_unit,
-            compilation_unit::hash,
-            compilation_unit::equal> _units;
+        std::vector<compilation_unit> _units;
+
         dbg_line_info(const char* filename, dbg_error& err);
 
     public:
-        bool has_dbg_symbols() const { return !_units.empty(); }
+        bool has_dbg_symbols() const;
+
         dbg_expected<const compilation_unit*> find_cu(const std::string& name) const;
+        dbg_expected<const compilation_unit*> find_cu(const char* name) const;
+        dbg_expected<compilation_unit*> find_cu(const std::string& name);
+        dbg_expected<compilation_unit*> find_cu(const char* name);
 
         friend std::ostream& operator<<(std::ostream& os, const dbg_line_info& cu);
 
@@ -114,5 +100,7 @@ namespace tep
     std::ostream& operator<<(std::ostream& os, const dbg_error& de);
     std::ostream& operator<<(std::ostream& os, const compilation_unit& cu);
     std::ostream& operator<<(std::ostream& os, const dbg_line_info& cu);
+
+    bool operator==(const compilation_unit& lhs, const compilation_unit& rhs);
 
 }

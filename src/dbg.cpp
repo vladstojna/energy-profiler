@@ -4,12 +4,13 @@
 
 #include "dbg.hpp"
 
-#include <stdexcept>
+#include <algorithm>
 #include <iostream>
 #include <iomanip>
 #include <cassert>
 #include <cstring>
 #include <cerrno>
+#include <filesystem>
 
 using namespace tep;
 
@@ -21,6 +22,29 @@ std::string get_system_error()
 {
     char buffer[256];
     return { strerror_r(errno, buffer, 256) };
+}
+
+
+std::string cu_ambiguous_msg(const std::string& name, const compilation_unit& first, const compilation_unit& second)
+{
+    std::string retval;
+    retval.reserve(name.size() + first.name().size() + second.name().size() + 18 + 33 + 8 + 2);
+    return retval.append("Compilation unit ")
+        .append(name)
+        .append(" ambiguous; found two matches: '")
+        .append(first.name())
+        .append("' and '")
+        .append(second.name())
+        .append("'");
+}
+
+std::string cu_not_found_msg(const std::string& name)
+{
+    std::string retval;
+    retval.reserve(name.size() + 18 + 11);
+    return retval.append("Compilation unit ")
+        .append(name)
+        .append(" not found");
 }
 
 
@@ -40,34 +64,6 @@ dbg_error::dbg_error(dbg_error_code c, const std::string& msg) :
 dbg_error::dbg_error(dbg_error_code c, std::string&& msg) :
     code(c), message(std::move(msg))
 {}
-
-// template specialisations
-
-
-size_t compilation_unit::hash::operator()(const compilation_unit& cu) const
-{
-    return std::hash<std::string>()(cu.name());
-}
-
-size_t compilation_unit::hash::operator()(const std::string& cu_name) const
-{
-    return std::hash<std::string>()(cu_name);
-}
-
-bool compilation_unit::equal::operator()(const compilation_unit& lhs, const compilation_unit& rhs) const
-{
-    return lhs.name() == rhs.name();
-}
-
-bool compilation_unit::equal::operator()(const compilation_unit& lhs, const std::string& rhs) const
-{
-    return lhs.name() == rhs;
-}
-
-bool compilation_unit::equal::operator()(const std::string& lhs, const compilation_unit& rhs) const
-{
-    return lhs == rhs.name();
-}
 
 
 // begin compilation_unit
@@ -135,14 +131,53 @@ dbg_line_info::dbg_line_info(const char* filename, dbg_error& err) :
         err = { dbg_error_code::SYSTEM_ERROR, get_system_error() };
 }
 
+bool dbg_line_info::has_dbg_symbols() const
+{
+    return !_units.empty();
+}
+
 dbg_expected<const compilation_unit*> dbg_line_info::find_cu(const std::string& name) const
 {
-    auto it = _units.find(name);
-    if (it == _units.end())
-        return dbg_error(dbg_error_code::COMPILATION_UNIT_NOT_FOUND,
-            "Compilation unit " + name + " not found");
-    return &*it;
+    return find_cu(name.c_str());
 }
+
+dbg_expected<const compilation_unit*> dbg_line_info::find_cu(const char* name) const
+{
+    return find_cu(name);
+}
+
+dbg_expected<compilation_unit*> dbg_line_info::find_cu(const std::string& name)
+{
+    return find_cu(name.c_str());
+}
+
+dbg_expected<compilation_unit*> dbg_line_info::find_cu(const char* name)
+{
+    compilation_unit* contains = nullptr;
+    for (auto& cu : _units)
+    {
+        // existing path is always absolute
+        std::filesystem::path existing_path(cu.name());
+        std::filesystem::path subpath(name);
+
+        if (existing_path == subpath)
+            return &cu;
+        // check if name is a subpath of an existing CU path
+        else if (std::search(existing_path.begin(), existing_path.end(),
+            subpath.begin(), subpath.end()) != existing_path.end())
+        {
+            if (contains != nullptr)
+                return dbg_error(dbg_error_code::COMPILATION_UNIT_AMBIGUOUS,
+                    cu_ambiguous_msg(name, *contains, cu));
+            contains = &cu;
+        }
+    }
+    if (contains == nullptr)
+        return dbg_error(dbg_error_code::COMPILATION_UNIT_NOT_FOUND,
+            cu_not_found_msg(name));
+    return contains;
+}
+
 
 // TODO: need to rewrite this using newer functions
 dbg_error dbg_line_info::get_line_info(int fd)
@@ -161,7 +196,6 @@ dbg_error dbg_line_info::get_line_info(int fd)
     // iterate all compilation units
     while (true)
     {
-        char* comp_unit;
         Dwarf_Unsigned next_cu_size;
         Dwarf_Die dw_die;
         Dwarf_Line* linebuf;
@@ -175,33 +209,48 @@ dbg_error dbg_line_info::get_line_info(int fd)
         }
         if ((rv = dwarf_siblingof(dw_dbg, NULL, &dw_die, &dw_err)) != DW_DLV_OK)
             return { dbg_error_code::DWARF_ERROR, dwarf_errmsg(dw_err) };
-        if ((rv = dwarf_diename(dw_die, &comp_unit, &dw_err)) != DW_DLV_OK)
-            return { dbg_error_code::DWARF_ERROR, dwarf_errmsg(dw_err) };
         if ((rv = dwarf_srclines(dw_die, &linebuf, &linecount, &dw_err)) != DW_DLV_OK)
             return { dbg_error_code::DWARF_ERROR, dwarf_errmsg(dw_err) };
 
-        compilation_unit cu(comp_unit);
         for (Dwarf_Signed ix = 0; ix < linecount; ix++)
         {
+            char* srcfile;
             Dwarf_Bool result;
             Dwarf_Unsigned lineno;
             Dwarf_Addr lineaddr;
+
             if ((rv = dwarf_linebeginstatement(linebuf[ix], &result, &dw_err)) != DW_DLV_OK)
                 return { dbg_error_code::DWARF_ERROR, dwarf_errmsg(dw_err) };
             // proceed only if line represents beginning of statement
             if (!result)
                 continue;
+            if ((rv = dwarf_linesrc(linebuf[ix], &srcfile, &dw_err)) != DW_DLV_OK)
+                return { dbg_error_code::DWARF_ERROR, dwarf_errmsg(dw_err) };
             if ((rv = dwarf_lineno(linebuf[ix], &lineno, &dw_err)) != DW_DLV_OK)
                 return { dbg_error_code::DWARF_ERROR, dwarf_errmsg(dw_err) };
             if ((rv = dwarf_lineaddr(linebuf[ix], &lineaddr, &dw_err)) != DW_DLV_OK)
                 return { dbg_error_code::DWARF_ERROR, dwarf_errmsg(dw_err) };
 
+            dbg_expected<compilation_unit*> cu = find_cu(srcfile);
+            if (!cu)
+            {
+                if (cu.error().code == dbg_error_code::COMPILATION_UNIT_NOT_FOUND)
+                    _units.emplace_back(srcfile).add_address(lineno, lineaddr);
+                // should never happen since we're comparing absolute paths
+                else if (cu.error().code == dbg_error_code::COMPILATION_UNIT_AMBIGUOUS)
+                    return std::move(cu.error());
+                else // should never happen
+                    assert(false);
+            }
+            else
+            {
+                cu.value()->add_address(lineno, lineaddr);
+            }
+
             dwarf_dealloc(dw_dbg, linebuf[ix], DW_DLA_LINE);
-            cu.add_address(lineno, lineaddr);
+            dwarf_dealloc(dw_dbg, srcfile, DW_DLA_STRING);
         }
         dwarf_dealloc(dw_dbg, linebuf, DW_DLA_LIST);
-        dwarf_dealloc(dw_dbg, comp_unit, DW_DLA_STRING);
-        _units.insert(std::move(cu));
     }
 
     if (dwarf_finish(dw_dbg, &dw_err) != DW_DLV_OK)
@@ -239,4 +288,10 @@ std::ostream& tep::operator<<(std::ostream& os, const dbg_line_info& dbg_info)
     for (const auto& cu : dbg_info._units)
         os << cu;
     return os;
+}
+
+
+bool tep::operator==(const compilation_unit& lhs, const compilation_unit& rhs)
+{
+    return lhs.name() == rhs.name();
 }
