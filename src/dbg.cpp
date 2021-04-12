@@ -219,11 +219,6 @@ dbg_error dbg_line_info::get_line_info(int fd)
             Dwarf_Unsigned lineno;
             Dwarf_Addr lineaddr;
 
-            if ((rv = dwarf_linebeginstatement(linebuf[ix], &result, &dw_err)) != DW_DLV_OK)
-                return { dbg_error_code::DWARF_ERROR, dwarf_errmsg(dw_err) };
-            // proceed only if line represents beginning of statement
-            if (!result)
-                continue;
             if ((rv = dwarf_linesrc(linebuf[ix], &srcfile, &dw_err)) != DW_DLV_OK)
                 return { dbg_error_code::DWARF_ERROR, dwarf_errmsg(dw_err) };
             if ((rv = dwarf_lineno(linebuf[ix], &lineno, &dw_err)) != DW_DLV_OK)
