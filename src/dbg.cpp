@@ -215,7 +215,6 @@ dbg_error dbg_line_info::get_line_info(int fd)
         for (Dwarf_Signed ix = 0; ix < linecount; ix++)
         {
             char* srcfile;
-            Dwarf_Bool result;
             Dwarf_Unsigned lineno;
             Dwarf_Addr lineaddr;
 

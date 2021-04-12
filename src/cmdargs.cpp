@@ -2,8 +2,8 @@
 
 #include "cmdargs.hpp"
 
+#include <cassert>
 #include <iostream>
-
 #include <getopt.h>
 
 using namespace tep;
@@ -91,14 +91,16 @@ output_file::operator bool() const
     return bool(*_outstream);
 }
 
-arguments::arguments(int idx, output_file&& of, const std::string& cfg) :
+arguments::arguments(int idx, bool pie, output_file&& of, const std::string& cfg) :
     _target_idx(idx),
+    _pie(pie),
     _outfile(std::move(of)),
     _config(cfg)
 {}
 
-arguments::arguments(int idx, output_file&& of, std::string&& cfg) :
+arguments::arguments(int idx, bool pie, output_file&& of, std::string&& cfg) :
     _target_idx(idx),
+    _pie(pie),
     _outfile(std::move(of)),
     _config(std::move(cfg))
 {}
@@ -106,6 +108,11 @@ arguments::arguments(int idx, output_file&& of, std::string&& cfg) :
 int arguments::target_index() const
 {
     return _target_idx;
+}
+
+bool arguments::pie() const
+{
+    return _pie;
 }
 
 output_file& arguments::outfile()
@@ -131,6 +138,7 @@ std::ostream& tep::operator<<(std::ostream& os, const output_file& of)
 std::ostream& tep::operator<<(std::ostream& os, const arguments& args)
 {
     os << "target @ index " << args.target_index();
+    os << ", is PIE? " << (args.pie() ? "yes" : "no");
     os << ", output: " << args.outfile();
     os << ", config file: " << args.config();
     return os;
@@ -152,29 +160,36 @@ void print_usage(const char* profiler_name)
 
 cmmn::expected<arguments, arg_error> tep::parse_arguments(int argc, char* const argv[])
 {
+    int c;
+    int flag = 1;
+    int option_index = 0;
+
+    bool pie = true;
+    std::string output;
+    std::string config;
+
     struct option long_options[] =
     {
         { "help", no_argument, 0, 'h' },
+        { "pie", no_argument, &flag, 1 },
+        { "no-pie", no_argument, &flag, 0 },
         { "config", required_argument, 0, 'c' },
         { "output", required_argument, 0, 'o' },
         {0, 0, 0, 0}
     };
 
-    int c;
-    int option_index = 0;
-    std::string output;
-    std::string config;
     while ((c = getopt_long(argc, argv, "hc:o:", long_options, &option_index)) != -1)
     {
         switch (c)
         {
+        case 0:
+            pie = bool(flag);
+            break;
         case 'c':
-            if (*optarg)
-                config = optarg;
+            config = optarg;
             break;
         case 'o':
-            if (*optarg)
-                output = optarg;
+            output = optarg;
             break;
         case 'h':
         case '?':
@@ -182,7 +197,7 @@ cmmn::expected<arguments, arg_error> tep::parse_arguments(int argc, char* const 
             print_usage(argv[0]);
             return arg_error();
         default:
-            abort();
+            assert(false);
         }
     }
 
@@ -195,7 +210,7 @@ cmmn::expected<arguments, arg_error> tep::parse_arguments(int argc, char* const 
     output_file of(std::move(output));
     if (!of)
     {
-        std::cerr << "error opening output file " << of;
+        std::cerr << "error opening output file " << of << "\n";
         return arg_error();
     }
 
@@ -205,5 +220,5 @@ cmmn::expected<arguments, arg_error> tep::parse_arguments(int argc, char* const 
         return arg_error();
     }
 
-    return { optind, std::move(of), std::move(config) };
+    return { optind, pie, std::move(of), std::move(config) };
 }

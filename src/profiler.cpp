@@ -97,29 +97,33 @@ profiling_results::profiling_results(nrgprf::reader_rapl&& rr, nrgprf::reader_gp
 {}
 
 
-profiler::profiler(pid_t child, const dbg_line_info& dli, const config_data& cd) :
+profiler::profiler(pid_t child, bool pie, const dbg_line_info& dli, const config_data& cd) :
     _child(child),
+    _pie(pie),
     _dli(dli),
     _cd(cd),
     _traps()
 {}
 
-profiler::profiler(pid_t child, const dbg_line_info& dli, config_data&& cd) :
+profiler::profiler(pid_t child, bool pie, const dbg_line_info& dli, config_data&& cd) :
     _child(child),
+    _pie(pie),
     _dli(dli),
     _cd(std::move(cd)),
     _traps()
 {}
 
-profiler::profiler(pid_t child, dbg_line_info&& dli, const config_data& cd) :
+profiler::profiler(pid_t child, bool pie, dbg_line_info&& dli, const config_data& cd) :
     _child(child),
+    _pie(pie),
     _dli(std::move(dli)),
     _cd(cd),
     _traps()
 {}
 
-profiler::profiler(pid_t child, dbg_line_info&& dli, config_data&& cd) :
+profiler::profiler(pid_t child, bool pie, dbg_line_info&& dli, config_data&& cd) :
     _child(child),
+    _pie(pie),
     _dli(std::move(dli)),
     _cd(std::move(cd)),
     _traps()
@@ -165,8 +169,8 @@ tracer_expected<profiling_results> profiler::run()
     if (pw.ptrace(errnum, PTRACE_GETREGS, waited_pid, 0, &regs) == -1)
         return get_syserror(errnum, tracer_errcode::PTRACE_ERROR, tid, "PTRACE_GETREGS");
 
-    uintptr_t entrypoint = get_entrypoint_addr(waited_pid);
-    if (!entrypoint)
+    uintptr_t entrypoint;
+    if (get_entrypoint_addr(_pie, _child, entrypoint) == -1)
         return get_syserror(errno, tracer_errcode::SYSTEM_ERROR, tid, "get_entrypoint_addr");
 
     log(log_lvl::info, "[%d] tracee %d rip @ 0x%" PRIxPTR ", entrypoint @ 0x%" PRIxPTR,
@@ -250,7 +254,7 @@ tracer_expected<profiling_results> profiler::run()
     log(log_lvl::success, "[%d] created GPU reader", tid);
 
     // first tracer has the same tracee tgidand tid, since there is only one tracee at this point
-    tracer trc(_traps, _child, _child, rdr_cpu, rdr_gpu, std::launch::deferred);
+    tracer trc(_traps, _child, _child, entrypoint, rdr_cpu, rdr_gpu, std::launch::deferred);
     tracer_expected<gathered_results> results = trc.results();
     if (!results)
         return std::move(results.error());

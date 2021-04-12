@@ -46,16 +46,20 @@ namespace tep
     {
     private:
         int _target_idx;
+        bool _pie;
         output_file _outfile;
         std::string _config;
 
     public:
-        arguments(int idx, output_file&& of, const std::string& cfg);
-        arguments(int idx, output_file&& of, std::string&& cfg);
+        arguments(int idx, bool pie, output_file&& of, const std::string& cfg);
+        arguments(int idx, bool pie, output_file&& of, std::string&& cfg);
 
         int target_index() const;
+        bool pie() const;
+
         output_file& outfile();
         const output_file& outfile() const;
+
         const std::string& config() const;
     };
 

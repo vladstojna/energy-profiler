@@ -42,7 +42,7 @@ namespace tep
 
     bool timestamp(char* buff, size_t sz);
 
-    uintptr_t get_entrypoint_addr(pid_t pid);
+    int get_entrypoint_addr(bool pie, pid_t pid, uintptr_t& addr);
 
     uintptr_t get_ip(const user_regs_struct& regs);
 

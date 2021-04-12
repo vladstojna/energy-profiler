@@ -50,20 +50,26 @@ namespace tep
 
         pid_t _tracee_tgid;
         pid_t _tracee;
+        uintptr_t _ep;
         gathered_results _results;
 
     public:
         tracer(const trap_set& traps,
-            pid_t tracee_pid, pid_t tracee_tid,
+            pid_t tracee_pid,
+            pid_t tracee_tid,
+            uintptr_t ep,
             const nrgprf::reader_rapl& rdr_cpu,
             const nrgprf::reader_gpu& rdr_gpu,
             std::launch policy);
 
         tracer(const trap_set& traps,
-            pid_t tracee_pid, pid_t tracee_tid,
+            pid_t tracee_pid,
+            pid_t tracee_tid,
+            uintptr_t ep,
             const nrgprf::reader_rapl& rdr_cpu,
             const nrgprf::reader_gpu& rdr_gpu,
-            std::launch policy, const tracer* parent);
+            std::launch policy,
+            const tracer* parent);
 
         ~tracer();
 
