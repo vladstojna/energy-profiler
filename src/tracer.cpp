@@ -67,14 +67,22 @@ std::mutex tracer::TRAP_BARRIER;
 
 
 tracer::tracer(const trap_set& traps,
-    pid_t tracee_pid, pid_t tracee_tid,
-    const nrgprf::reader_rapl& rdr_cpu, const nrgprf::reader_gpu& rdr_gpu, std::launch policy) :
-    tracer(traps, tracee_pid, tracee_tid, rdr_cpu, rdr_gpu, policy, nullptr)
+    pid_t tracee_pid,
+    pid_t tracee_tid,
+    uintptr_t ep,
+    const nrgprf::reader_rapl& rdr_cpu,
+    const nrgprf::reader_gpu& rdr_gpu,
+    std::launch policy) :
+    tracer(traps, tracee_pid, tracee_tid, ep, rdr_cpu, rdr_gpu, policy, nullptr)
 {}
 
 tracer::tracer(const trap_set& traps,
-    pid_t tracee_pid, pid_t tracee_tid,
-    const nrgprf::reader_rapl& rdr_cpu, const nrgprf::reader_gpu& rdr_gpu, std::launch policy,
+    pid_t tracee_pid,
+    pid_t tracee_tid,
+    uintptr_t ep,
+    const nrgprf::reader_rapl& rdr_cpu,
+    const nrgprf::reader_gpu& rdr_gpu,
+    std::launch policy,
     const tracer* tracer) :
     _tracer_ftr(),
     _sampler_ftr(),
@@ -89,6 +97,7 @@ tracer::tracer(const trap_set& traps,
     _exec(0),
     _tracee_tgid(tracee_pid),
     _tracee(tracee_tid),
+    _ep(ep),
     _results()
 {
     _tracer_ftr = std::async(policy, &tracer::trace, this, &traps);
@@ -147,8 +156,15 @@ void tracer::add_child(const trap_set& traps, pid_t new_child)
 {
     std::scoped_lock lock(_children_mx);
     _children.push_back(
-        std::make_unique<tracer>(traps, _tracee_tgid, new_child,
-            _rdr_cpu, _rdr_gpu, std::launch::async, this));
+        std::make_unique<tracer>(
+            traps,
+            _tracee_tgid,
+            new_child,
+            _ep,
+            _rdr_cpu,
+            _rdr_gpu,
+            std::launch::async,
+            this));
     log(log_lvl::info, "[%d] new child created with tid=%d", gettid(), new_child);
 }
 
@@ -362,9 +378,7 @@ tracer_error tracer::trace(const trap_set* traps)
 
     int wait_status;
     pid_t tid = gettid();
-    uintptr_t entrypoint = get_entrypoint_addr(_tracee_tgid);
-    if (!entrypoint)
-        return get_syserror(errno, tracer_errcode::SYSTEM_ERROR, tid, "get_entrypoint_addr");
+    uintptr_t entrypoint = _ep;
 
     log(log_lvl::debug, "[%d] started tracer for tracee with tid %d, entrypoint @ 0x%" PRIxPTR,
         tid, _tracee, entrypoint);

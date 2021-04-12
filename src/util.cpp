@@ -65,28 +65,33 @@ bool tep::timestamp(char* buff, size_t sz)
     return true;
 }
 
-uintptr_t tep::get_entrypoint_addr(pid_t pid)
+int tep::get_entrypoint_addr(bool pie, pid_t pid, uintptr_t& addr)
 {
-    char filename[24];
-    if (snprintf(filename, 24, "/proc/%d/maps", pid) >= 24)
-        return 0;
-
-    FILE* maps = fopen(filename, "r");
-    if (maps == nullptr)
-        return 0;
-
-    uintptr_t ptr_start;
-    int rv = fscanf(maps, "%" SCNxPTR, &ptr_start);
-    if (rv == 0 || rv == EOF)
+    if (!pie)
     {
-        fclose(maps);
+        addr = 0;
         return 0;
     }
 
-    if (fclose(maps) != 0)
-        return 0;
+    char filename[24];
+    if (snprintf(filename, 24, "/proc/%d/maps", pid) >= 24)
+        return -1;
 
-    return ptr_start;
+    FILE* maps = fopen(filename, "r");
+    if (maps == nullptr)
+        return -1;
+
+    int rv = fscanf(maps, "%" SCNxPTR, &addr);
+    if (rv == 0 || rv == EOF)
+    {
+        fclose(maps);
+        return -1;
+    }
+
+    if (fclose(maps) != 0)
+        return -1;
+
+    return 0;
 }
 
 uintptr_t tep::get_ip(const user_regs_struct& regs)
