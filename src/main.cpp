@@ -32,19 +32,23 @@ namespace tep
         const nrgprf::task& task() const { return *_task; }
     };
 
+    using get_value_fn = nrgprf::result<uint64_t>(nrgprf::reader_rapl::*)(const nrgprf::sample&, uint8_t) const;
 
-    std::ostream& write_cpu_energy(std::ostream& os,
-        const std::function<nrgprf::result<uint64_t>(const nrgprf::sample&, uint8_t skt)>& func,
+    std::chrono::duration<double> get_duration(const nrgprf::execution& exec)
+    {
+        return std::chrono::duration_cast<std::chrono::duration<double>>(exec.last() - exec.first());
+    }
+
+    nrgprf::result<double> get_cpu_energy(get_value_fn func, const nrgprf::reader_rapl& rdr,
         const nrgprf::sample& first, const nrgprf::sample& last, uint8_t skt)
     {
-        nrgprf::result<uint64_t> res_first = func(first, skt);
-        nrgprf::result<uint64_t> res_last = func(last, skt);
-
-        if (res_first && res_last)
-            os << ", " << (res_last.value() - res_first.value()) * 1e-6 << " J";
-        else
-            os << ", N/A";
-        return os;
+        nrgprf::result<uint64_t> res_first = std::invoke(func, rdr, first, skt);
+        nrgprf::result<uint64_t> res_last = std::invoke(func, rdr, last, skt);
+        if (!res_first)
+            return std::move(res_first.error());
+        if (!res_last)
+            return std::move(res_last.error());
+        return (res_last.value() - res_first.value()) * 1e-6;
     }
 
 
@@ -54,11 +58,10 @@ namespace tep
         {
             const nrgprf::execution& exec = rt.task().get(ix);
             os << ix << " | ";
-            os << (exec.last() - exec.first()).count() * 1e-9 << " s |";
+            os << get_duration(exec).count() << " s";
 
             for (uint8_t dev = 0; dev < nrgprf::MAX_SOCKETS; dev++)
             {
-                os << " dev=" << +dev;
                 double total_energy = 0.0;
                 for (size_t s = 1; s < exec.size(); s++)
                 {
@@ -67,19 +70,16 @@ namespace tep
 
                     nrgprf::result<uint64_t> pwr_prev = rt.reader().get_board_power(prev, dev);
                     nrgprf::result<uint64_t> pwr_curr = rt.reader().get_board_power(curr, dev);
-                    if (pwr_prev && pwr_curr)
-                    {
-                        // mW * nS = W * 1e3 * s * 1e9 = J * 1e12
-                        nrgprf::duration_t dur = curr - prev;
-                        total_energy += (pwr_prev.value() + pwr_curr.value()) / 2.0 * dur.count() * 1e-12;
-                    }
-                    else
+
+                    if (!pwr_prev || !pwr_curr)
                         break;
+
+                    // mW * nS = W * 1e3 * s * 1e9 = J * 1e12
+                    nrgprf::duration_t dur = curr - prev;
+                    total_energy += (pwr_prev.value() + pwr_curr.value()) / 2.0 * dur.count() * 1e-12;
                 }
-                if (total_energy == 0.0)
-                    os << ", N/A |";
-                else
-                    os << ", " << total_energy << " J |";
+                if (total_energy != 0.0)
+                    os << " | device=" << +dev << ", " << total_energy << " (J)";
             }
             os << "\n";
         }
@@ -96,16 +96,27 @@ namespace tep
             const nrgprf::sample& slast = exec.last();
 
             os << ix << " | ";
-            os << (slast - sfirst).count() * 1e-9 << " s |";
+            os << get_duration(exec).count() << " s";
             for (uint8_t skt = 0; skt < nrgprf::MAX_SOCKETS; skt++)
             {
-                using namespace std::placeholders;
-                os << " skt=" << +skt;
-                write_cpu_energy(os, std::bind(&nrgprf::reader_rapl::get_pkg_energy, &rt.reader(), _1, _2), sfirst, slast, skt);
-                write_cpu_energy(os, std::bind(&nrgprf::reader_rapl::get_pp0_energy, &rt.reader(), _1, _2), sfirst, slast, skt);
-                write_cpu_energy(os, std::bind(&nrgprf::reader_rapl::get_pp1_energy, &rt.reader(), _1, _2), sfirst, slast, skt);
-                write_cpu_energy(os, std::bind(&nrgprf::reader_rapl::get_dram_energy, &rt.reader(), _1, _2), sfirst, slast, skt);
-                os << " |";
+                nrgprf::result<double> pkg = get_cpu_energy(&nrgprf::reader_rapl::get_pkg_energy, rt.reader(), sfirst, slast, skt);
+                nrgprf::result<double> pp0 = get_cpu_energy(&nrgprf::reader_rapl::get_pp0_energy, rt.reader(), sfirst, slast, skt);
+                nrgprf::result<double> pp1 = get_cpu_energy(&nrgprf::reader_rapl::get_pp1_energy, rt.reader(), sfirst, slast, skt);
+                nrgprf::result<double> dram = get_cpu_energy(&nrgprf::reader_rapl::get_dram_energy, rt.reader(), sfirst, slast, skt);
+
+                if (!pkg && !pp0 && !pp1 && !dram)
+                    continue;
+
+                os << " | socket=" << +skt;
+                if (pkg)
+                    os << ", package=" << pkg.value();
+                if (pp0)
+                    os << ", cores=" << pp0.value();
+                if (pp1)
+                    os << ", uncore=" << pp1.value();
+                if (dram)
+                    os << ", dram=" << dram.value();
+                os << " (J)";
             }
             os << "\n";
         }
@@ -120,7 +131,6 @@ namespace tep
         {
             os << "# Begin section\n";
             os << sr.section << "\n";
-            os << "# End section\n";
             os << "# Begin readings\n";
             switch (sr.section.target())
             {
@@ -132,6 +142,7 @@ namespace tep
                 break;
             }
             os << "# End readings\n";
+            os << "# End section\n";
         }
         return os;
     }
