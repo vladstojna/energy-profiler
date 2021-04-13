@@ -3,6 +3,7 @@
 #include <cstring>
 #include <functional>
 #include <iostream>
+#include <iomanip>
 
 #include "cmdargs.hpp"
 #include "dbg.hpp"
@@ -52,13 +53,32 @@ namespace tep
     }
 
 
+    void write_energy(std::ostream& os, const char* prefix, double value)
+    {
+        std::ios::fmtflags os_flags(os.flags());
+        std::streamsize prec = os.precision();
+        os << prefix << std::fixed << std::setprecision(8) << value << std::setprecision(prec);
+        os.setf(os_flags);
+    }
+
+
+    std::ostream& operator<<(std::ostream& os, const std::chrono::duration<double>& d)
+    {
+        std::ios::fmtflags os_flags(os.flags());
+        std::streamsize prec = os.precision();
+        os << std::fixed << std::setprecision(8) << d.count() << std::setprecision(prec) << " (s)";
+        os.setf(os_flags);
+        return os;
+    }
+
+
     std::ostream& operator<<(std::ostream& os, const rdr_task_pair<nrgprf::reader_gpu>& rt)
     {
         for (size_t ix = 0; ix < rt.task().size(); ix++)
         {
             const nrgprf::execution& exec = rt.task().get(ix);
-            os << ix << " | ";
-            os << get_duration(exec).count() << " s";
+            os << std::setw(3) << ix << " | ";
+            os << get_duration(exec);
 
             for (uint8_t dev = 0; dev < nrgprf::MAX_SOCKETS; dev++)
             {
@@ -79,7 +99,11 @@ namespace tep
                     total_energy += (pwr_prev.value() + pwr_curr.value()) / 2.0 * dur.count() * 1e-12;
                 }
                 if (total_energy != 0.0)
-                    os << " | device=" << +dev << ", " << total_energy << " (J)";
+                {
+                    os << " | device=" << +dev;
+                    write_energy(os, ", board=", total_energy);
+                    os << " (J)";
+                }
             }
             os << "\n";
         }
@@ -95,27 +119,31 @@ namespace tep
             const nrgprf::sample& sfirst = exec.first();
             const nrgprf::sample& slast = exec.last();
 
-            os << ix << " | ";
-            os << get_duration(exec).count() << " s";
+            os << std::setw(3) << ix << " | ";
+            os << get_duration(exec);
             for (uint8_t skt = 0; skt < nrgprf::MAX_SOCKETS; skt++)
             {
-                nrgprf::result<double> pkg = get_cpu_energy(&nrgprf::reader_rapl::get_pkg_energy, rt.reader(), sfirst, slast, skt);
-                nrgprf::result<double> pp0 = get_cpu_energy(&nrgprf::reader_rapl::get_pp0_energy, rt.reader(), sfirst, slast, skt);
-                nrgprf::result<double> pp1 = get_cpu_energy(&nrgprf::reader_rapl::get_pp1_energy, rt.reader(), sfirst, slast, skt);
-                nrgprf::result<double> dram = get_cpu_energy(&nrgprf::reader_rapl::get_dram_energy, rt.reader(), sfirst, slast, skt);
+                nrgprf::result<double> pkg = get_cpu_energy(&nrgprf::reader_rapl::get_pkg_energy,
+                    rt.reader(), sfirst, slast, skt);
+                nrgprf::result<double> pp0 = get_cpu_energy(&nrgprf::reader_rapl::get_pp0_energy,
+                    rt.reader(), sfirst, slast, skt);
+                nrgprf::result<double> pp1 = get_cpu_energy(&nrgprf::reader_rapl::get_pp1_energy,
+                    rt.reader(), sfirst, slast, skt);
+                nrgprf::result<double> dram = get_cpu_energy(&nrgprf::reader_rapl::get_dram_energy,
+                    rt.reader(), sfirst, slast, skt);
 
                 if (!pkg && !pp0 && !pp1 && !dram)
                     continue;
 
                 os << " | socket=" << +skt;
                 if (pkg)
-                    os << ", package=" << pkg.value();
+                    write_energy(os, ", package=", pkg.value());
                 if (pp0)
-                    os << ", cores=" << pp0.value();
+                    write_energy(os, ", cores=", pp0.value());
                 if (pp1)
-                    os << ", uncore=" << pp1.value();
+                    write_energy(os, ", uncore=", pp1.value());
                 if (dram)
-                    os << ", dram=" << dram.value();
+                    write_energy(os, ", dram=", dram.value());
                 os << " (J)";
             }
             os << "\n";
