@@ -7,7 +7,7 @@
 namespace nrgprf
 {
 
-    using units_energy = microjoules<uint64_t>;
-    using units_power = microwatts<uint64_t>;
+    using units_energy = microjoules<uintmax_t>;
+    using units_power = microwatts<uintmax_t>;
 
 }
