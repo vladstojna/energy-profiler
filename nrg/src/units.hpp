@@ -4,87 +4,45 @@
 
 #include <ratio>
 #include <chrono>
-#include <numeric>
 
 namespace nrgprf
 {
 
     template<typename Rep, typename Ratio = std::ratio<1>>
-    class scalar_unit
-    {
-    public:
-        using rep = Rep;
-        using ratio = Ratio;
-
-    protected:
-        scalar_unit(rep count);
-
-    public:
-        rep count() const;
-
-    private:
-        rep _count;
-    };
+    class scalar_unit;
 
     template<typename Rep, typename Ratio = std::ratio<1>>
-    class energy_unit : public scalar_unit<Rep, Ratio>
-    {
-    public:
-        energy_unit(Rep count);
-
-        template<typename Rep2, typename Ratio2>
-        energy_unit(const energy_unit<Rep2, Ratio2>& other);
-    };
+    class energy_unit;
 
     template<typename Rep, typename Ratio = std::ratio<1>>
-    class power_unit : public scalar_unit<Rep, Ratio>
-    {
-    public:
-        power_unit(Rep count);
+    class power_unit;
 
-        template<typename Rep2, typename Ratio2>
-        power_unit(const power_unit<Rep2, Ratio2>& other);
-    };
+    template<typename ToUnit, typename Rep, typename Ratio>
+    constexpr ToUnit unit_cast(const energy_unit<Rep, Ratio>& unit);
 
-
-    template<typename Rep>
-    using watts = power_unit<Rep>;
-    template<typename Rep>
-    using milliwatts = power_unit<Rep, std::milli>;
-    template<typename Rep>
-    using microwatts = power_unit<Rep, std::micro>;
-    template<typename Rep>
-    using nanowatts = power_unit<Rep, std::nano>;
-
-    template<typename Rep>
-    using joules = energy_unit<Rep>;
-    template<typename Rep>
-    using millijoules = energy_unit<Rep, std::milli>;
-    template<typename Rep>
-    using microjoules = energy_unit<Rep, std::micro>;
-    template<typename Rep>
-    using nanojoules = energy_unit<Rep, std::nano>;
+    template<typename ToUnit, typename Rep, typename Ratio>
+    constexpr ToUnit unit_cast(const power_unit<Rep, Ratio>& unit);
 
 
     namespace detail
     {
 
-        template<uintmax_t a, uintmax_t b>
+        template<intmax_t a, intmax_t b>
         struct gcd
         {
-            static constexpr uintmax_t value = gcd<b, a% b>::value;
+            static constexpr intmax_t value = gcd<b, a% b>::value;
         };
 
-        template<uintmax_t a>
+        template<intmax_t a>
         struct gcd<a, 0>
         {
-            static constexpr uintmax_t value = a;
+            static constexpr intmax_t value = a;
         };
 
-        template<uintmax_t b>
+        template<intmax_t b>
         struct gcd<0, b>
         {
-            static constexpr uintmax_t value = b;
+            static constexpr intmax_t value = b;
         };
 
         template<template<typename, typename> typename U, typename CT, typename Ratio1, typename Ratio2>
@@ -130,6 +88,79 @@ namespace nrgprf
     }
 
 
+    template<typename Rep, typename Ratio>
+    class scalar_unit
+    {
+    public:
+        using rep = Rep;
+        using ratio = Ratio;
+
+    protected:
+        constexpr scalar_unit() = default;
+        constexpr explicit scalar_unit(rep count) :
+            _count(count)
+        {}
+
+    public:
+        constexpr rep count() const
+        {
+            return _count;
+        }
+
+    private:
+        rep _count;
+    };
+
+    template<typename Rep, typename Ratio>
+    class energy_unit : public scalar_unit<Rep, Ratio>
+    {
+    public:
+        constexpr energy_unit() = default;
+        constexpr explicit energy_unit(Rep count) :
+            scalar_unit<Rep, Ratio>(count)
+        {}
+
+        template<typename Rep2, typename Ratio2>
+        constexpr energy_unit(const energy_unit<Rep2, Ratio2>& other) :
+            energy_unit(nrgprf::unit_cast<energy_unit<Rep, Ratio>>(other))
+        {}
+    };
+
+    template<typename Rep, typename Ratio>
+    class power_unit : public scalar_unit<Rep, Ratio>
+    {
+    public:
+        constexpr power_unit() = default;
+        constexpr explicit power_unit(Rep count) :
+            scalar_unit<Rep, Ratio>(count)
+        {}
+
+        template<typename Rep2, typename Ratio2>
+        constexpr power_unit(const power_unit<Rep2, Ratio2>& other) :
+            power_unit(nrgprf::unit_cast<power_unit<Rep, Ratio>>(other))
+        {}
+    };
+
+
+    template<typename Rep>
+    using watts = power_unit<Rep>;
+    template<typename Rep>
+    using milliwatts = power_unit<Rep, std::milli>;
+    template<typename Rep>
+    using microwatts = power_unit<Rep, std::micro>;
+    template<typename Rep>
+    using nanowatts = power_unit<Rep, std::nano>;
+
+    template<typename Rep>
+    using joules = energy_unit<Rep>;
+    template<typename Rep>
+    using millijoules = energy_unit<Rep, std::milli>;
+    template<typename Rep>
+    using microjoules = energy_unit<Rep, std::micro>;
+    template<typename Rep>
+    using nanojoules = energy_unit<Rep, std::nano>;
+
+
     template<typename ToUnit, typename Rep, typename Ratio>
     constexpr ToUnit unit_cast(const energy_unit<Rep, Ratio>& unit)
     {
@@ -148,7 +179,7 @@ namespace nrgprf
         using lhs_unit = U<LhsRep, LhsRatio>;
         using rhs_unit = U<RhsRep, RhsRatio>;
         using common_type = typename detail::common_type<lhs_unit, rhs_unit>::type;
-        return unit_cast<common_type>(lhs).count() == unit_cast<common_type>(rhs).count();
+        return common_type(lhs).count() == common_type(rhs).count();
     }
 
     template<template<typename, typename> typename U, typename LhsRep, typename LhsRatio, typename RhsRep, typename RhsRatio>
@@ -163,7 +194,7 @@ namespace nrgprf
         using lhs_unit = U<LhsRep, LhsRatio>;
         using rhs_unit = U<RhsRep, RhsRatio>;
         using common_type = typename detail::common_type<lhs_unit, rhs_unit>::type;
-        return unit_cast<common_type>(lhs).count() < unit_cast<common_type>(rhs).count();
+        return common_type(lhs).count() < common_type(rhs).count();
     }
 
     template<template<typename, typename> typename U, typename LhsRep, typename LhsRatio, typename RhsRep, typename RhsRatio>
@@ -172,7 +203,7 @@ namespace nrgprf
         using lhs_unit = U<LhsRep, LhsRatio>;
         using rhs_unit = U<RhsRep, RhsRatio>;
         using common_type = typename detail::common_type<lhs_unit, rhs_unit>::type;
-        return unit_cast<common_type>(lhs).count() <= unit_cast<common_type>(rhs).count();
+        return common_type(lhs).count() <= common_type(rhs).count();
     }
 
     template<template<typename, typename> typename U, typename LhsRep, typename LhsRatio, typename RhsRep, typename RhsRatio>
@@ -194,7 +225,7 @@ namespace nrgprf
         using lhs_unit = U<LhsRep, LhsRatio>;
         using rhs_unit = U<RhsRep, RhsRatio>;
         using common_type = typename detail::common_type<lhs_unit, rhs_unit>::type;
-        return common_type(unit_cast<common_type>(lhs).count() + unit_cast<common_type>(rhs).count());
+        return common_type(common_type(lhs).count() + common_type(rhs).count());
     }
 
     template<template<typename, typename> typename U, typename LhsRep, typename LhsRatio, typename RhsRep, typename RhsRatio>
@@ -204,7 +235,7 @@ namespace nrgprf
         using lhs_unit = U<LhsRep, LhsRatio>;
         using rhs_unit = U<RhsRep, RhsRatio>;
         using common_type = typename detail::common_type<lhs_unit, rhs_unit>::type;
-        return common_type(unit_cast<common_type>(lhs).count() - unit_cast<common_type>(rhs).count());
+        return common_type(common_type(lhs).count() - common_type(rhs).count());
     }
 
     template<template<typename, typename> typename U, typename LhsRep, typename LhsRatio, typename RhsRep>
@@ -247,38 +278,3 @@ namespace nrgprf
     }
 
 }
-
-
-template<typename Rep, typename Ratio>
-nrgprf::scalar_unit<Rep, Ratio>::scalar_unit(Rep count) :
-    _count(count)
-{}
-
-template<typename Rep, typename Ratio>
-Rep nrgprf::scalar_unit<Rep, Ratio>::count() const
-{
-    return _count;
-}
-
-template<typename Rep, typename Ratio>
-nrgprf::energy_unit<Rep, Ratio>::energy_unit(Rep count) :
-    scalar_unit<Rep, Ratio>(count)
-{}
-
-
-template<typename Rep, typename Ratio>
-template<typename Rep2, typename Ratio2>
-nrgprf::energy_unit<Rep, Ratio>::energy_unit(const energy_unit<Rep2, Ratio2>& other) :
-    energy_unit(nrgprf::unit_cast<energy_unit<Rep, Ratio>>(other))
-{}
-
-template<typename Rep, typename Ratio>
-nrgprf::power_unit<Rep, Ratio>::power_unit(Rep count) :
-    scalar_unit<Rep, Ratio>(count)
-{}
-
-template<typename Rep, typename Ratio>
-template<typename Rep2, typename Ratio2>
-nrgprf::power_unit<Rep, Ratio>::power_unit(const power_unit<Rep2, Ratio2>& other) :
-    power_unit(nrgprf::unit_cast<power_unit<Rep, Ratio>>(other))
-{}
