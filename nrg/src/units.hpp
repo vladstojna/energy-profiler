@@ -107,7 +107,7 @@ namespace nrgprf
             return _count;
         }
 
-    private:
+    protected:
         rep _count;
     };
 
@@ -124,6 +124,18 @@ namespace nrgprf
         constexpr energy_unit(const energy_unit<Rep2, Ratio2>& other) :
             energy_unit(nrgprf::unit_cast<energy_unit<Rep, Ratio>>(other))
         {}
+
+        constexpr energy_unit<Rep, Ratio>& operator+=(const energy_unit<Rep, Ratio>& other)
+        {
+            scalar_unit<Rep, Ratio>::_count += other._count;
+            return *this;
+        }
+
+        constexpr energy_unit<Rep, Ratio>& operator-=(const energy_unit<Rep, Ratio>& other)
+        {
+            scalar_unit<Rep, Ratio>::_count -= other._count;
+            return *this;
+        }
     };
 
     template<typename Rep, typename Ratio>
@@ -139,6 +151,18 @@ namespace nrgprf
         constexpr power_unit(const power_unit<Rep2, Ratio2>& other) :
             power_unit(nrgprf::unit_cast<power_unit<Rep, Ratio>>(other))
         {}
+
+        constexpr power_unit<Rep, Ratio>& operator+=(const power_unit<Rep, Ratio>& other)
+        {
+            scalar_unit<Rep, Ratio>::_count += other._count;
+            return *this;
+        }
+
+        constexpr power_unit<Rep, Ratio>& operator-=(const power_unit<Rep, Ratio>& other)
+        {
+            scalar_unit<Rep, Ratio>::_count -= other._count;
+            return *this;
+        }
     };
 
 
