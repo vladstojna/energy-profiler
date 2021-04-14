@@ -102,7 +102,7 @@ namespace tep
 
                     nrgprf::duration_t dur = curr - prev;
                     nrgprf::watts<double> avg_pwr = (pwr_prev.value() + pwr_curr.value()) / 2.0;
-                    total_energy = total_energy + (avg_pwr * dur);
+                    total_energy += (avg_pwr * dur);
                 }
                 if (total_energy.count() != 0)
                     os << " | device=" << +dev << ", board=" << total_energy;
