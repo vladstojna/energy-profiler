@@ -142,7 +142,7 @@ namespace cmmn
             return std::get<R>(_result);
         }
 
-        operator bool() const
+        explicit operator bool() const
         {
             return !std::holds_alternative<E>(_result);
         }
