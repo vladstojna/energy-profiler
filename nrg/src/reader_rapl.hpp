@@ -4,6 +4,7 @@
 
 #include "error.hpp"
 #include "rapl_domains.hpp"
+#include "reader_units.hpp"
 #include "sample.hpp"
 #include "result.hpp"
 
@@ -57,10 +58,10 @@ namespace nrgprf
         int8_t event_idx(rapl_domain domain, uint8_t skt) const;
         size_t num_events() const;
 
-        result<uint64_t> get_pkg_energy(const sample& s, uint8_t skt) const;
-        result<uint64_t> get_pp0_energy(const sample& s, uint8_t skt) const;
-        result<uint64_t> get_pp1_energy(const sample& s, uint8_t skt) const;
-        result<uint64_t> get_dram_energy(const sample& s, uint8_t skt) const;
+        result<units_energy> get_pkg_energy(const sample& s, uint8_t skt) const;
+        result<units_energy> get_pp0_energy(const sample& s, uint8_t skt) const;
+        result<units_energy> get_pp1_energy(const sample& s, uint8_t skt) const;
+        result<units_energy> get_dram_energy(const sample& s, uint8_t skt) const;
 
     private:
         error add_event(const char* base, rapl_domain dmask, uint8_t skt);

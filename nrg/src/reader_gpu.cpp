@@ -108,7 +108,7 @@ struct reader_gpu::impl
     int8_t event_idx(uint8_t device) const;
     size_t num_events() const;
 
-    result<uint64_t> get_board_power(const sample& s, uint8_t dev) const;
+    result<units_power> get_board_power(const sample& s, uint8_t dev) const;
 };
 
 
@@ -197,12 +197,13 @@ size_t reader_gpu::impl::num_events() const
     return active_handles.size();
 }
 
-result<uint64_t> reader_gpu::impl::get_board_power(const sample& s, uint8_t dev) const
+result<units_power> reader_gpu::impl::get_board_power(const sample& s, uint8_t dev) const
 {
     int8_t idx = event_idx(dev);
     if (idx < 0)
         return error(error_code::NO_EVENT);
-    return s.get(offset + idx);
+    // NVML returns milliwatts, multiply by 1000 to get microwatts
+    return s.get(offset + idx) * 1000;
 }
 
 #else
@@ -239,7 +240,7 @@ size_t reader_gpu::impl::num_events() const
     return 0;
 }
 
-result<uint64_t> reader_gpu::impl::get_board_power(const sample& s, uint8_t dev) const
+result<units_power> reader_gpu::impl::get_board_power(const sample& s, uint8_t dev) const
 {
     (void)s;
     (void)dev;
@@ -293,7 +294,7 @@ size_t reader_gpu::num_events() const
     return _impl->num_events();
 }
 
-result<uint64_t> reader_gpu::get_board_power(const sample& s, uint8_t dev) const
+result<units_power> reader_gpu::get_board_power(const sample& s, uint8_t dev) const
 {
     return _impl->get_board_power(s, dev);
 }

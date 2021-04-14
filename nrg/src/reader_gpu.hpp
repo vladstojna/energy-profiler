@@ -4,6 +4,7 @@
 
 #include "error.hpp"
 #include "reader_rapl.hpp"
+#include "reader_units.hpp"
 #include "sample.hpp"
 
 #include <memory>
@@ -29,7 +30,7 @@ namespace nrgprf
         int8_t event_idx(uint8_t device) const;
         size_t num_events() const;
 
-        result<uint64_t> get_board_power(const sample& s, uint8_t dev) const;
+        result<units_power> get_board_power(const sample& s, uint8_t dev) const;
 
     private:
         reader_gpu(uint8_t dev_mask, size_t offset, error& ec);

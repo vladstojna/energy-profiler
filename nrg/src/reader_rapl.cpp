@@ -127,7 +127,7 @@ domain_index domain_index_from_name(const char* name)
 }
 
 
-result<uint64_t> get_value(const sample& s,
+result<units_energy> get_value(const sample& s,
     const int8_t(&map)[MAX_SOCKETS][MAX_RAPL_DOMAINS], uint8_t skt, uint8_t idx)
 {
     if (map[skt][idx] < 0)
@@ -369,22 +369,22 @@ size_t reader_rapl::num_events() const
     return _active_events.size();
 }
 
-result<uint64_t> reader_rapl::get_pkg_energy(const sample& s, uint8_t skt) const
+result<units_energy> reader_rapl::get_pkg_energy(const sample& s, uint8_t skt) const
 {
     return get_value(s, _event_map, skt, EVENT_PKG_IDX);
 }
 
-result<uint64_t> reader_rapl::get_pp0_energy(const sample& s, uint8_t skt) const
+result<units_energy> reader_rapl::get_pp0_energy(const sample& s, uint8_t skt) const
 {
     return get_value(s, _event_map, skt, EVENT_PP0_IDX);
 }
 
-result<uint64_t> reader_rapl::get_pp1_energy(const sample& s, uint8_t skt) const
+result<units_energy> reader_rapl::get_pp1_energy(const sample& s, uint8_t skt) const
 {
     return get_value(s, _event_map, skt, EVENT_PP1_IDX);
 }
 
-result<uint64_t> reader_rapl::get_dram_energy(const sample& s, uint8_t skt) const
+result<units_energy> reader_rapl::get_dram_energy(const sample& s, uint8_t skt) const
 {
     return get_value(s, _event_map, skt, EVENT_DRAM_IDX);
 }
