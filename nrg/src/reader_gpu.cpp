@@ -246,8 +246,22 @@ reader_gpu::impl::impl(uint8_t dev_mask, size_t os, error& ec) :
     for (size_t ix = 0; ix < MAX_SOCKETS; ix++)
         event_map[ix] = -1;
 
+    rsmi_version_t version;
+    rsmi_status_t result = rsmi_version_get(&version);
+    if (result != RSMI_STATUS_SUCCESS)
+    {
+        ec = { error_code::READER_GPU, error_str("Failed to obtain lib build version", result) };
+        return;
+    }
+
+    std::cout << "ROCm SMI version info\n";
+    std::cout << "major: " << version.major
+        << ", minor: " << version.minor
+        << ", patch: " << version.patch
+        << ", build: " << version.build << "\n";
+
     uint32_t device_cnt;
-    rsmi_status_t result = rsmi_num_monitor_devices(&device_cnt);
+    result = rsmi_num_monitor_devices(&device_cnt);
     if (result != RSMI_STATUS_SUCCESS)
     {
         ec = { error_code::READER_GPU, error_str("Failed to obtain device count", result) };
