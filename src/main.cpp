@@ -33,44 +33,50 @@ namespace tep
         const nrgprf::task& task() const { return *_task; }
     };
 
-    using get_value_fn = nrgprf::result<uint64_t>(nrgprf::reader_rapl::*)(const nrgprf::sample&, uint8_t) const;
+    using get_value_fn = nrgprf::result<nrgprf::units_energy>(nrgprf::reader_rapl::*)(const nrgprf::sample&, uint8_t) const;
 
     std::chrono::duration<double> get_duration(const nrgprf::execution& exec)
     {
         return std::chrono::duration_cast<std::chrono::duration<double>>(exec.last() - exec.first());
     }
 
-    nrgprf::result<double> get_cpu_energy(get_value_fn func, const nrgprf::reader_rapl& rdr,
+    nrgprf::result<nrgprf::units_energy> get_cpu_energy(get_value_fn func, const nrgprf::reader_rapl& rdr,
         const nrgprf::sample& first, const nrgprf::sample& last, uint8_t skt)
     {
-        nrgprf::result<uint64_t> res_first = std::invoke(func, rdr, first, skt);
-        nrgprf::result<uint64_t> res_last = std::invoke(func, rdr, last, skt);
+        nrgprf::result<nrgprf::units_energy> res_first = std::invoke(func, rdr, first, skt);
+        nrgprf::result<nrgprf::units_energy> res_last = std::invoke(func, rdr, last, skt);
         if (!res_first)
             return std::move(res_first.error());
         if (!res_last)
             return std::move(res_last.error());
-        return (res_last.value() - res_first.value()) * 1e-6;
+        return res_last.value() - res_first.value();
     }
 
-
-    void write_energy(std::ostream& os, const char* prefix, double value)
+    std::ostream& operator<<(std::ostream& os, const nrgprf::joules<double>& energy)
     {
         std::ios::fmtflags os_flags(os.flags());
         std::streamsize prec = os.precision();
-        os << prefix << std::fixed << std::setprecision(8) << value << std::setprecision(prec);
+        os << std::fixed
+            << std::setprecision(8)
+            << energy.count()
+            << std::setprecision(prec)
+            << " (J)";
         os.setf(os_flags);
+        return os;
     }
-
 
     std::ostream& operator<<(std::ostream& os, const std::chrono::duration<double>& d)
     {
         std::ios::fmtflags os_flags(os.flags());
         std::streamsize prec = os.precision();
-        os << std::fixed << std::setprecision(8) << d.count() << std::setprecision(prec) << " (s)";
+        os << std::fixed
+            << std::setprecision(8)
+            << d.count()
+            << std::setprecision(prec)
+            << " (s)";
         os.setf(os_flags);
         return os;
     }
-
 
     std::ostream& operator<<(std::ostream& os, const rdr_task_pair<nrgprf::reader_gpu>& rt)
     {
@@ -82,34 +88,29 @@ namespace tep
 
             for (uint8_t dev = 0; dev < nrgprf::MAX_SOCKETS; dev++)
             {
-                double total_energy = 0.0;
+                nrgprf::joules<double> total_energy{};
                 for (size_t s = 1; s < exec.size(); s++)
                 {
                     const nrgprf::sample& prev = exec.get(s - 1);
                     const nrgprf::sample& curr = exec.get(s);
 
-                    nrgprf::result<uint64_t> pwr_prev = rt.reader().get_board_power(prev, dev);
-                    nrgprf::result<uint64_t> pwr_curr = rt.reader().get_board_power(curr, dev);
+                    nrgprf::result<nrgprf::units_power> pwr_prev = rt.reader().get_board_power(prev, dev);
+                    nrgprf::result<nrgprf::units_power> pwr_curr = rt.reader().get_board_power(curr, dev);
 
                     if (!pwr_prev || !pwr_curr)
                         break;
 
-                    // mW * nS = W * 1e3 * s * 1e9 = J * 1e12
                     nrgprf::duration_t dur = curr - prev;
-                    total_energy += (pwr_prev.value() + pwr_curr.value()) / 2.0 * dur.count() * 1e-12;
+                    nrgprf::watts<double> avg_pwr = (pwr_prev.value() + pwr_curr.value()) / 2.0;
+                    total_energy = total_energy + (avg_pwr * dur);
                 }
-                if (total_energy != 0.0)
-                {
-                    os << " | device=" << +dev;
-                    write_energy(os, ", board=", total_energy);
-                    os << " (J)";
-                }
+                if (total_energy.count() != 0)
+                    os << " | device=" << +dev << ", board=" << total_energy;
             }
             os << "\n";
         }
         return os;
     }
-
 
     std::ostream& operator<<(std::ostream& os, const rdr_task_pair<nrgprf::reader_rapl>& rt)
     {
@@ -123,13 +124,17 @@ namespace tep
             os << get_duration(exec);
             for (uint8_t skt = 0; skt < nrgprf::MAX_SOCKETS; skt++)
             {
-                nrgprf::result<double> pkg = get_cpu_energy(&nrgprf::reader_rapl::get_pkg_energy,
+                nrgprf::result<nrgprf::units_energy> pkg = get_cpu_energy(
+                    &nrgprf::reader_rapl::get_pkg_energy,
                     rt.reader(), sfirst, slast, skt);
-                nrgprf::result<double> pp0 = get_cpu_energy(&nrgprf::reader_rapl::get_pp0_energy,
+                nrgprf::result<nrgprf::units_energy> pp0 = get_cpu_energy(
+                    &nrgprf::reader_rapl::get_pp0_energy,
                     rt.reader(), sfirst, slast, skt);
-                nrgprf::result<double> pp1 = get_cpu_energy(&nrgprf::reader_rapl::get_pp1_energy,
+                nrgprf::result<nrgprf::units_energy> pp1 = get_cpu_energy(
+                    &nrgprf::reader_rapl::get_pp1_energy,
                     rt.reader(), sfirst, slast, skt);
-                nrgprf::result<double> dram = get_cpu_energy(&nrgprf::reader_rapl::get_dram_energy,
+                nrgprf::result<nrgprf::units_energy> dram = get_cpu_energy(
+                    &nrgprf::reader_rapl::get_dram_energy,
                     rt.reader(), sfirst, slast, skt);
 
                 if (!pkg && !pp0 && !pp1 && !dram)
@@ -137,20 +142,18 @@ namespace tep
 
                 os << " | socket=" << +skt;
                 if (pkg)
-                    write_energy(os, ", package=", pkg.value());
+                    os << ", package=" << pkg.value();
                 if (pp0)
-                    write_energy(os, ", cores=", pp0.value());
+                    os << ", cores=" << pp0.value();
                 if (pp1)
-                    write_energy(os, ", uncore=", pp1.value());
+                    os << ", uncore=" << pp1.value();
                 if (dram)
-                    write_energy(os, ", dram=", dram.value());
-                os << " (J)";
+                    os << ", dram=" << dram.value();
             }
             os << "\n";
         }
         return os;
     }
-
 
     std::ostream& operator<<(std::ostream& os, const profiling_results& pr)
     {
@@ -174,6 +177,7 @@ namespace tep
         }
         return os;
     }
+
 }
 
 int main(int argc, char* argv[])
