@@ -29,10 +29,18 @@ endif
 
 ifeq ($(gpu),GPU_AMD)
 
-incl += /opt/rocm/rocm_smi/include
-ldflags += -lrocm_smi64
+rocm_ver ?=
+ifdef rocm_ver
+rocm := rocm-$(rocm_ver)
+else
+rocm := rocm
+endif
 
-export LD_RUN_PATH=/opt/rocm/rocm_smi/lib
+rsmi_base := /opt/$(rocm)/rocm_smi
+export LD_RUN_PATH=$(rsmi_base)/lib
+
+incl += $(rsmi_base)/include
+ldflags += -lrocm_smi64
 ldflags += $(addprefix -L, $(LD_RUN_PATH))
 
 endif
