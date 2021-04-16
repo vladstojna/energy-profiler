@@ -2,6 +2,7 @@
 
 #include "ptrace_restarter.hpp"
 #include "ptrace_wrapper.hpp"
+#include "ptrace_child_toggler.hpp"
 #include "tracer.hpp"
 #include "util.hpp"
 
@@ -426,6 +427,13 @@ tracer_error tracer::trace(const trap_set* traps)
             std::scoped_lock lock(TRAP_BARRIER);
             log(log_lvl::debug, "[%d] entered global tracer barrier", tid);
 
+            // disable tracing of children during execution of section
+            cmmn::expected<ptrace_child_toggler, tracer_error> toggler =
+                ptrace_child_toggler::create(pw, tid, _tracee, false);
+            if (!toggler)
+                return std::move(toggler.error());
+            log(log_lvl::info, "[%d] child tracing disabled", tid);
+
             tracer_error error = stop_tracees(*this);
             if (error)
                 return error;
@@ -482,6 +490,7 @@ tracer_error tracer::trace(const trap_set* traps)
                 return { tracer_errcode::SIGNAL_DURING_SECTION_ERROR,
                     "Tracee received signal during section execution" };
             }
+            log(log_lvl::info, "[%d] child tracing re-enabled", tid);
             log(log_lvl::debug, "[%d] exited global tracer barrier", tid);
         }
         else if (WIFSTOPPED(wait_status) && WSTOPSIG(wait_status) == SIGSTOP)
