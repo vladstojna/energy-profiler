@@ -236,7 +236,7 @@ tracer_expected<profiling_results> profiler::run()
         return handle_reader_error(tid, error);
     log(log_lvl::success, "[%d] created GPU reader", tid);
 
-    // first tracer has the same tracee tgidand tid, since there is only one tracee at this point
+    // first tracer has the same tracee tgid and tid, since there is only one tracee at this point
     tracer trc(_traps, _child, _child, entrypoint, rdr_cpu, rdr_gpu, std::launch::deferred);
     tracer_expected<gathered_results> results = trc.results();
     if (!results)
