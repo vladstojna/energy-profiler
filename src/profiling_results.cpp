@@ -17,17 +17,17 @@ template<typename T>
 class rdr_task_pair
 {
 private:
-    const T* _reader;
-    const nrgprf::task* _task;
+    const T& _reader;
+    const nrgprf::task& _task;
 
 public:
     rdr_task_pair(const T& reader, const nrgprf::task& task) :
-        _reader(&reader),
-        _task(&task)
+        _reader(reader),
+        _task(task)
     {}
 
-    const T& reader() const { return *_reader; }
-    const nrgprf::task& task() const { return *_task; }
+    const T& reader() const { return _reader; }
+    const nrgprf::task& task() const { return _task; }
 };
 
 
@@ -165,6 +165,7 @@ tep::profiling_results::profiling_results(nrgprf::reader_rapl&& rr, nrgprf::read
     rdr_gpu(std::move(rg)),
     results()
 {}
+
 
 std::ostream& tep::operator<<(std::ostream& os, const profiling_results& pr)
 {
