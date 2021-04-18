@@ -8,7 +8,7 @@
 namespace nrgprf
 {
 
-    template<typename Rep, typename Ratio = std::ratio<1>>
+    template<template<typename, typename> typename U, typename Rep, typename Ratio = std::ratio<1>>
     class scalar_unit;
 
     template<typename Rep, typename Ratio = std::ratio<1>>
@@ -88,12 +88,13 @@ namespace nrgprf
     }
 
 
-    template<typename Rep, typename Ratio>
+    template<template<typename, typename> typename U, typename Rep, typename Ratio>
     class scalar_unit
     {
     public:
         using rep = Rep;
         using ratio = Ratio;
+        using unit = U<Rep, Ratio>;
 
     protected:
         constexpr scalar_unit() = default;
@@ -107,62 +108,64 @@ namespace nrgprf
             return _count;
         }
 
-    protected:
+        constexpr unit& operator+=(const unit& other)
+        {
+            _count += other._count;
+            return static_cast<unit&>(*this);
+        }
+
+        constexpr unit& operator-=(const unit& other)
+        {
+            _count -= other._count;
+            return static_cast<unit&>(*this);
+        }
+
+        template<typename Rep2>
+        constexpr unit& operator/=(const Rep2& other)
+        {
+            _count /= other;
+            return static_cast<unit&>(*this);
+        }
+
+        template<typename Rep2>
+        constexpr unit& operator*=(const Rep2& other)
+        {
+            _count *= other;
+            return static_cast<unit&>(*this);
+        }
+
+    private:
         rep _count;
     };
 
     template<typename Rep, typename Ratio>
-    class energy_unit : public scalar_unit<Rep, Ratio>
+    class energy_unit : public scalar_unit<energy_unit, Rep, Ratio>
     {
     public:
         constexpr energy_unit() = default;
         constexpr explicit energy_unit(Rep count) :
-            scalar_unit<Rep, Ratio>(count)
+            scalar_unit<energy_unit, Rep, Ratio>(count)
         {}
 
         template<typename Rep2, typename Ratio2>
         constexpr energy_unit(const energy_unit<Rep2, Ratio2>& other) :
             energy_unit(nrgprf::unit_cast<energy_unit<Rep, Ratio>>(other))
         {}
-
-        constexpr energy_unit<Rep, Ratio>& operator+=(const energy_unit<Rep, Ratio>& other)
-        {
-            scalar_unit<Rep, Ratio>::_count += other._count;
-            return *this;
-        }
-
-        constexpr energy_unit<Rep, Ratio>& operator-=(const energy_unit<Rep, Ratio>& other)
-        {
-            scalar_unit<Rep, Ratio>::_count -= other._count;
-            return *this;
-        }
     };
 
     template<typename Rep, typename Ratio>
-    class power_unit : public scalar_unit<Rep, Ratio>
+    class power_unit : public scalar_unit<power_unit, Rep, Ratio>
     {
     public:
         constexpr power_unit() = default;
         constexpr explicit power_unit(Rep count) :
-            scalar_unit<Rep, Ratio>(count)
+            scalar_unit<power_unit, Rep, Ratio>(count)
         {}
 
         template<typename Rep2, typename Ratio2>
         constexpr power_unit(const power_unit<Rep2, Ratio2>& other) :
             power_unit(nrgprf::unit_cast<power_unit<Rep, Ratio>>(other))
         {}
-
-        constexpr power_unit<Rep, Ratio>& operator+=(const power_unit<Rep, Ratio>& other)
-        {
-            scalar_unit<Rep, Ratio>::_count += other._count;
-            return *this;
-        }
-
-        constexpr power_unit<Rep, Ratio>& operator-=(const power_unit<Rep, Ratio>& other)
-        {
-            scalar_unit<Rep, Ratio>::_count -= other._count;
-            return *this;
-        }
     };
 
 
