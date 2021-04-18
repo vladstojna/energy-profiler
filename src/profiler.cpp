@@ -21,23 +21,6 @@ using namespace tep;
 
 // start helper functions
 
-constexpr int get_ptrace_opts()
-{
-    // kill the tracee when the profiler errors
-    int opts = PTRACE_O_EXITKILL;
-    // trace threads being spawned using clone()
-    opts |= PTRACE_O_TRACECLONE;
-    // trace children spawned with fork(): will most likely be useless
-    opts |= PTRACE_O_TRACEFORK;
-    // trace children spawned with vfork() i.e. clone() with CLONE_VFORK
-    opts |= PTRACE_O_TRACEVFORK;
-    // trace when a tracee exits
-    opts |= PTRACE_O_TRACEEXIT;
-    // distinguish normal traps from syscall traps
-    opts |= PTRACE_O_TRACESYSGOOD;
-    return opts;
-}
-
 // inserts trap at 'addr'
 // returns either error or original word at address 'addr'
 tracer_expected<long> insert_trap(pid_t my_tid, pid_t pid, uintptr_t addr)
@@ -176,7 +159,7 @@ tracer_expected<profiling_results> profiler::run()
     log(log_lvl::info, "[%d] tracee %d rip @ 0x%" PRIxPTR ", entrypoint @ 0x%" PRIxPTR,
         tid, waited_pid, get_ip(regs), entrypoint);
 
-    if (pw.ptrace(errnum, PTRACE_SETOPTIONS, waited_pid, 0, get_ptrace_opts()) == -1)
+    if (pw.ptrace(errnum, PTRACE_SETOPTIONS, waited_pid, 0, get_ptrace_opts(true)) == -1)
         return get_syserror(errnum, tracer_errcode::PTRACE_ERROR, tid, "PTRACE_SETOPTIONS");
     log(log_lvl::debug, "[%d] ptrace options successfully set", tid);
 
@@ -253,7 +236,7 @@ tracer_expected<profiling_results> profiler::run()
         return handle_reader_error(tid, error);
     log(log_lvl::success, "[%d] created GPU reader", tid);
 
-    // first tracer has the same tracee tgidand tid, since there is only one tracee at this point
+    // first tracer has the same tracee tgid and tid, since there is only one tracee at this point
     tracer trc(_traps, _child, _child, entrypoint, rdr_cpu, rdr_gpu, std::launch::deferred);
     tracer_expected<gathered_results> results = trc.results();
     if (!results)

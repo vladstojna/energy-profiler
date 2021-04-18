@@ -95,4 +95,24 @@ namespace tep
 
     const char* sig_str(int signal);
 
+    constexpr int get_ptrace_opts(bool trace_children)
+    {
+        // kill the tracee when the profiler errors
+        int opts = PTRACE_O_EXITKILL;
+        if (trace_children)
+        {
+            // trace threads being spawned using clone()
+            opts |= PTRACE_O_TRACECLONE;
+            // trace children spawned with fork(): will most likely be useless
+            opts |= PTRACE_O_TRACEFORK;
+            // trace children spawned with vfork() i.e. clone() with CLONE_VFORK
+            opts |= PTRACE_O_TRACEVFORK;
+        }
+        // trace when a tracee exits
+        opts |= PTRACE_O_TRACEEXIT;
+        // distinguish normal traps from syscall traps
+        opts |= PTRACE_O_TRACESYSGOOD;
+        return opts;
+    }
+
 }
