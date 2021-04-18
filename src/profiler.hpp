@@ -2,10 +2,6 @@
 
 #pragma once
 
-#include <vector>
-
-#include <nrg.hpp>
-
 #include "config.hpp"
 #include "dbg.hpp"
 #include "trap.hpp"
@@ -13,29 +9,7 @@
 namespace tep
 {
 
-    struct section_results
-    {
-        config_data::section section;
-        nrgprf::task readings;
-
-        section_results(const config_data::section& sec);
-    };
-
-    bool operator==(const section_results& lhs, const section_results& rhs);
-    bool operator==(const section_results& lhs, const config_data::section& rhs);
-    bool operator==(const config_data::section& lhs, const section_results& rhs);
-
-
-    struct profiling_results
-    {
-        nrgprf::reader_rapl rdr_cpu;
-        nrgprf::reader_gpu rdr_gpu;
-        std::vector<section_results> results;
-
-        profiling_results(nrgprf::reader_rapl&& rr, nrgprf::reader_gpu&& rg);
-        void add_execution(const config_data::section& sec, nrgprf::execution&& exec);
-    };
-
+    struct profiling_results;
 
     class profiler
     {

@@ -2,6 +2,7 @@
 
 #include "error.hpp"
 #include "profiler.hpp"
+#include "profiling_results.hpp"
 #include "ptrace_wrapper.hpp"
 #include "util.hpp"
 #include "tracer.hpp"
@@ -50,34 +51,6 @@ tracer_error handle_reader_error(pid_t pid, const nrgprf::error& error)
 }
 
 // end helper functions
-
-
-section_results::section_results(const config_data::section& sec) :
-    section(sec),
-    readings(0)
-{}
-
-bool tep::operator==(const section_results& lhs, const section_results& rhs)
-{
-    return lhs.section == rhs.section;
-}
-
-bool tep::operator==(const section_results& lhs, const config_data::section& rhs)
-{
-    return lhs.section == rhs;
-}
-
-bool tep::operator==(const config_data::section& lhs, const section_results& rhs)
-{
-    return lhs == rhs.section;
-}
-
-
-profiling_results::profiling_results(nrgprf::reader_rapl&& rr, nrgprf::reader_gpu&& rg) :
-    rdr_cpu(std::move(rr)),
-    rdr_gpu(std::move(rg)),
-    results()
-{}
 
 
 profiler::profiler(pid_t child, bool pie, const dbg_line_info& dli, const config_data& cd) :

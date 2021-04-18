@@ -1,16 +1,17 @@
 // main.cpp
 
 #include <cstring>
-#include <fstream>
 #include <iostream>
 
 #include "cmdargs.hpp"
 #include "dbg.hpp"
 #include "error.hpp"
 #include "profiler.hpp"
+#include "profiling_results.hpp"
 #include "ptrace_wrapper.hpp"
 #include "target.hpp"
 #include "util.hpp"
+
 
 int main(int argc, char* argv[])
 {
@@ -50,6 +51,7 @@ int main(int argc, char* argv[])
             std::cerr << results.error() << std::endl;
             return 1;
         }
+        args.value().outfile().stream() << results.value();
         return 0;
     }
     else if (child_pid == -1)
