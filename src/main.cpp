@@ -1,5 +1,6 @@
 // main.cpp
 
+#include <cmath>
 #include <cstring>
 #include <functional>
 #include <iostream>
@@ -57,7 +58,7 @@ namespace tep
         std::ios::fmtflags os_flags(os.flags());
         std::streamsize prec = os.precision();
         os << std::fixed
-            << std::setprecision(8)
+            << std::setprecision(std::log10(nrgprf::units_energy::ratio::den))
             << energy.count()
             << std::setprecision(prec)
             << " (J)";
@@ -70,7 +71,7 @@ namespace tep
         std::ios::fmtflags os_flags(os.flags());
         std::streamsize prec = os.precision();
         os << std::fixed
-            << std::setprecision(8)
+            << std::setprecision(std::log10(nrgprf::duration_t::period::den))
             << d.count()
             << std::setprecision(prec)
             << " (s)";
