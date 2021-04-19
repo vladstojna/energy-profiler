@@ -72,7 +72,8 @@ nrgprf::reader_rapl create_cpu_reader(pid_t tid, const config_data& cd, tracer_e
     nrgprf::reader_rapl reader(get_rapl_domain_mask(cd), get_socket_mask(cd), error);
     if (error)
         err = handle_reader_error(tid, error);
-    log(log_lvl::success, "[%d] created RAPL reader", tid);
+    else
+        log(log_lvl::success, "[%d] created RAPL reader", tid);
     return reader;
 }
 
@@ -82,7 +83,8 @@ nrgprf::reader_gpu create_gpu_reader(pid_t tid, const config_data& cd, tracer_er
     nrgprf::reader_gpu reader(get_device_mask(cd), error);
     if (error)
         err = handle_reader_error(tid, error);
-    log(log_lvl::success, "[%d] created GPU reader", tid);
+    else
+        log(log_lvl::success, "[%d] created GPU reader", tid);
     return reader;
 }
 
