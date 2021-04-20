@@ -51,12 +51,24 @@ int main(int argc, char* argv[])
             std::cerr << profiler.error() << std::endl;
             return 1;
         }
+
+        if (args.value().idle())
+        {
+            tracer_error error = profiler.value().obtain_idle_results();
+            if (error)
+            {
+                std::cerr << error << std::endl;
+                return 1;
+            }
+        }
+
         cmmn::expected<profiling_results, tracer_error> results = profiler.value().run();
         if (!results)
         {
             std::cerr << results.error() << std::endl;
             return 1;
         }
+
         args.value().outfile().stream() << results.value();
         return 0;
     }

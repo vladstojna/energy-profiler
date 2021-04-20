@@ -6,13 +6,12 @@
 
 #include "config.hpp"
 #include "dbg.hpp"
+#include "profiling_results.hpp"
 #include "reader_container.hpp"
 #include "trap.hpp"
 
 namespace tep
 {
-
-    struct profiling_results;
 
     class profiler
     {
@@ -28,6 +27,7 @@ namespace tep
         config_data _cd;
         reader_container _readers;
         trap_set _traps;
+        idle_results _idle;
 
     public:
         profiler(pid_t child, bool pie,
@@ -47,6 +47,8 @@ namespace tep
         const trap_set& traps() const;
 
         cmmn::expected<profiling_results, tracer_error> run();
+
+        tracer_error obtain_idle_results();
     };
 
     template<typename D, typename C>

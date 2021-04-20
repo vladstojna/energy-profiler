@@ -33,8 +33,9 @@ namespace tep
     {
         reader_container readers;
         std::vector<section_results> results;
+        idle_results idle_res;
 
-        profiling_results(reader_container&& rc);
+        profiling_results(reader_container&& rc, idle_results&& ir);
         void add_execution(const config_data::section& sec, nrgprf::execution&& exec);
     };
 

@@ -170,9 +170,10 @@ tep::section_results::section_results(const config_data::section& sec) :
     readings(0)
 {}
 
-tep::profiling_results::profiling_results(reader_container&& rc) :
+tep::profiling_results::profiling_results(reader_container&& rc, idle_results&& ir) :
     readers(std::move(rc)),
-    results()
+    results(),
+    idle_res(std::move(ir))
 {}
 
 

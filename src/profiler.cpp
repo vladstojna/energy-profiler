@@ -1,6 +1,7 @@
 // profiler.cpp
 
 #include "error.hpp"
+#include "idle_evaluator.hpp"
 #include "profiler.hpp"
 #include "profiling_results.hpp"
 #include "ptrace_wrapper.hpp"
@@ -245,7 +246,7 @@ tracer_expected<profiling_results> profiler::run()
     if (!results)
         return std::move(results.error());
 
-    profiling_results retval(std::move(_readers));
+    profiling_results retval(std::move(_readers), std::move(_idle));
     for (auto& [addr, execs] : results.value())
     {
         trap_set::iterator trap = _traps.find(addr);
@@ -274,4 +275,19 @@ tracer_expected<profiling_results> profiler::run()
         }
     }
     return retval;
+}
+
+tracer_error profiler::obtain_idle_results()
+{
+    idle_evaluator evaluator(_readers);
+    cmmn::expected<idle_results, tracer_error> results = evaluator.run();
+
+    if (!results)
+    {
+        log(log_lvl::error, "[%d] error gathering idle results", _tid);
+        return std::move(results.error());
+    }
+    _idle = std::move(results.value());
+    log(log_lvl::success, "[%d] successfully gathered idle results", _tid);
+    return tracer_error::success();
 }
