@@ -16,8 +16,8 @@ namespace tep
     class periodic_sampler
     {
     public:
-        static struct simple {} simple_sampler;
-        static struct complete {} complete_sampler;
+        static struct simple_tag {} simple;
+        static struct complete_tag {} complete;
 
     private:
         static std::chrono::milliseconds period_max;
@@ -33,15 +33,15 @@ namespace tep
         explicit periodic_sampler(nrgprf::execution&& exec = nrgprf::execution(0));
 
         explicit periodic_sampler(nrgprf::reader_rapl& reader, nrgprf::execution&& exec,
-            complete tag,
+            complete_tag tag,
             const std::chrono::milliseconds& period = period_default);
 
         explicit periodic_sampler(nrgprf::reader_rapl& reader, nrgprf::execution&& exec,
-            simple tag,
+            simple_tag tag,
             const std::chrono::milliseconds& period = period_max);
 
         explicit periodic_sampler(nrgprf::reader_gpu& reader, nrgprf::execution&& exec,
-            complete tag,
+            complete_tag tag,
             const std::chrono::milliseconds& period = period_default);
 
         ~periodic_sampler() noexcept;

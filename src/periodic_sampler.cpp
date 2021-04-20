@@ -19,6 +19,8 @@ static void handle_reader_error(pid_t tid, const char* comment, const nrgprf::er
 
 // end helper functions
 
+periodic_sampler::simple_tag periodic_sampler::simple;
+periodic_sampler::complete_tag periodic_sampler::complete;
 
 std::chrono::milliseconds periodic_sampler::period_max(30000);
 std::chrono::milliseconds periodic_sampler::period_default(10);
@@ -32,7 +34,7 @@ periodic_sampler::periodic_sampler(nrgprf::execution&& exec) :
 {}
 
 periodic_sampler::periodic_sampler(nrgprf::reader_rapl& reader, nrgprf::execution&& exec,
-    periodic_sampler::complete tag,
+    complete_tag tag,
     const std::chrono::milliseconds& period) :
     periodic_sampler(std::move(exec))
 {
@@ -44,7 +46,7 @@ periodic_sampler::periodic_sampler(nrgprf::reader_rapl& reader, nrgprf::executio
 }
 
 periodic_sampler::periodic_sampler(nrgprf::reader_rapl& reader, nrgprf::execution&& exec,
-    periodic_sampler::simple tag,
+    simple_tag tag,
     const std::chrono::milliseconds& period) :
     periodic_sampler(std::move(exec))
 {
@@ -56,7 +58,7 @@ periodic_sampler::periodic_sampler(nrgprf::reader_rapl& reader, nrgprf::executio
 }
 
 periodic_sampler::periodic_sampler(nrgprf::reader_gpu& reader, nrgprf::execution&& exec,
-    periodic_sampler::complete tag,
+    complete_tag tag,
     const std::chrono::milliseconds& period) :
     periodic_sampler(std::move(exec))
 {
