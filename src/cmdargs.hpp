@@ -2,6 +2,8 @@
 
 #pragma once
 
+#include "flags.hpp"
+
 #include <string>
 #include <fstream>
 #include <iosfwd>
@@ -46,22 +48,18 @@ namespace tep
     {
     private:
         int _target_idx;
-        bool _pie;
-        bool _idle;
+        flags _flags;
         output_file _outfile;
         std::string _config;
 
     public:
-        arguments(int idx, bool pie, bool idle, output_file&& of, const std::string& cfg);
-        arguments(int idx, bool pie, bool idle, output_file&& of, std::string&& cfg);
+        arguments(int idx, const flags& flags, output_file&& of, const std::string& cfg);
+        arguments(int idx, const flags& flags, output_file&& of, std::string&& cfg);
 
         int target_index() const;
-        bool pie() const;
-        bool idle() const;
-
+        const flags& get_flags() const;
         output_file& outfile();
         const output_file& outfile() const;
-
         const std::string& config() const;
     };
 
