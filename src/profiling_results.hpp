@@ -3,6 +3,7 @@
 #pragma once
 
 #include "config.hpp"
+#include "reader_container.hpp"
 
 #include <nrg.hpp>
 
@@ -21,11 +22,10 @@ namespace tep
 
     struct profiling_results
     {
-        nrgprf::reader_rapl rdr_cpu;
-        nrgprf::reader_gpu rdr_gpu;
+        reader_container readers;
         std::vector<section_results> results;
 
-        profiling_results(nrgprf::reader_rapl&& rr, nrgprf::reader_gpu&& rg);
+        profiling_results(reader_container&& rc);
         void add_execution(const config_data::section& sec, nrgprf::execution&& exec);
     };
 

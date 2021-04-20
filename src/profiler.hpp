@@ -6,6 +6,7 @@
 
 #include "config.hpp"
 #include "dbg.hpp"
+#include "reader_container.hpp"
 #include "trap.hpp"
 
 namespace tep
@@ -25,10 +26,8 @@ namespace tep
         bool _pie;
         dbg_line_info _dli;
         config_data _cd;
+        reader_container _readers;
         trap_set _traps;
-
-        nrgprf::reader_rapl _rdr_cpu;
-        nrgprf::reader_gpu _rdr_gpu;
 
     public:
         profiler(pid_t child, bool pie,

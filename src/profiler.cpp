@@ -98,8 +98,7 @@ profiler::profiler(pid_t child, bool pie,
     _pie(pie),
     _dli(dli),
     _cd(cd),
-    _rdr_cpu(create_cpu_reader(_tid, cd, err)),
-    _rdr_gpu(create_gpu_reader(_tid, cd, err))
+    _readers(cd, err)
 {}
 
 profiler::profiler(pid_t child, bool pie,
@@ -109,8 +108,7 @@ profiler::profiler(pid_t child, bool pie,
     _pie(pie),
     _dli(dli),
     _cd(std::move(cd)),
-    _rdr_cpu(create_cpu_reader(_tid, cd, err)),
-    _rdr_gpu(create_gpu_reader(_tid, cd, err))
+    _readers(cd, err)
 {}
 
 profiler::profiler(pid_t child, bool pie,
@@ -120,8 +118,7 @@ profiler::profiler(pid_t child, bool pie,
     _pie(pie),
     _dli(std::move(dli)),
     _cd(cd),
-    _rdr_cpu(create_cpu_reader(_tid, cd, err)),
-    _rdr_gpu(create_gpu_reader(_tid, cd, err))
+    _readers(cd, err)
 {}
 
 profiler::profiler(pid_t child, bool pie,
@@ -131,8 +128,7 @@ profiler::profiler(pid_t child, bool pie,
     _pie(pie),
     _dli(std::move(dli)),
     _cd(std::move(cd)),
-    _rdr_cpu(create_cpu_reader(_tid, cd, err)),
-    _rdr_gpu(create_gpu_reader(_tid, cd, err))
+    _readers(cd, err)
 {}
 
 const dbg_line_info& profiler::debug_line_info() const
@@ -244,12 +240,12 @@ tracer_expected<profiling_results> profiler::run()
     }
 
     // first tracer has the same tracee tgid and tid, since there is only one tracee at this point
-    tracer trc(_traps, _child, _child, entrypoint, _rdr_cpu, _rdr_gpu, std::launch::deferred);
+    tracer trc(_readers, _traps, _child, _child, entrypoint, std::launch::deferred);
     tracer_expected<gathered_results> results = trc.results();
     if (!results)
         return std::move(results.error());
 
-    profiling_results retval(std::move(_rdr_cpu), std::move(_rdr_gpu));
+    profiling_results retval(std::move(_readers));
     for (auto& [addr, execs] : results.value())
     {
         trap_set::iterator trap = _traps.find(addr);

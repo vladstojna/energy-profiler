@@ -9,6 +9,7 @@
 
 #include <nrg.hpp>
 
+#include "reader_container.hpp"
 #include "config.hpp"
 #include "error.hpp"
 #include "periodic_sampler.hpp"
@@ -39,8 +40,7 @@ namespace tep
         std::vector<std::unique_ptr<tracer>> _children;
         const tracer* _parent;
 
-        nrgprf::reader_rapl _rdr_cpu;
-        nrgprf::reader_gpu _rdr_gpu;
+        reader_container _readers;
         std::unique_ptr<periodic_sampler> _sampler;
 
         pid_t _tracee_tgid;
@@ -49,20 +49,18 @@ namespace tep
         gathered_results _results;
 
     public:
-        tracer(const trap_set& traps,
+        tracer(const reader_container& readers,
+            const trap_set& traps,
             pid_t tracee_pid,
             pid_t tracee_tid,
             uintptr_t ep,
-            const nrgprf::reader_rapl& rdr_cpu,
-            const nrgprf::reader_gpu& rdr_gpu,
             std::launch policy);
 
-        tracer(const trap_set& traps,
+        tracer(const reader_container& readers,
+            const trap_set& traps,
             pid_t tracee_pid,
             pid_t tracee_tid,
             uintptr_t ep,
-            const nrgprf::reader_rapl& rdr_cpu,
-            const nrgprf::reader_gpu& rdr_gpu,
             std::launch policy,
             const tracer* parent);
 

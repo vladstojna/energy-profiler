@@ -65,30 +65,27 @@ std::mutex tracer::TRAP_BARRIER;
 // methods
 
 
-tracer::tracer(const trap_set& traps,
+tracer::tracer(const reader_container& readers,
+    const trap_set& traps,
     pid_t tracee_pid,
     pid_t tracee_tid,
     uintptr_t ep,
-    const nrgprf::reader_rapl& rdr_cpu,
-    const nrgprf::reader_gpu& rdr_gpu,
     std::launch policy) :
-    tracer(traps, tracee_pid, tracee_tid, ep, rdr_cpu, rdr_gpu, policy, nullptr)
+    tracer(readers, traps, tracee_pid, tracee_tid, ep, policy, nullptr)
 {}
 
-tracer::tracer(const trap_set& traps,
+tracer::tracer(const reader_container& readers,
+    const trap_set& traps,
     pid_t tracee_pid,
     pid_t tracee_tid,
     uintptr_t ep,
-    const nrgprf::reader_rapl& rdr_cpu,
-    const nrgprf::reader_gpu& rdr_gpu,
     std::launch policy,
     const tracer* tracer) :
     _tracer_ftr(),
     _children_mx(),
     _children(),
     _parent(tracer),
-    _rdr_cpu(rdr_cpu),
-    _rdr_gpu(rdr_gpu),
+    _readers(readers),
     _tracee_tgid(tracee_pid),
     _tracee(tracee_tid),
     _ep(ep),
@@ -144,10 +141,8 @@ void tracer::add_child(const trap_set& traps, pid_t new_child)
 {
     std::scoped_lock lock(_children_mx);
     _children.push_back(
-        std::make_unique<tracer>(traps, _tracee_tgid, new_child, _ep,
-            _rdr_cpu, _rdr_gpu,
-            std::launch::async,
-            this));
+        std::make_unique<tracer>(_readers, traps, _tracee_tgid, new_child, _ep,
+            std::launch::async, this));
     log(log_lvl::info, "[%d] new child created with tid=%d", gettid(), new_child);
 }
 
@@ -302,17 +297,17 @@ void tracer::launch_async_sampling(const config_data::section& section)
     case config_data::target::cpu:
     {
         if (section.method() == config_data::profiling_method::energy_profile)
-            _sampler = std::make_unique<periodic_sampler>(_rdr_cpu, std::move(exec),
+            _sampler = std::make_unique<periodic_sampler>(_readers.reader_rapl(), std::move(exec),
                 periodic_sampler::complete, section.interval());
         else if (section.method() == config_data::profiling_method::energy_total)
-            _sampler = std::make_unique<periodic_sampler>(_rdr_cpu, std::move(exec),
+            _sampler = std::make_unique<periodic_sampler>(_readers.reader_rapl(), std::move(exec),
                 periodic_sampler::simple);
         else
             assert(false);
     } break;
     case config_data::target::gpu:
     {
-        _sampler = std::make_unique<periodic_sampler>(_rdr_gpu, std::move(exec),
+        _sampler = std::make_unique<periodic_sampler>(_readers.reader_gpu(), std::move(exec),
             periodic_sampler::complete, section.interval());
     } break;
     }
