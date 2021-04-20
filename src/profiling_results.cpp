@@ -155,6 +155,16 @@ std::ostream& operator<<(std::ostream& os, const rdr_task_pair<nrgprf::reader_ra
 
 
 
+tep::idle_results::idle_results() :
+    cpu_readings(0),
+    gpu_readings(1)
+{}
+
+tep::idle_results::idle_results(nrgprf::execution&& cpur, nrgprf::execution&& gpur) :
+    cpu_readings(std::move(cpur)),
+    gpu_readings(std::move(gpur))
+{}
+
 tep::section_results::section_results(const config_data::section& sec) :
     section(sec),
     readings(0)

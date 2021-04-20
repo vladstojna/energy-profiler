@@ -12,6 +12,15 @@
 namespace tep
 {
 
+    struct idle_results
+    {
+        nrgprf::execution cpu_readings;
+        nrgprf::execution gpu_readings;
+
+        idle_results();
+        idle_results(nrgprf::execution&& cpur, nrgprf::execution&& gpur);
+    };
+
     struct section_results
     {
         config_data::section section;
