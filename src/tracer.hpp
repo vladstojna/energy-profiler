@@ -11,6 +11,7 @@
 
 #include "config.hpp"
 #include "error.hpp"
+#include "periodic_sampler.hpp"
 #include "trap.hpp"
 
 struct user_regs_struct;
@@ -28,17 +29,11 @@ namespace tep
     class tracer
     {
     private:
-        static size_t DEFAULT_EXECS;
         static size_t DEFAULT_SAMPLES;
-        static std::chrono::milliseconds DEFAULT_INTERVAL;
         static std::mutex TRAP_BARRIER;
 
     private:
         std::future<tep::tracer_error> _tracer_ftr;
-        std::future<nrgprf::error> _sampler_ftr;
-        mutable std::mutex _sampler_mtx;
-        mutable std::condition_variable _sampler_cnd;
-        mutable bool _section_finished;
 
         mutable std::mutex _children_mx;
         std::vector<std::unique_ptr<tracer>> _children;
@@ -46,7 +41,7 @@ namespace tep
 
         nrgprf::reader_rapl _rdr_cpu;
         nrgprf::reader_gpu _rdr_gpu;
-        nrgprf::execution _exec;
+        std::unique_ptr<periodic_sampler> _sampler;
 
         pid_t _tracee_tgid;
         pid_t _tracee;
@@ -89,23 +84,7 @@ namespace tep
 
         nrgprf::execution prepare_new_exec(const config_data::section& section) const;
         void launch_async_sampling(const config_data::section& sec);
-
-        void notify_start();
-        void notify_end();
         void register_results(uintptr_t bp);
-
-        nrgprf::error evaluate_full_gpu(pid_t tid,
-            const std::chrono::milliseconds& interval,
-            nrgprf::execution* execution);
-
-        nrgprf::error evaluate_full_cpu(pid_t tid,
-            const std::chrono::milliseconds& interval,
-            nrgprf::execution* execution);
-
-        nrgprf::error evaluate_simple(pid_t tid,
-            const std::chrono::milliseconds& interval,
-            nrgprf::sample* first,
-            nrgprf::sample* last);
     };
 
 
