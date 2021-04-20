@@ -45,8 +45,8 @@ else
 cflags += -O3 -DNDEBUG
 endif
 
-# linked flags
-ldflags := -pthread -lbfd -ldwarf -lpugixml -lnrg
+# linker flags
+ldflags := -pthread -lbfd -ldwarf -lpugixml -lnrg -lstdc++fs
 ldflags += $(addprefix -L, $(extlibs_dirs) nrg/lib)
 
 # cmake
