@@ -92,41 +92,41 @@ nrgprf::reader_gpu create_gpu_reader(pid_t tid, const config_data& cd, tracer_er
 // end helper functions
 
 
-profiler::profiler(pid_t child, bool pie,
+profiler::profiler(pid_t child, const flags& flags,
     const dbg_line_info& dli, const config_data& cd, tracer_error& err) :
     _tid(gettid()),
     _child(child),
-    _pie(pie),
+    _flags(flags),
     _dli(dli),
     _cd(cd),
     _readers(cd, err)
 {}
 
-profiler::profiler(pid_t child, bool pie,
+profiler::profiler(pid_t child, const flags& flags,
     const dbg_line_info& dli, config_data&& cd, tracer_error& err) :
     _tid(gettid()),
     _child(child),
-    _pie(pie),
+    _flags(flags),
     _dli(dli),
     _cd(std::move(cd)),
     _readers(cd, err)
 {}
 
-profiler::profiler(pid_t child, bool pie,
+profiler::profiler(pid_t child, const flags& flags,
     dbg_line_info&& dli, const config_data& cd, tracer_error& err) :
     _tid(gettid()),
     _child(child),
-    _pie(pie),
+    _flags(flags),
     _dli(std::move(dli)),
     _cd(cd),
     _readers(cd, err)
 {}
 
-profiler::profiler(pid_t child, bool pie,
+profiler::profiler(pid_t child, const flags& flags,
     dbg_line_info&& dli, config_data&& cd, tracer_error& err) :
     _tid(gettid()),
     _child(child),
-    _pie(pie),
+    _flags(flags),
     _dli(std::move(dli)),
     _cd(std::move(cd)),
     _readers(cd, err)
@@ -149,6 +149,18 @@ const trap_set& profiler::traps() const
 
 tracer_expected<profiling_results> profiler::run()
 {
+    if (_flags.obtain_idle_readings())
+    {
+        log(log_lvl::info, "[%d] gathering idle results...", _tid);
+        tracer_error err = obtain_idle_results();
+        if (err)
+            return err;
+    }
+    else
+    {
+        log(log_lvl::info, "[%d] skipping idle results...", _tid);
+    }
+
     int wait_status;
     pid_t waited_pid = waitpid(_child, &wait_status, 0);
     if (waited_pid == -1)
@@ -171,7 +183,7 @@ tracer_expected<profiling_results> profiler::run()
         return get_syserror(errnum, tracer_errcode::PTRACE_ERROR, _tid, "PTRACE_GETREGS");
 
     uintptr_t entrypoint;
-    if (get_entrypoint_addr(_pie, _child, entrypoint) == -1)
+    if (get_entrypoint_addr(_flags.pie(), _child, entrypoint) == -1)
         return get_syserror(errno, tracer_errcode::SYSTEM_ERROR, _tid, "get_entrypoint_addr");
 
     log(log_lvl::info, "[%d] tracee %d rip @ 0x%" PRIxPTR ", entrypoint @ 0x%" PRIxPTR,

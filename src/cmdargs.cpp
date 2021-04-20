@@ -91,18 +91,16 @@ output_file::operator bool() const
     return bool(*_outstream);
 }
 
-arguments::arguments(int idx, bool pie, bool idle, output_file&& of, const std::string& cfg) :
+arguments::arguments(int idx, const flags& flags, output_file&& of, const std::string& cfg) :
     _target_idx(idx),
-    _pie(pie),
-    _idle(idle),
+    _flags(flags),
     _outfile(std::move(of)),
     _config(cfg)
 {}
 
-arguments::arguments(int idx, bool pie, bool idle, output_file&& of, std::string&& cfg) :
+arguments::arguments(int idx, const flags& flags, output_file&& of, std::string&& cfg) :
     _target_idx(idx),
-    _pie(pie),
-    _idle(idle),
+    _flags(flags),
     _outfile(std::move(of)),
     _config(std::move(cfg))
 {}
@@ -112,14 +110,9 @@ int arguments::target_index() const
     return _target_idx;
 }
 
-bool arguments::pie() const
+const flags& arguments::get_flags() const
 {
-    return _pie;
-}
-
-bool arguments::idle() const
-{
-    return _idle;
+    return _flags;
 }
 
 output_file& arguments::outfile()
@@ -144,11 +137,12 @@ std::ostream& tep::operator<<(std::ostream& os, const output_file& of)
 
 std::ostream& tep::operator<<(std::ostream& os, const arguments& args)
 {
-    os << "target @ index " << args.target_index();
-    os << ", is PIE? " << (args.pie() ? "yes" : "no");
-    os << ", obtain idle results? " << (args.idle() ? "yes" : "no");
-    os << ", output: " << args.outfile();
-    os << ", config file: " << args.config();
+#ifndef NDEBUG
+    os << "target @ index " << args.target_index() << "\n";
+#endif
+    os << "flags:\n" << args.get_flags();
+    os << "\noutput to: " << args.outfile();
+    os << "\nconfig file: " << args.config();
     return os;
 }
 
@@ -230,5 +224,5 @@ cmmn::expected<arguments, arg_error> tep::parse_arguments(int argc, char* const 
         return arg_error();
     }
 
-    return { optind, bool(pie), bool(idle), std::move(of), std::move(config) };
+    return { optind, flags(pie, idle) , std::move(of), std::move(config) };
 }
