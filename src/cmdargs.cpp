@@ -91,16 +91,18 @@ output_file::operator bool() const
     return bool(*_outstream);
 }
 
-arguments::arguments(int idx, bool pie, output_file&& of, const std::string& cfg) :
+arguments::arguments(int idx, bool pie, bool idle, output_file&& of, const std::string& cfg) :
     _target_idx(idx),
     _pie(pie),
+    _idle(idle),
     _outfile(std::move(of)),
     _config(cfg)
 {}
 
-arguments::arguments(int idx, bool pie, output_file&& of, std::string&& cfg) :
+arguments::arguments(int idx, bool pie, bool idle, output_file&& of, std::string&& cfg) :
     _target_idx(idx),
     _pie(pie),
+    _idle(idle),
     _outfile(std::move(of)),
     _config(std::move(cfg))
 {}
@@ -113,6 +115,11 @@ int arguments::target_index() const
 bool arguments::pie() const
 {
     return _pie;
+}
+
+bool arguments::idle() const
+{
+    return _idle;
 }
 
 output_file& arguments::outfile()
@@ -139,6 +146,7 @@ std::ostream& tep::operator<<(std::ostream& os, const arguments& args)
 {
     os << "target @ index " << args.target_index();
     os << ", is PIE? " << (args.pie() ? "yes" : "no");
+    os << ", obtain idle results? " << (args.idle() ? "yes" : "no");
     os << ", output: " << args.outfile();
     os << ", config file: " << args.config();
     return os;
@@ -161,18 +169,20 @@ void print_usage(const char* profiler_name)
 cmmn::expected<arguments, arg_error> tep::parse_arguments(int argc, char* const argv[])
 {
     int c;
-    int flag = 1;
     int option_index = 0;
 
-    bool pie = true;
+    int pie = 1;
+    int idle = 1;
     std::string output;
     std::string config;
 
     struct option long_options[] =
     {
         { "help", no_argument, 0, 'h' },
-        { "pie", no_argument, &flag, 1 },
-        { "no-pie", no_argument, &flag, 0 },
+        { "pie", no_argument, &pie, 1 },
+        { "no-pie", no_argument, &pie, 0 },
+        { "idle", no_argument, &idle, 1},
+        { "no-idle", no_argument, &idle, 0},
         { "config", required_argument, 0, 'c' },
         { "output", required_argument, 0, 'o' },
         {0, 0, 0, 0}
@@ -183,7 +193,7 @@ cmmn::expected<arguments, arg_error> tep::parse_arguments(int argc, char* const 
         switch (c)
         {
         case 0:
-            pie = bool(flag);
+            // empty
             break;
         case 'c':
             config = optarg;
@@ -220,5 +230,5 @@ cmmn::expected<arguments, arg_error> tep::parse_arguments(int argc, char* const 
         return arg_error();
     }
 
-    return { optind, pie, std::move(of), std::move(config) };
+    return { optind, bool(pie), bool(idle), std::move(of), std::move(config) };
 }
