@@ -44,8 +44,14 @@ int main(int argc, char* argv[])
     pid_t child_pid = ptrace_wrapper::instance.fork(errnum, &run_target, &argv[idx]);
     if (child_pid > 0)
     {
-        profiler profiler(child_pid, args.value().pie(), std::move(dbg_info.value()), std::move(config.value()));
-        cmmn::expected<profiling_results, tracer_error> results = profiler.run();
+        cmmn::expected<profiler, tracer_error> profiler = profiler::create(
+            child_pid, args.value().pie(), std::move(dbg_info.value()), std::move(config.value()));
+        if (!profiler)
+        {
+            std::cerr << profiler.error() << std::endl;
+            return 1;
+        }
+        cmmn::expected<profiling_results, tracer_error> results = profiler.value().run();
         if (!results)
         {
             std::cerr << results.error() << std::endl;

@@ -58,44 +58,34 @@ tracer_expected<trap_set::iterator> get_trap(const trap_set& traps, pid_t tid, u
 
 // definition of static variables
 
-size_t tracer::DEFAULT_EXECS = 16;
 size_t tracer::DEFAULT_SAMPLES = 256;
-std::chrono::milliseconds tracer::DEFAULT_INTERVAL(30000);
 std::mutex tracer::TRAP_BARRIER;
 
 
 // methods
 
 
-tracer::tracer(const trap_set& traps,
+tracer::tracer(const reader_container& readers,
+    const trap_set& traps,
     pid_t tracee_pid,
     pid_t tracee_tid,
     uintptr_t ep,
-    const nrgprf::reader_rapl& rdr_cpu,
-    const nrgprf::reader_gpu& rdr_gpu,
     std::launch policy) :
-    tracer(traps, tracee_pid, tracee_tid, ep, rdr_cpu, rdr_gpu, policy, nullptr)
+    tracer(readers, traps, tracee_pid, tracee_tid, ep, policy, nullptr)
 {}
 
-tracer::tracer(const trap_set& traps,
+tracer::tracer(const reader_container& readers,
+    const trap_set& traps,
     pid_t tracee_pid,
     pid_t tracee_tid,
     uintptr_t ep,
-    const nrgprf::reader_rapl& rdr_cpu,
-    const nrgprf::reader_gpu& rdr_gpu,
     std::launch policy,
     const tracer* tracer) :
     _tracer_ftr(),
-    _sampler_ftr(),
-    _sampler_mtx(),
-    _sampler_cnd(),
-    _section_finished(false),
     _children_mx(),
     _children(),
     _parent(tracer),
-    _rdr_cpu(rdr_cpu),
-    _rdr_gpu(rdr_gpu),
-    _exec(0),
+    _readers(readers),
     _tracee_tgid(tracee_pid),
     _tracee(tracee_tid),
     _ep(ep),
@@ -106,15 +96,9 @@ tracer::tracer(const trap_set& traps,
 
 tracer::~tracer()
 {
-    std::scoped_lock lock(_children_mx);
-    if (!_sampler_ftr.valid())
+    if (!_tracer_ftr.valid())
         return;
-    {
-        std::scoped_lock lock(_sampler_mtx);
-        _section_finished = true;
-    }
-    _sampler_cnd.notify_one();
-    _sampler_ftr.wait();
+    _tracer_ftr.wait();
 }
 
 pid_t tracer::tracee() const
@@ -157,15 +141,8 @@ void tracer::add_child(const trap_set& traps, pid_t new_child)
 {
     std::scoped_lock lock(_children_mx);
     _children.push_back(
-        std::make_unique<tracer>(
-            traps,
-            _tracee_tgid,
-            new_child,
-            _ep,
-            _rdr_cpu,
-            _rdr_gpu,
-            std::launch::async,
-            this));
+        std::make_unique<tracer>(_readers, traps, _tracee_tgid, new_child, _ep,
+            std::launch::async, this));
     log(log_lvl::info, "[%d] new child created with tid=%d", gettid(), new_child);
 }
 
@@ -314,63 +291,40 @@ nrgprf::execution tracer::prepare_new_exec(const config_data::section& section) 
 
 void tracer::launch_async_sampling(const config_data::section& section)
 {
-    pid_t tid = gettid();
+    nrgprf::execution exec(prepare_new_exec(section));
     switch (section.target())
     {
     case config_data::target::cpu:
     {
         if (section.method() == config_data::profiling_method::energy_profile)
-            _sampler_ftr = std::async(std::launch::async, &tracer::evaluate_full_cpu, this,
-                tid, section.interval(), &_exec);
+            _sampler = std::make_unique<periodic_sampler>(_readers.reader_rapl(), std::move(exec),
+                periodic_sampler::complete, section.interval());
+        else if (section.method() == config_data::profiling_method::energy_total)
+            _sampler = std::make_unique<periodic_sampler>(_readers.reader_rapl(), std::move(exec),
+                periodic_sampler::simple);
         else
-            _sampler_ftr = std::async(std::launch::async, &tracer::evaluate_simple, this,
-                tid, DEFAULT_INTERVAL, &_exec.first(), &_exec.last());
+            assert(false);
     } break;
     case config_data::target::gpu:
     {
-        _sampler_ftr = std::async(std::launch::async, &tracer::evaluate_full_gpu, this,
-            tid, section.interval(), &_exec);
+        _sampler = std::make_unique<periodic_sampler>(_readers.reader_gpu(), std::move(exec),
+            periodic_sampler::complete, section.interval());
     } break;
     }
-}
-
-void tracer::notify_start()
-{
-    {
-        std::unique_lock lock(_sampler_mtx);
-        _section_finished = false;
-    }
-    log(log_lvl::debug, "[%d] notified sampling thread to start", gettid());
-    _sampler_cnd.notify_one();
-}
-
-void tracer::notify_end()
-{
-    {
-        std::unique_lock lock(_sampler_mtx);
-        _section_finished = true;
-    }
-    log(log_lvl::debug, "[%d] notified sampling thread to end", gettid());
-    _sampler_cnd.notify_one();
 }
 
 void tracer::register_results(uintptr_t bp)
 {
     pid_t tid = gettid();
-    nrgprf::error sampler_error = _sampler_ftr.get();
+    cmmn::expected<nrgprf::execution, nrgprf::error> sampling_results = _sampler->get();
     // if sampling thread generated an error, register execution as a failed one
     // in the gathered results collection
-    if (sampler_error)
-    {
-        _results[bp].emplace_back(sampler_error);
+    if (!sampling_results)
         log(log_lvl::error, "[%d] sampling thread exited with error", tid);
-    }
     else
-    {
-        size_t sz = _exec.size();
-        _results[bp].emplace_back(std::move(_exec));
-        log(log_lvl::success, "[%d] sampling thread exited successfully with %zu samples", tid, sz);
-    }
+        log(log_lvl::success, "[%d] sampling thread exited successfully with %zu samples",
+            tid, sampling_results.value().size());
+    _results[bp].emplace_back(std::move(sampling_results));
 }
 
 tracer_error tracer::trace(const trap_set* traps)
@@ -445,12 +399,11 @@ tracer_error tracer::trace(const trap_set* traps)
                 get_trap(*traps, tid, start_bp_addr, entrypoint);
             if (!trap)
                 return std::move(trap.error());
-            _exec = prepare_new_exec(trap.value()->section());
             launch_async_sampling(trap.value()->section());
             error = handle_breakpoint(regs, entrypoint, trap.value()->original_word());
             if (error)
                 return error;
-            notify_start();
+            _sampler->start();
 
             // it is during this time that the energy readings are done
             if (pw.ptrace(errnum, PTRACE_CONT, _tracee, 0, 0) == -1)
@@ -463,7 +416,6 @@ tracer_error tracer::trace(const trap_set* traps)
             // reached end breakpoint
             if (is_breakpoint_trap(wait_status))
             {
-                notify_end();
                 register_results(start_bp_addr);
 
                 if (pw.ptrace(errnum, PTRACE_GETREGS, _tracee, 0, &regs) == -1)
@@ -522,113 +474,6 @@ tracer_error tracer::trace(const trap_set* traps)
         }
     }
     return tracer_error::success();
-}
-
-
-// background thread routines
-
-
-nrgprf::error tracer::evaluate_full_gpu(pid_t tid,
-    const std::chrono::milliseconds& interval,
-    nrgprf::execution* execution)
-{
-    assert(tid != 0);
-    assert(execution != nullptr);
-
-    std::unique_lock lock(_sampler_mtx);
-    nrgprf::execution& exec = *execution;
-    log(log_lvl::debug, "[%d] %s: waiting for the section to start", tid, __func__);
-    _sampler_cnd.wait(lock);
-    log(log_lvl::info, "[%d] %s: section started", tid, __func__);
-
-    do
-    {
-        nrgprf::error error = _rdr_gpu.read(exec.add(nrgprf::now()));
-        if (error)
-        {
-            // wait until section or target finishes
-            handle_error(tid, __func__, error);
-            _sampler_cnd.wait(lock);
-            return error;
-        }
-        else
-            _sampler_cnd.wait_for(lock, interval);
-    } while (!_section_finished);
-
-    nrgprf::error error = _rdr_gpu.read(exec.add(nrgprf::now()));
-    if (error)
-        handle_error(tid, __func__, error);
-    return error;
-}
-
-
-nrgprf::error tracer::evaluate_full_cpu(pid_t tid,
-    const std::chrono::milliseconds& interval,
-    nrgprf::execution* execution)
-{
-    assert(tid != 0);
-    assert(execution != nullptr);
-
-    std::unique_lock lock(_sampler_mtx);
-    nrgprf::execution& exec = *execution;
-    log(log_lvl::debug, "[%d] %s: waiting for the section to start", tid, __func__);
-    _sampler_cnd.wait(lock);
-    log(log_lvl::info, "[%d] %s: section started", tid, __func__);
-
-    do
-    {
-        nrgprf::error error = _rdr_cpu.read(exec.add(nrgprf::now()));
-        if (error)
-        {
-            // wait until section or target finishes
-            handle_error(tid, __func__, error);
-            _sampler_cnd.wait(lock);
-            return error;
-        }
-        _sampler_cnd.wait_for(lock, interval);
-    } while (!_section_finished);
-
-    nrgprf::error error = _rdr_cpu.read(exec.add(nrgprf::now()));
-    if (error)
-        handle_error(tid, __func__, error);
-    return error;
-}
-
-
-nrgprf::error tracer::evaluate_simple(pid_t tid,
-    const std::chrono::milliseconds& interval,
-    nrgprf::sample* first,
-    nrgprf::sample* last)
-{
-    assert(tid != 0);
-    assert(first != nullptr);
-    assert(last != nullptr);
-
-    std::unique_lock lock(_sampler_mtx);
-    log(log_lvl::debug, "[%d] %s: waiting for the section to start", tid, __func__);
-    _sampler_cnd.wait(lock);
-    log(log_lvl::info, "[%d] %s: section started", tid, __func__);
-
-    first->timepoint(nrgprf::now());
-    nrgprf::error error = _rdr_cpu.read(*first);
-    if (error)
-    {
-        // wait until section or target finishes
-        handle_error(tid, __func__, error);
-        _sampler_cnd.wait(lock);
-    }
-    while (!_section_finished)
-    {
-        _sampler_cnd.wait_for(lock, interval);
-        last->timepoint(nrgprf::now());
-        error = _rdr_cpu.read(*last);
-        if (error)
-        {
-            handle_error(tid, __func__, error);
-            _sampler_cnd.wait(lock);
-        }
-    };
-    return error;
 }
 
 

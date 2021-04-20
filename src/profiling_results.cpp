@@ -160,9 +160,8 @@ tep::section_results::section_results(const config_data::section& sec) :
     readings(0)
 {}
 
-tep::profiling_results::profiling_results(nrgprf::reader_rapl&& rr, nrgprf::reader_gpu&& rg) :
-    rdr_cpu(std::move(rr)),
-    rdr_gpu(std::move(rg)),
+tep::profiling_results::profiling_results(reader_container&& rc) :
+    readers(std::move(rc)),
     results()
 {}
 
@@ -178,10 +177,10 @@ std::ostream& tep::operator<<(std::ostream& os, const profiling_results& pr)
         switch (sr.section.target())
         {
         case config_data::target::cpu:
-            os << rdr_task_pair(pr.rdr_cpu, sr.readings);
+            os << rdr_task_pair(pr.readers.reader_rapl(), sr.readings);
             break;
         case config_data::target::gpu:
-            os << rdr_task_pair(pr.rdr_gpu, sr.readings);
+            os << rdr_task_pair(pr.readers.reader_gpu(), sr.readings);
             break;
         }
         os << "# End readings\n";
