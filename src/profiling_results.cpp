@@ -6,6 +6,7 @@
 #include <functional>
 #include <iostream>
 #include <iomanip>
+#include <sstream>
 
 
 static constexpr const char sum_str[] = "sum";
@@ -35,6 +36,14 @@ constexpr size_t get_padding(size_t count)
 {
     size_t max = std::max(sizeof(sum_str) - 1, sizeof(avg_str) - 1);
     return std::max(max, count);
+}
+
+bool socket_has_events(const nrgprf::reader_rapl& rdr, uint8_t skt)
+{
+    return rdr.event_idx(nrgprf::rapl_domain::PKG, skt) != -1 ||
+        rdr.event_idx(nrgprf::rapl_domain::PP0, skt) != -1 ||
+        rdr.event_idx(nrgprf::rapl_domain::PP1, skt) != -1 ||
+        rdr.event_idx(nrgprf::rapl_domain::DRAM, skt) != -1;
 }
 
 std::ostream& operator<<(std::ostream& os, const nrgprf::joules<double>& energy)
@@ -113,10 +122,10 @@ public:
 class cpu_energy
 {
 public:
-    static struct pkg_tag {} package;
-    static struct pp0_tag {} cores;
-    static struct pp1_tag {} uncore;
-    static struct dram_tag {} dram;
+    inline static struct pkg_tag : std::integral_constant<uint8_t, 0> {} package;
+    inline static struct pp0_tag : std::integral_constant<uint8_t, 1> {} cores;
+    inline static struct pp1_tag : std::integral_constant<uint8_t, 2> {} uncore;
+    inline static struct dram_tag : std::integral_constant<uint8_t, 3> {} dram;
 
 private:
     nrgprf::result<nrgprf::units_energy> _energy;
@@ -171,7 +180,6 @@ public:
 class idle_delta
 {
 private:
-    bool _write;
     nrgprf::joules<double> _energy;
 
     void get_energy(const nrgprf::joules<double>& normal, std::chrono::duration<double> dur,
@@ -180,32 +188,41 @@ private:
         nrgprf::joules<double> norm = idle * (dur.count() / idle_dur.count());
         if (normal <= norm)
             return;
-        _write = true;
         _energy = normal - norm;
     }
 
 public:
     idle_delta(const cpu_energy& normal, const std::chrono::duration<double>& dur,
         const cpu_energy& idle, const std::chrono::duration<double>& idle_dur) :
-        _write(false)
+        _energy{}
     {
         get_energy(normal.get(), dur, idle.get(), idle_dur);
     }
 
     idle_delta(const gpu_energy& normal, const std::chrono::duration<double>& dur,
         const gpu_energy& idle, const std::chrono::duration<double>& idle_dur) :
-        _write(false)
+        _energy{}
     {
         get_energy(normal.get(), dur, idle.get(), idle_dur);
     }
 
-    friend std::ostream& operator<<(std::ostream& os, const idle_delta& id);
+    const nrgprf::joules<double> get() const
+    {
+        return _energy;
+    }
+
+    explicit operator bool() const
+    {
+        return _energy.count() > 0;
+    }
 };
 
 std::ostream& operator<<(std::ostream& os, const idle_delta& id)
 {
-    if (id._write)
-        os << "(" << id._energy << ")";
+    if (id)
+        os << "(" << id.get() << ")";
+    else
+        os << "(n/a)";
     return os;
 }
 
@@ -243,97 +260,190 @@ public:
 
 std::ostream& operator<<(std::ostream& os, const rdr_task_pair<nrgprf::reader_gpu>& rt)
 {
+    using namespace nrgprf;
+
     size_t padding = get_padding(get_num_digits(rt.task().size()));
-    for (size_t ix = 0; ix < rt.task().size(); ix++)
+    size_t num_execs = rt.task().size();
+    bool has_idle_values = rt.idle_values().size() >= 2;
+
+    std::chrono::duration<double> dur_sum{};
+    joules<double> energy_sum[MAX_SOCKETS]{};
+    joules<double> idle_sum[MAX_SOCKETS]{};
+    for (size_t ix = 0; ix < num_execs; ix++)
     {
-        const nrgprf::execution& exec = rt.task().get(ix);
+        const execution& exec = rt.task().get(ix);
         std::chrono::duration<double> duration = get_duration(exec);
+        dur_sum += duration;
 
         os << std::setw(padding) << ix << outer_sep << duration;
-        for (uint8_t dev = 0; dev < nrgprf::MAX_SOCKETS; dev++)
+        for (uint8_t dev = 0; dev < MAX_SOCKETS; dev++)
         {
             gpu_energy total_energy(rt.reader(), exec, dev, gpu_energy::board);
             if (!total_energy)
                 continue;
 
+            energy_sum[dev] += total_energy.get();
             os << outer_sep << "device=" << +dev << inner_sep << "board=" << total_energy.get();
-            if (rt.idle_values().size() >= 2)
+            if (has_idle_values)
             {
-                os << " " << idle_delta(total_energy, duration,
+                idle_delta id(total_energy, duration,
                     gpu_energy(rt.reader(), rt.idle_values(), dev, gpu_energy::board),
                     get_duration(rt.idle_values()));
+                idle_sum[dev] += id.get();
+                os << " " << id;
             }
         }
         os << "\n";
     }
-    if (rt.task().size() > 1)
+    if (num_execs > 1)
     {
-        os << std::setw(padding) << sum_str << outer_sep << "\n";
-        os << std::setw(padding) << avg_str << outer_sep << "\n";
+        std::stringstream ssum;
+        std::stringstream savg;
+        ssum << std::setw(padding) << sum_str << outer_sep << dur_sum;
+        savg << std::setw(padding) << avg_str << outer_sep << dur_sum / num_execs;
+        for (uint8_t dev = 0; dev < MAX_SOCKETS; dev++)
+        {
+            if (energy_sum[dev].count() != 0)
+            {
+                ssum << outer_sep << "device=" << +dev << inner_sep << "board="
+                    << energy_sum[dev];
+                savg << outer_sep << "device=" << +dev << inner_sep << "board="
+                    << energy_sum[dev] / num_execs;
+                if (has_idle_values && idle_sum[dev].count() > 0)
+                {
+                    ssum << " (" << idle_sum[dev] << ")";
+                    savg << " (" << idle_sum[dev] / num_execs << ")";
+                }
+            }
+        }
+        os << savg.rdbuf() << "\n";
+        os << ssum.rdbuf() << "\n";
     }
     return os;
 }
 
 std::ostream& operator<<(std::ostream& os, const rdr_task_pair<nrgprf::reader_rapl>& rt)
 {
+    static constexpr const char* prefix[] =
+    {
+        "package=",
+        "cores=",
+        "uncore=",
+        "dram="
+    };
+
     using namespace nrgprf;
+
     size_t padding = get_padding(get_num_digits(rt.task().size()));
-    for (size_t ix = 0; ix < rt.task().size(); ix++)
+    size_t num_execs = rt.task().size();
+
+    joules<double> energy_sum[MAX_SOCKETS][MAX_RAPL_DOMAINS]{};
+    joules<double> idle_sum[MAX_SOCKETS][MAX_RAPL_DOMAINS]{};
+    std::chrono::duration<double> dur_sum{};
+    for (size_t ix = 0; ix < num_execs; ix++)
     {
         const execution& exec = rt.task().get(ix);
         std::chrono::duration<double> duration = get_duration(exec);
+        dur_sum += duration;
 
         os << std::setw(padding) << ix << outer_sep << duration;
         for (uint8_t skt = 0; skt < MAX_SOCKETS; skt++)
         {
-            cpu_energy pkg(rt.reader(), exec, skt, cpu_energy::package);
-            cpu_energy pp0(rt.reader(), exec, skt, cpu_energy::cores);
-            cpu_energy pp1(rt.reader(), exec, skt, cpu_energy::uncore);
-            cpu_energy dram(rt.reader(), exec, skt, cpu_energy::dram);
-
-            if (!pkg && !pp0 && !pp1 && !dram)
+            if (!socket_has_events(rt.reader(), skt))
                 continue;
-
             os << outer_sep << "socket=" << +skt;
-            if (pkg)
+
+            if (rt.reader().event_idx(rapl_domain::PKG, skt) != -1)
             {
-                os << inner_sep << "package=" << pkg.get();
+                cpu_energy::pkg_tag& tag = cpu_energy::package;
+                cpu_energy pkg(rt.reader(), exec, skt, tag);
+                energy_sum[skt][tag.value] += pkg.get();
+                os << inner_sep << prefix[tag.value] << pkg.get();
                 if (rt.idle_values().size() >= 2)
-                    os << " " << idle_delta(pkg, duration,
-                        cpu_energy(rt.reader(), rt.idle_values(), skt, cpu_energy::package),
+                {
+                    idle_delta id(pkg, duration,
+                        cpu_energy(rt.reader(), rt.idle_values(), skt, tag),
                         get_duration(rt.idle_values()));
+                    idle_sum[skt][tag.value] += id.get();
+                    os << " " << id;
+                }
             }
-            if (pp0)
+            if (rt.reader().event_idx(rapl_domain::PP0, skt) != -1)
             {
-                os << inner_sep << "cores=" << pp0.get();
+                cpu_energy::pp0_tag& tag = cpu_energy::cores;
+                cpu_energy pp0(rt.reader(), exec, skt, tag);
+                energy_sum[skt][tag.value] += pp0.get();
+                os << inner_sep << prefix[tag.value] << pp0.get();
                 if (rt.idle_values().size() >= 2)
-                    os << " " << idle_delta(pp0, duration,
-                        cpu_energy(rt.reader(), rt.idle_values(), skt, cpu_energy::cores),
+                {
+                    idle_delta id(pp0, duration,
+                        cpu_energy(rt.reader(), rt.idle_values(), skt, tag),
                         get_duration(rt.idle_values()));
+                    idle_sum[skt][tag.value] += id.get();
+                    os << " " << id;
+                }
             }
-            if (pp1)
+            if (rt.reader().event_idx(rapl_domain::PP1, skt) != -1)
             {
-                os << inner_sep << "uncore=" << pp1.get();
+                cpu_energy::pp1_tag& tag = cpu_energy::uncore;
+                cpu_energy pp1(rt.reader(), exec, skt, tag);
+                energy_sum[skt][tag.value] += pp1.get();
+                os << inner_sep << prefix[tag.value] << pp1.get();
                 if (rt.idle_values().size() >= 2)
-                    os << " " << idle_delta(pp1, duration,
-                        cpu_energy(rt.reader(), rt.idle_values(), skt, cpu_energy::uncore),
+                {
+                    idle_delta id(pp1, duration,
+                        cpu_energy(rt.reader(), rt.idle_values(), skt, tag),
                         get_duration(rt.idle_values()));
+                    idle_sum[skt][tag.value] += id.get();
+                    os << " " << id;
+                }
             }
-            if (dram)
+            if (rt.reader().event_idx(rapl_domain::DRAM, skt) != -1)
             {
-                os << inner_sep << "dram=" << dram.get();
+                cpu_energy::dram_tag& tag = cpu_energy::dram;
+                cpu_energy dram(rt.reader(), exec, skt, tag);
+                energy_sum[skt][tag.value] += dram.get();
+                os << inner_sep << prefix[tag.value] << dram.get();
                 if (rt.idle_values().size() >= 2)
-                    os << " " << idle_delta(dram, duration,
-                        cpu_energy(rt.reader(), rt.idle_values(), skt, cpu_energy::dram),
+                {
+                    idle_delta id(dram, duration,
+                        cpu_energy(rt.reader(), rt.idle_values(), skt, tag),
                         get_duration(rt.idle_values()));
+                    idle_sum[skt][tag.value] += id.get();
+                    os << " " << id;
+                }
             }
         }
         os << "\n";
     }
-    if (rt.task().size() > 1)
+    if (num_execs > 1)
     {
-        os << std::setw(padding) << sum_str << outer_sep << "\n";
-        os << std::setw(padding) << avg_str << outer_sep << "\n";
+        std::stringstream ssum;
+        std::stringstream savg;
+        ssum << std::setw(padding) << sum_str << outer_sep << dur_sum;
+        savg << std::setw(padding) << avg_str << outer_sep << dur_sum / num_execs;
+        for (uint8_t skt = 0; skt < MAX_SOCKETS; skt++)
+        {
+            if (!socket_has_events(rt.reader(), skt))
+                continue;
+            ssum << outer_sep << "socket=" << +skt;
+            savg << outer_sep << "socket=" << +skt;
+            for (uint8_t dmn = 0; dmn < MAX_RAPL_DOMAINS; dmn++)
+            {
+                if (energy_sum[skt][dmn].count() != 0)
+                {
+                    ssum << inner_sep << prefix[dmn] << energy_sum[skt][dmn];
+                    savg << inner_sep << prefix[dmn] << energy_sum[skt][dmn] / num_execs;
+                    if (rt.idle_values().size() >= 2 && idle_sum[skt][dmn].count() > 0)
+                    {
+                        ssum << " (" << idle_sum[skt][dmn] << ")";
+                        savg << " (" << idle_sum[skt][dmn] / num_execs << ")";
+                    }
+                }
+            }
+        }
+        os << savg.rdbuf() << "\n";
+        os << ssum.rdbuf() << "\n";
     }
     return os;
 }
