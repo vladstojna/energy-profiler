@@ -123,7 +123,8 @@ cfg_expected<std::chrono::milliseconds> get_interval(const pugi::xml_node& nsect
     return cfg_error(cfg_error_code::SEC_NO_FREQ);
 }
 
-cfg_expected<uint32_t> get_samples(const pugi::xml_node& nsection, const std::chrono::milliseconds& interval)
+cfg_expected<uint32_t> get_samples(const pugi::xml_node& nsection,
+    const std::chrono::milliseconds& interval)
 {
     using namespace pugi;
     xml_node nsamp = nsection.child("samples");
@@ -146,9 +147,19 @@ cfg_expected<uint32_t> get_samples(const pugi::xml_node& nsection, const std::ch
     return 0;
 }
 
-cfg_expected<config_data::position> get_position(const pugi::xml_node& pos_node)
+cfg_expected<std::string> get_cu(const pugi::xml_node& pos_node)
 {
     using namespace pugi;
+    // attribute "cu" exists
+    xml_attribute cu_attr = pos_node.attribute("cu");
+    if (cu_attr)
+    {
+        // if attribute exists - it cannot be empty
+        if (!*cu_attr.value())
+            return cfg_error(cfg_error_code::POS_INVALID_COMP_UNIT);
+        return cu_attr.value();
+    }
+    // fallback to checking child node
     xml_node cu = pos_node.child("cu");
     // <cu></cu> exists
     if (!cu)
@@ -156,6 +167,25 @@ cfg_expected<config_data::position> get_position(const pugi::xml_node& pos_node)
     // <cu></cu> is not empty
     if (!*cu.child_value())
         return cfg_error(cfg_error_code::POS_INVALID_COMP_UNIT);
+    return cu.child_value();
+}
+
+cfg_expected<uint32_t> get_lineno(const pugi::xml_node& pos_node)
+{
+    using namespace pugi;
+    // attribute "line" exists
+    xml_attribute line_attr = pos_node.attribute("line");
+    if (line_attr)
+    {
+        // if attribute exists - it cannot be empty
+        if (!*line_attr.value())
+            return cfg_error(cfg_error_code::POS_INVALID_LINE);
+        int lineno;
+        if ((lineno = line_attr.as_int(0)) <= 0)
+            return cfg_error(cfg_error_code::POS_INVALID_LINE);
+        return lineno;
+    }
+    // fallback to checking child node
     xml_node line = pos_node.child("line");
     // <line></line> exists
     if (!line)
@@ -164,7 +194,19 @@ cfg_expected<config_data::position> get_position(const pugi::xml_node& pos_node)
     int lineno;
     if ((lineno = line.text().as_int(0)) <= 0)
         return cfg_error(cfg_error_code::POS_INVALID_LINE);
-    return { cu.child_value(), lineno };
+    return lineno;
+}
+
+cfg_expected<config_data::position> get_position(const pugi::xml_node& pos_node)
+{
+    using namespace pugi;
+    cfg_expected<std::string> cu = get_cu(pos_node);
+    if (!cu)
+        return std::move(cu.error());
+    cfg_expected<uint32_t> lineno = get_lineno(pos_node);
+    if (!lineno)
+        return std::move(lineno.error());
+    return { std::move(cu.value()), lineno.value() };
 }
 
 cfg_expected<config_data::bounds> get_bounds(const pugi::xml_node& bounds)
@@ -492,7 +534,8 @@ cfg_expected<config_data> tep::load_config(const char* file)
     if (nsections)
     {
         int sec_count = 0;
-        for (xml_node nsection = nsections.first_child(); nsection; nsection = nsection.next_sibling(), sec_count++)
+        for (xml_node nsection = nsections.first_child(); nsection;
+            nsection = nsection.next_sibling(), sec_count++)
         {
             // <section></section>
             cfg_expected<config_data::section> section = get_section(nsection);
