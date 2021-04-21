@@ -8,9 +8,33 @@
 #include <iomanip>
 
 
+static constexpr const char sum_str[] = "sum";
+static constexpr const char avg_str[] = "avg";
+static constexpr const char outer_sep[] = " | ";
+static constexpr const char inner_sep[] = ", ";
+
 std::chrono::duration<double> get_duration(const nrgprf::execution& exec)
 {
     return std::chrono::duration_cast<std::chrono::duration<double>>(exec.last() - exec.first());
+}
+
+constexpr size_t get_num_digits(size_t num)
+{
+    size_t digits = 1;
+    if (num < 10)
+        return digits;
+    while (num >= 10)
+    {
+        num /= 10;
+        digits++;
+    }
+    return digits;
+}
+
+constexpr size_t get_padding(size_t count)
+{
+    size_t max = std::max(sizeof(sum_str) - 1, sizeof(avg_str) - 1);
+    return std::max(max, count);
 }
 
 std::ostream& operator<<(std::ostream& os, const nrgprf::joules<double>& energy)
@@ -219,19 +243,20 @@ public:
 
 std::ostream& operator<<(std::ostream& os, const rdr_task_pair<nrgprf::reader_gpu>& rt)
 {
+    size_t padding = get_padding(get_num_digits(rt.task().size()));
     for (size_t ix = 0; ix < rt.task().size(); ix++)
     {
         const nrgprf::execution& exec = rt.task().get(ix);
         std::chrono::duration<double> duration = get_duration(exec);
 
-        os << std::setw(3) << ix << " | " << duration;
+        os << std::setw(padding) << ix << outer_sep << duration;
         for (uint8_t dev = 0; dev < nrgprf::MAX_SOCKETS; dev++)
         {
             gpu_energy total_energy(rt.reader(), exec, dev, gpu_energy::board);
             if (!total_energy)
                 continue;
 
-            os << " | device=" << +dev << ", board=" << total_energy.get();
+            os << outer_sep << "device=" << +dev << inner_sep << "board=" << total_energy.get();
             if (rt.idle_values().size() >= 2)
             {
                 os << " " << idle_delta(total_energy, duration,
@@ -241,18 +266,24 @@ std::ostream& operator<<(std::ostream& os, const rdr_task_pair<nrgprf::reader_gp
         }
         os << "\n";
     }
+    if (rt.task().size() > 1)
+    {
+        os << std::setw(padding) << sum_str << outer_sep << "\n";
+        os << std::setw(padding) << avg_str << outer_sep << "\n";
+    }
     return os;
 }
 
 std::ostream& operator<<(std::ostream& os, const rdr_task_pair<nrgprf::reader_rapl>& rt)
 {
     using namespace nrgprf;
+    size_t padding = get_padding(get_num_digits(rt.task().size()));
     for (size_t ix = 0; ix < rt.task().size(); ix++)
     {
         const execution& exec = rt.task().get(ix);
         std::chrono::duration<double> duration = get_duration(exec);
 
-        os << std::setw(3) << ix << " | " << duration;
+        os << std::setw(padding) << ix << outer_sep << duration;
         for (uint8_t skt = 0; skt < MAX_SOCKETS; skt++)
         {
             cpu_energy pkg(rt.reader(), exec, skt, cpu_energy::package);
@@ -263,10 +294,10 @@ std::ostream& operator<<(std::ostream& os, const rdr_task_pair<nrgprf::reader_ra
             if (!pkg && !pp0 && !pp1 && !dram)
                 continue;
 
-            os << " | socket=" << +skt;
+            os << outer_sep << "socket=" << +skt;
             if (pkg)
             {
-                os << ", package=" << pkg.get();
+                os << inner_sep << "package=" << pkg.get();
                 if (rt.idle_values().size() >= 2)
                     os << " " << idle_delta(pkg, duration,
                         cpu_energy(rt.reader(), rt.idle_values(), skt, cpu_energy::package),
@@ -274,7 +305,7 @@ std::ostream& operator<<(std::ostream& os, const rdr_task_pair<nrgprf::reader_ra
             }
             if (pp0)
             {
-                os << ", cores=" << pp0.get();
+                os << inner_sep << "cores=" << pp0.get();
                 if (rt.idle_values().size() >= 2)
                     os << " " << idle_delta(pp0, duration,
                         cpu_energy(rt.reader(), rt.idle_values(), skt, cpu_energy::cores),
@@ -282,7 +313,7 @@ std::ostream& operator<<(std::ostream& os, const rdr_task_pair<nrgprf::reader_ra
             }
             if (pp1)
             {
-                os << ", uncore=" << pp1.get();
+                os << inner_sep << "uncore=" << pp1.get();
                 if (rt.idle_values().size() >= 2)
                     os << " " << idle_delta(pp1, duration,
                         cpu_energy(rt.reader(), rt.idle_values(), skt, cpu_energy::uncore),
@@ -290,7 +321,7 @@ std::ostream& operator<<(std::ostream& os, const rdr_task_pair<nrgprf::reader_ra
             }
             if (dram)
             {
-                os << ", dram=" << dram.get();
+                os << inner_sep << "dram=" << dram.get();
                 if (rt.idle_values().size() >= 2)
                     os << " " << idle_delta(dram, duration,
                         cpu_energy(rt.reader(), rt.idle_values(), skt, cpu_energy::dram),
@@ -298,6 +329,11 @@ std::ostream& operator<<(std::ostream& os, const rdr_task_pair<nrgprf::reader_ra
             }
         }
         os << "\n";
+    }
+    if (rt.task().size() > 1)
+    {
+        os << std::setw(padding) << sum_str << outer_sep << "\n";
+        os << std::setw(padding) << avg_str << outer_sep << "\n";
     }
     return os;
 }
