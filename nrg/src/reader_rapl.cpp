@@ -173,7 +173,7 @@ result<detail::event_data> get_event_data(const char* base)
     filed = detail::file_descriptor::create(filename);
     if (!filed)
         return std::move(filed.error());
-    return { std::move(filed.value()), 0, max_value };
+    return { std::move(filed.value()), max_value };
 }
 
 
@@ -236,17 +236,19 @@ detail::file_descriptor& detail::file_descriptor::operator=(const file_descripto
 // event_data
 
 
-detail::event_data::event_data(const file_descriptor& fd, uint64_t p, uint64_t m) :
+detail::event_data::event_data(const file_descriptor& fd, uint64_t max) :
     fd(fd),
-    prev(p),
-    max(m)
+    max(max),
+    prev(0),
+    curr_max(0)
 {};
 
 
-detail::event_data::event_data(file_descriptor&& fd, uint64_t p, uint64_t m) :
+detail::event_data::event_data(file_descriptor&& fd, uint64_t max) :
     fd(std::move(fd)),
-    prev(p),
-    max(m)
+    max(max),
+    prev(0),
+    curr_max(0)
 {};
 
 
@@ -339,11 +341,11 @@ error reader_rapl::read(sample& s, uint8_t idx)
         return { error_code::SYSTEM, system_error_str("Error reading counters") };
     if (curr < _active_events[idx].prev)
     {
-        curr += _active_events[idx].max - _active_events[idx].prev;
-        _active_events[idx].max += _active_events[idx].max;
+        std::cout << "reader_rapl: detected wraparound\n";
+        _active_events[idx].curr_max += _active_events[idx].max;
     }
     _active_events[idx].prev = curr;
-    s.set(idx, curr);
+    s.set(idx, curr + _active_events[idx].curr_max);
     return error::success();
 }
 
