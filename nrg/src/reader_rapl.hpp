@@ -35,10 +35,11 @@ namespace nrgprf
         struct event_data
         {
             file_descriptor fd;
-            uint64_t prev;
             uint64_t max;
-            event_data(const file_descriptor& fd, uint64_t p, uint64_t m);
-            event_data(file_descriptor&& fd, uint64_t p, uint64_t m);
+            uint64_t prev;
+            uint64_t curr_max;
+            event_data(const file_descriptor& fd, uint64_t max);
+            event_data(file_descriptor&& fd, uint64_t max);
         };
     }
 
