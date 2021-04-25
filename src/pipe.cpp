@@ -37,14 +37,6 @@ static pipe_error get_command_error(const char* comment, const command& cmd, int
     return pipe_error(pipe_error_code::CMD_ERROR, sstream.str());
 }
 
-static std::array<file_descriptor, 2> create_pipe(pipe_error& err)
-{
-    int fd[2];
-    if (::pipe(fd) == -1)
-        err = get_system_error("create_pipe:pipe()");
-    return { fd[0], fd[1] };
-}
-
 static pipe_error run_command(const command& cmd, file_descriptor& in, file_descriptor& out)
 {
     pipe_error err = in.redirect(file_descriptor::std_in);
@@ -301,6 +293,14 @@ cmmn::expected<tep::pipe, pipe_error> pipe::create()
 pipe::pipe(pipe_error& err) :
     _pipe{ create_pipe(err) }
 {}
+
+std::array<file_descriptor, 2> pipe::create_pipe(pipe_error& err)
+{
+    int fd[2];
+    if (::pipe(fd) == -1)
+        err = get_system_error("create_pipe:pipe()");
+    return { fd[0], fd[1] };
+}
 
 file_descriptor& pipe::read_end()
 {

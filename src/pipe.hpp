@@ -84,8 +84,12 @@ namespace tep
         int get() const;
     };
 
+    class pipe;
+
     class file_descriptor
     {
+        friend pipe;
+
     public:
         static struct endl_t {} endl;
 
@@ -105,10 +109,11 @@ namespace tep
         file_descriptor(const char* path, const fd_flags& flags,
             const fd_mode& mode, pipe_error& err);
 
+        file_descriptor(int fd);
+
         pipe_error write(const char* buffer, size_t sz);
 
     public:
-        file_descriptor(int fd);
         ~file_descriptor();
 
         file_descriptor(file_descriptor&& other);
@@ -135,6 +140,7 @@ namespace tep
         std::array<file_descriptor, 2> _pipe;
 
         pipe(pipe_error& err);
+        std::array<file_descriptor, 2> create_pipe(pipe_error& err);
 
     public:
         file_descriptor& read_end();
