@@ -10,17 +10,17 @@
 
 using namespace tep;
 
+static std::chrono::milliseconds cpu_interval(30000);
+static std::chrono::milliseconds gpu_interval(10);
 
-std::chrono::milliseconds idle_evaluator::default_interval(10);
+
 std::chrono::seconds idle_evaluator::default_sleep_duration(5);
 
 
 idle_evaluator::idle_evaluator(const reader_container& readers,
-    const std::chrono::seconds& sleep_for,
-    const std::chrono::milliseconds& interval) :
+    const std::chrono::seconds& sleep_for) :
     _readers(readers),
-    _sleep(sleep_for),
-    _interval(interval)
+    _sleep(sleep_for)
 {}
 
 
@@ -40,7 +40,7 @@ cmmn::expected<idle_results, tracer_error> idle_evaluator::run()
 
     std::unique_ptr<periodic_sampler> sampler =
         std::make_unique<periodic_sampler>(_readers.reader_rapl(), std::move(exec),
-            periodic_sampler::simple);
+            cpu_interval, periodic_sampler::simple);
     sampler->start();
 
     idle();
@@ -56,13 +56,13 @@ cmmn::expected<idle_results, tracer_error> idle_evaluator::run()
     log(log_lvl::success, "[%d] successfuly gathered idle results for CPU", tid);
 
     // reserve enough samples to guarantee that no reallocation occurs
-    uint32_t count = static_cast<uint32_t>(_sleep / _interval) + 100;
+    uint32_t count = static_cast<uint32_t>(_sleep / gpu_interval) + 100;
     exec = nrgprf::execution(1);
     exec.reserve(count);
     log(log_lvl::debug, "[%d] reserved %" PRIu32 " samples for GPU evaluation", tid, count);
 
     sampler = std::make_unique<periodic_sampler>(_readers.reader_gpu(), std::move(exec),
-        periodic_sampler::complete);
+        gpu_interval, periodic_sampler::complete);
     sampler->start();
 
     idle();
