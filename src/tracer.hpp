@@ -30,7 +30,6 @@ namespace tep
     class tracer
     {
     private:
-        static size_t DEFAULT_SAMPLES;
         static std::mutex TRAP_BARRIER;
 
     private:

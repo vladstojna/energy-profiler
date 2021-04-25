@@ -58,7 +58,6 @@ tracer_expected<trap_set::iterator> get_trap(const trap_set& traps, pid_t tid, u
 
 // definition of static variables
 
-size_t tracer::DEFAULT_SAMPLES = 256;
 std::mutex tracer::TRAP_BARRIER;
 
 
@@ -281,9 +280,8 @@ nrgprf::execution tracer::prepare_new_exec(const config_data::section& section) 
     } break;
     case config_data::profiling_method::energy_profile:
     {
-        size_t samples_reserved = section.samples() == 0 ? DEFAULT_SAMPLES : section.samples();
-        exec.reserve(samples_reserved);
-        log(log_lvl::debug, "[%d] reserved %zu samples for execution", tid, samples_reserved);
+        exec.reserve(section.samples());
+        log(log_lvl::debug, "[%d] reserved %zu samples for execution", tid, section.samples());
     } break;
     }
     return exec;
@@ -298,17 +296,17 @@ void tracer::launch_async_sampling(const config_data::section& section)
     {
         if (section.method() == config_data::profiling_method::energy_profile)
             _sampler = std::make_unique<periodic_sampler>(_readers.reader_rapl(), std::move(exec),
-                periodic_sampler::complete, section.interval());
+                section.interval(), periodic_sampler::complete);
         else if (section.method() == config_data::profiling_method::energy_total)
             _sampler = std::make_unique<periodic_sampler>(_readers.reader_rapl(), std::move(exec),
-                periodic_sampler::simple);
+                section.interval(), periodic_sampler::simple);
         else
             assert(false);
     } break;
     case config_data::target::gpu:
     {
         _sampler = std::make_unique<periodic_sampler>(_readers.reader_gpu(), std::move(exec),
-            periodic_sampler::complete, section.interval());
+            section.interval(), periodic_sampler::complete);
     } break;
     }
 }

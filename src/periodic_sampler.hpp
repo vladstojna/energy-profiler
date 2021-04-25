@@ -20,10 +20,6 @@ namespace tep
         static struct complete_tag {} complete;
 
     private:
-        static std::chrono::milliseconds period_max;
-        static std::chrono::milliseconds period_default;
-
-    private:
         std::future<nrgprf::error> _future;
         nrgprf::execution _exec;
         signaler _sig;
@@ -33,16 +29,16 @@ namespace tep
         explicit periodic_sampler(nrgprf::execution&& exec = nrgprf::execution(0));
 
         explicit periodic_sampler(nrgprf::reader_rapl& reader, nrgprf::execution&& exec,
-            complete_tag tag,
-            const std::chrono::milliseconds& period = period_default);
+            const std::chrono::milliseconds& period,
+            complete_tag tag);
 
         explicit periodic_sampler(nrgprf::reader_rapl& reader, nrgprf::execution&& exec,
-            simple_tag tag,
-            const std::chrono::milliseconds& period = period_max);
+            const std::chrono::milliseconds& period,
+            simple_tag tag);
 
         explicit periodic_sampler(nrgprf::reader_gpu& reader, nrgprf::execution&& exec,
-            complete_tag tag,
-            const std::chrono::milliseconds& period = period_default);
+            const std::chrono::milliseconds& period,
+            complete_tag tag);
 
         ~periodic_sampler() noexcept;
 

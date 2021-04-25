@@ -2,13 +2,29 @@
 
 #include "config.hpp"
 
-#include <iostream>
+#include <cassert>
 #include <cstring>
+#include <iostream>
 
 #include <pugixml.hpp>
 #include <expected.hpp>
 
 using namespace tep;
+
+namespace defaults
+{
+    static uint32_t domain_mask = ~0x0;
+    static uint32_t socket_mask = ~0x0;
+    static uint32_t device_mask = ~0x0;
+
+    static config_data::target target = config_data::target::cpu;
+    static config_data::profiling_method method = config_data::profiling_method::energy_total;
+    static std::chrono::milliseconds interval(10);
+    static std::chrono::milliseconds max_interval(30000);
+
+    static uint32_t executions = 1;
+    static uint32_t samples = 384;
+}
 
 template<typename R>
 using cfg_expected = cmmn::expected<R, cfg_error>;
@@ -59,7 +75,7 @@ cfg_expected<config_data::target> get_target(const pugi::xml_node& nsection)
     using namespace pugi;
     xml_attribute tgt_attr = nsection.attribute("target");
     if (!tgt_attr)
-        return config_data::target::cpu;
+        return defaults::target;
     const char_t* tgt_str = tgt_attr.value();
     if (!strcmp(tgt_str, "cpu"))
         return config_data::target::cpu;
@@ -72,9 +88,9 @@ cfg_expected<config_data::params> get_params(const pugi::xml_node& nparams)
 {
     using namespace pugi;
     // all domains, devices and sockets are considered by default
-    unsigned int dommask = ~0x0;
-    unsigned int sktmask = ~0x0;
-    unsigned int devmask = ~0x0;
+    unsigned int dommask = defaults::domain_mask;
+    unsigned int sktmask = defaults::socket_mask;
+    unsigned int devmask = defaults::device_mask;
     xml_node ndomains = nparams.child("domain_mask");
     // <domain_mask></domain_mask> exists
     if (ndomains)
@@ -96,9 +112,12 @@ cfg_expected<config_data::params> get_params(const pugi::xml_node& nparams)
     return { dommask, sktmask, devmask };
 }
 
-cfg_expected<std::chrono::milliseconds> get_interval(const pugi::xml_node& nsection)
+cfg_expected<std::chrono::milliseconds> get_interval(const pugi::xml_node& nsection,
+    config_data::profiling_method method)
 {
     using namespace pugi;
+
+    std::chrono::milliseconds eint = defaults::interval;
     xml_node nfreq = nsection.child("freq");
     xml_node nint = nsection.child("interval");
     // <interval></interval> overrides <freq></freq>
@@ -108,9 +127,9 @@ cfg_expected<std::chrono::milliseconds> get_interval(const pugi::xml_node& nsect
         int interval = nint.text().as_int(0);
         if (interval <= 0)
             return cfg_error(cfg_error_code::SEC_INVALID_INTERVAL);
-        return interval;
+        eint = std::chrono::milliseconds(interval);
     }
-    if (nfreq)
+    else if (nfreq)
     {
         // <freq></freq> must be a positive decimal number
         double freq = nfreq.text().as_double(0.0);
@@ -118,9 +137,11 @@ cfg_expected<std::chrono::milliseconds> get_interval(const pugi::xml_node& nsect
             return cfg_error(cfg_error_code::SEC_INVALID_FREQ);
         // clamps at 1000 Hz
         double interval = 1000.0 / freq;
-        return interval <= 1.0 ? 1 : static_cast<unsigned int>(interval);
+        eint = std::chrono::milliseconds(interval <= 1.0 ? 1 : static_cast<unsigned int>(interval));
     }
-    return cfg_error(cfg_error_code::SEC_NO_FREQ);
+    if (method == config_data::profiling_method::energy_total)
+        eint = defaults::max_interval;
+    return eint;
 }
 
 cfg_expected<uint32_t> get_samples(const pugi::xml_node& nsection,
@@ -138,13 +159,24 @@ cfg_expected<uint32_t> get_samples(const pugi::xml_node& nsection,
     }
     if (nsamp)
     {
-        int samples = nsamp.text().as_uint(0);
+        int samples = nsamp.text().as_int(0);
         if (samples <= 0)
             return cfg_error(cfg_error_code::SEC_INVALID_SAMPLES);
         return samples;
     }
-    // return default value
-    return 0;
+    return defaults::samples;
+}
+
+cfg_expected<uint32_t> get_execs(const pugi::xml_node& nsection)
+{
+    using namespace pugi;
+    // <execs></execs> - optional, must be a positive integer
+    // if not present - use default value
+    xml_node nexecs = nsection.child("execs");
+    int execs = 0;
+    if (nexecs && (execs = nexecs.text().as_int(0)) <= 0)
+        return cfg_error(cfg_error_code::SEC_INVALID_EXECS);
+    return execs ? static_cast<uint32_t>(execs) : defaults::executions;
 }
 
 cfg_expected<std::string> get_cu(const pugi::xml_node& pos_node)
@@ -232,14 +264,29 @@ cfg_expected<config_data::bounds> get_bounds(const pugi::xml_node& bounds)
     return { std::move(pstart.value()), std::move(pend.value()) };
 }
 
-cfg_expected<config_data::profiling_method> get_method(const pugi::xml_node& method)
+cfg_expected<config_data::profiling_method> get_method(const pugi::xml_node& nsection,
+    config_data::target tgt)
 {
-    const pugi::char_t* method_str = method.child_value();
-    if (!strcmp(method_str, "profile"))
-        return config_data::profiling_method::energy_profile;
-    if (!strcmp(method_str, "total"))
-        return config_data::profiling_method::energy_total;
-    return cfg_error(cfg_error_code::SEC_INVALID_METHOD);
+    using namespace pugi;
+
+    config_data::profiling_method method = defaults::method;
+    // <method></method> - optional
+    // no effect when target is 'gpu' due to the
+    // nature of the power/energy reading interface
+    xml_node nmethod = nsection.child("method");
+    if (nmethod)
+    {
+        const pugi::char_t* method_str = nmethod.child_value();
+        if (!strcmp(method_str, "profile"))
+            method = config_data::profiling_method::energy_profile;
+        else if (!strcmp(method_str, "total"))
+            method = config_data::profiling_method::energy_total;
+        else
+            return cfg_error(cfg_error_code::SEC_INVALID_METHOD);
+    }
+    if (tgt == config_data::target::gpu)
+        method = config_data::profiling_method::energy_profile;
+    return method;
 }
 
 cfg_expected<config_data::section> get_section(const pugi::xml_node& nsection)
@@ -259,34 +306,21 @@ cfg_expected<config_data::section> get_section(const pugi::xml_node& nsection)
     if (nxtra && !*nxtra.child_value())
         return cfg_error(cfg_error_code::SEC_INVALID_EXTRA);
 
-    // get interval
-    cfg_expected<std::chrono::milliseconds> interval = get_interval(nsection);
+    cfg_expected<config_data::profiling_method> method = get_method(nsection, target.value());
+    if (!method)
+        return std::move(method.error());
+
+    cfg_expected<std::chrono::milliseconds> interval = get_interval(nsection, method.value());
     if (!interval)
         return std::move(interval.error());
 
-    // <method></method> - optional
-    // default is 'total'; should have no effect when target is 'gpu' due to the
-    // nature of the power/energy reading interface
-    xml_node nmethod = nsection.child("method");
-    config_data::profiling_method method = config_data::profiling_method::energy_profile;
-    if (nmethod)
-    {
-        cfg_expected<config_data::profiling_method> result = get_method(nmethod);
-        if (!result)
-            return std::move(result.error());
-        if (target.value() == config_data::target::cpu)
-            method = result.value();
-    }
+    cfg_expected<uint32_t> execs = get_execs(nsection);
+    if (!execs)
+        return std::move(execs.error());
 
-    // <execs></execs> - optional, must be a positive integer
-    // if not present - use default value of 0
-    xml_node nexecs = nsection.child("execs");
-    int execs = 0;
-    if (nexecs && (execs = nexecs.text().as_int(0)) <= 0)
-        return cfg_error(cfg_error_code::SEC_INVALID_EXECS);
-
-    // get samples
     cfg_expected<uint32_t> samples = get_samples(nsection, interval.value());
+    if (!samples)
+        return std::move(samples.error());
 
     // <bounds></bounds>
     xml_node nbounds = nsection.child("bounds");
@@ -300,10 +334,10 @@ cfg_expected<config_data::section> get_section(const pugi::xml_node& nsection)
         nname.child_value(),
         nxtra.child_value(),
         target.value(),
-        method,
+        method.value(),
         std::move(bounds.value()),
         std::move(interval.value()),
-        execs,
+        execs.value(),
         samples.value() };
 }
 
@@ -372,7 +406,7 @@ const config_data::position& config_data::bounds::end() const
 // params
 
 config_data::params::params() :
-    params(~0x0, ~0x0, ~0x0)
+    params(defaults::domain_mask, defaults::socket_mask, defaults::device_mask)
 {}
 
 config_data::params::params(unsigned int dommask, unsigned int sktmask, unsigned int devmask) :
