@@ -2,7 +2,6 @@
 
 #include "pipe.hpp"
 
-#include <cassert>
 #include <cstring>
 #include <iostream>
 #include <sstream>
@@ -14,6 +13,13 @@
 #include <wait.h>
 
 #include <expected.hpp>
+
+#ifdef NDEBUG
+#define Assert(x) do { (void)sizeof(x); } while(false)
+#else
+#include <cassert>
+#define Assert(x) assert(x)
+#endif
 
 using namespace tep;
 
@@ -45,15 +51,11 @@ static pipe_error run_command(const command& cmd, file_descriptor& in, file_desc
     err = out.redirect(file_descriptor::std_out);
     if (err)
         return err;
-    err = in.close();
-    if (err)
-        return err;
-    err = out.close();
-    if (err)
-        return err;
+    in.close();
+    out.close();
     if (execvp(cmd.path().c_str(), const_cast<char* const*>(cmd.argv().data())) == -1)
         return get_system_error("run_command:execvp()");
-    assert(false);
+    Assert(false);
     return { pipe_error_code::UNKNOWN, "Returned from execvp() without error" };
 }
 
@@ -188,9 +190,7 @@ file_descriptor::file_descriptor(const char* path, const fd_flags& flags,
 
 file_descriptor::~file_descriptor()
 {
-    pipe_error err = close();
-    if (err)
-        std::cerr << err << std::endl;
+    close();
 }
 
 file_descriptor::file_descriptor(file_descriptor&& other) :
@@ -210,23 +210,13 @@ file_descriptor::file_descriptor(const file_descriptor& other) :
 file_descriptor& file_descriptor::operator=(file_descriptor&& other)
 {
     _fd = std::exchange(other._fd, _fd);
-    pipe_error err = other.close();
-    if (err)
-    {
-        std::cerr << err << std::endl;
-        throw std::system_error();
-    }
+    other.close();
     return *this;
 }
 
 file_descriptor& file_descriptor::operator=(const file_descriptor& other)
 {
-    pipe_error err = close();
-    if (err)
-    {
-        std::cerr << err << std::endl;
-        throw std::system_error();
-    }
+    close();
     _fd = dup(other._fd);
     if (_fd == -1)
     {
@@ -241,22 +231,20 @@ bool file_descriptor::is_stdfd() const
     return _fd == STDIN_FILENO || _fd == STDOUT_FILENO || _fd == STDERR_FILENO;
 }
 
-pipe_error file_descriptor::close()
+void file_descriptor::close()
 {
     if (_fd >= 0 && !is_stdfd())
     {
-        if (::close(_fd) == -1)
-            return get_system_error("file_descriptor:close()");
+        int retval = ::close(_fd);
+        Assert(retval != -1);
         _fd = -1;
     }
-    return pipe_error::success();
 }
 
-pipe_error file_descriptor::flush()
+void file_descriptor::flush()
 {
-    if (fsync(_fd) == -1)
-        return get_system_error("file_descriptor:fsync()");
-    return pipe_error::success();
+    int retval = fsync(_fd);
+    Assert(retval != -1);
 }
 
 pipe_error file_descriptor::redirect(file_descriptor& newfd)
@@ -511,12 +499,7 @@ file_descriptor& tep::operator<<(file_descriptor& fd, file_descriptor::endl_t)
         std::cerr << err << std::endl;
         throw std::system_error();
     }
-    err = fd.flush();
-    if (err)
-    {
-        std::cerr << err << std::endl;
-        throw std::system_error();
-    }
+    fd.flush();
     return fd;
 }
 

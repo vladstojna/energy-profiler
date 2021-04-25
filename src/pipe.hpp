@@ -123,8 +123,9 @@ namespace tep
         file_descriptor& operator=(const file_descriptor& other);
 
         pipe_error redirect(file_descriptor& newfd);
-        pipe_error close();
-        pipe_error flush();
+
+        void flush();
+        void close();
 
         friend file_descriptor& operator<<(file_descriptor& fd, const char* str);
         friend file_descriptor& operator<<(file_descriptor& fd, const std::string& str);
