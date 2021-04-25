@@ -81,6 +81,8 @@ file_descriptor file_descriptor::std_in(STDIN_FILENO);
 file_descriptor file_descriptor::std_out(STDOUT_FILENO);
 file_descriptor file_descriptor::std_err(STDERR_FILENO);
 
+file_descriptor::endl_t file_descriptor::endl;
+
 // end definition of static variables
 
 
@@ -493,6 +495,23 @@ file_descriptor& tep::operator<<(file_descriptor& fd, const char* str)
 file_descriptor& tep::operator<<(file_descriptor& fd, const std::string& str)
 {
     pipe_error err = fd.write(str.data(), str.size());
+    if (err)
+    {
+        std::cerr << err << std::endl;
+        throw std::system_error();
+    }
+    return fd;
+}
+
+file_descriptor& tep::operator<<(file_descriptor& fd, file_descriptor::endl_t)
+{
+    pipe_error err = fd.write("\n", 1);
+    if (err)
+    {
+        std::cerr << err << std::endl;
+        throw std::system_error();
+    }
+    err = fd.flush();
     if (err)
     {
         std::cerr << err << std::endl;

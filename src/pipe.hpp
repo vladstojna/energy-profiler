@@ -87,6 +87,8 @@ namespace tep
     class file_descriptor
     {
     public:
+        static struct endl_t {} endl;
+
         static file_descriptor std_in;
         static file_descriptor std_out;
         static file_descriptor std_err;
@@ -121,6 +123,7 @@ namespace tep
 
         friend file_descriptor& operator<<(file_descriptor& fd, const char* str);
         friend file_descriptor& operator<<(file_descriptor& fd, const std::string& str);
+        friend file_descriptor& operator<<(file_descriptor& fd, endl_t);
     };
 
     class pipe
@@ -210,4 +213,5 @@ namespace tep
 
     file_descriptor& operator<<(file_descriptor& fd, const char* str);
     file_descriptor& operator<<(file_descriptor& fd, const std::string& str);
+    file_descriptor& operator<<(file_descriptor& fd, file_descriptor::endl_t e);
 };
