@@ -26,7 +26,8 @@ namespace tep
         COMPILATION_UNIT_NOT_FOUND,
         COMPILATION_UNIT_AMBIGUOUS,
         INVALID_LINE,
-        DWARF_ERROR
+        DWARF_ERROR,
+        PIPE_ERROR
     };
 
     struct dbg_error

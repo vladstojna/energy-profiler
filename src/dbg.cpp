@@ -3,50 +3,95 @@
 #include <libdwarf/libdwarf.h>
 
 #include "dbg.hpp"
+#include "pipe.hpp"
 
 #include <algorithm>
-#include <iostream>
-#include <iomanip>
 #include <cassert>
-#include <cstring>
 #include <cerrno>
+#include <charconv>
+#include <cstring>
 #include <filesystem>
+#include <fstream>
+#include <iomanip>
+#include <iostream>
+#include <system_error>
 
 #include <expected.hpp>
 
 using namespace tep;
 
+static constexpr const char file_base[] = "/tmp/profiler733978";
 
 // begin helper functions
 
 
-std::string get_system_error()
+std::string get_system_error(int errnum)
 {
     char buffer[256];
-    return { strerror_r(errno, buffer, 256) };
+    return { strerror_r(errnum, buffer, 256) };
 }
 
+template<typename... T>
+static std::string concat(T&&... args)
+{
+    std::string result;
+    std::string_view views[] = { args... };
+    std::string::size_type total_sz = 0;
+    for (const auto& v : views)
+        total_sz += v.size();
+    result.reserve(total_sz);
+    for (const auto& v : views)
+        result.append(v);
+    return result;
+}
 
 std::string cu_ambiguous_msg(const std::string& name, const compilation_unit& first, const compilation_unit& second)
 {
-    std::string retval;
-    retval.reserve(name.size() + first.name().size() + second.name().size() + 18 + 33 + 8 + 2);
-    return retval.append("Compilation unit ")
-        .append(name)
-        .append(" ambiguous; found two matches: '")
-        .append(first.name())
-        .append("' and '")
-        .append(second.name())
-        .append("'");
+    return concat("Compilation unit ", name,
+        " ambiguous; found two matches: '", first.name(),
+        "' and '", second.name(), "'");
 }
 
 std::string cu_not_found_msg(const std::string& name)
 {
-    std::string retval;
-    retval.reserve(name.size() + 18 + 11);
-    return retval.append("Compilation unit ")
-        .append(name)
-        .append(" not found");
+    return concat("Compilation unit '", name, "' not found");
+}
+
+dbg_expected<std::vector<uintptr_t>> get_return_addresses(const char* target)
+{
+    std::vector<uintptr_t> addresses;
+    std::string output = concat(file_base, ".returns");
+    cmmn::expected<file_descriptor, pipe_error> fd = file_descriptor::create(
+        output.c_str(), fd_flags::write, fd_mode::rdwr_all);
+    if (!fd)
+        return dbg_error(dbg_error_code::PIPE_ERROR, std::move(fd.error().msg()));
+
+    piped_commands cmd("objdump", "-d", target);
+    cmd.add("egrep", "[[:space:]]*[0-9a-f]+:[[:space:]]+c3[[:space:]]+ret")
+        .add("awk", "{print $1}")
+        .add("sed", "s/:$//");
+
+    pipe_error err = cmd.execute(file_descriptor::std_in, fd.value());
+    if (err)
+        return dbg_error(dbg_error_code::PIPE_ERROR, std::move(err.msg()));
+    fd.value().flush();
+
+    std::ifstream ifs(output);
+    if (!ifs)
+        return dbg_error(dbg_error_code::SYSTEM_ERROR,
+            concat("Could not open ", output, " for reading"));
+    for (std::string line; std::getline(ifs, line); )
+    {
+        uintptr_t addr;
+        std::string_view view(line);
+        auto [p, ec] = std::from_chars(view.begin(), view.end(), addr, 16);
+        std::error_code code = make_error_code(ec);
+        if (code)
+            return dbg_error(dbg_error_code::SYSTEM_ERROR,
+                get_system_error(code.value()));
+        addresses.push_back(addr);
+    }
+    return addresses;
 }
 
 
@@ -132,14 +177,28 @@ dbg_line_info::dbg_line_info(const char* filename, dbg_error& err) :
     FILE* img = fopen(filename, "r");
     if (img == NULL)
     {
-        err = { dbg_error_code::SYSTEM_ERROR, get_system_error() };
+        err = { dbg_error_code::SYSTEM_ERROR, get_system_error(errno) };
         return;
     }
+
     dbg_error gli_error = get_line_info(fileno(img));
     if (gli_error)
+    {
         err = std::move(gli_error);
+        return;
+    }
     if (fclose(img) != 0)
-        err = { dbg_error_code::SYSTEM_ERROR, get_system_error() };
+    {
+        err = { dbg_error_code::SYSTEM_ERROR, get_system_error(errno) };
+        return;
+    }
+
+    dbg_expected<std::vector<uintptr_t>> returns = get_return_addresses(filename);
+    if (!returns)
+    {
+        err = std::move(returns.error());
+        return;
+    }
 }
 
 bool dbg_line_info::has_dbg_symbols() const
