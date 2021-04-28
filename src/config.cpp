@@ -380,6 +380,47 @@ config_data::function::function(C&& cu, N&& name) :
     _name(std::forward<N>(name))
 {}
 
+template<typename N>
+config_data::function::function(const char* cu, N&& name) :
+    _cu(cu),
+    _name(std::forward<N>(name))
+{}
+
+template<typename C>
+config_data::function::function(C&& cu, const char* name) :
+    _cu(std::forward<C>(cu)),
+    _name(name)
+{}
+
+template
+config_data::function::function(const std::string&, const std::string&);
+
+template
+config_data::function::function(const std::string&, std::string&&);
+
+template
+config_data::function::function(const std::string&, const char*);
+
+template
+config_data::function::function(std::string&&, const std::string&);
+
+template
+config_data::function::function(std::string&&, std::string&&);
+
+template
+config_data::function::function(std::string&&, const char*);
+
+template
+config_data::function::function(const char*, const std::string&);
+
+template
+config_data::function::function(const char*, std::string&&);
+
+config_data::function::function(const char* cu, const char* name) :
+    _cu(cu),
+    _name(name)
+{}
+
 config_data::function::function(const std::string& name) :
     _cu(),
     _name(name)
@@ -413,10 +454,48 @@ bool config_data::function::has_cu() const
 
 // bounds
 
+enum class config_data::bounds::type
+{
+    position,
+    function
+};
+
+void config_data::bounds::copy_data(const bounds& other)
+{
+    switch (_tag)
+    {
+    case type::position:
+        new (&_positions.start) auto(other._positions.start);
+        new (&_positions.end) auto(other._positions.end);
+        break;
+    case type::function:
+        new (&_func) auto(other._func);
+        break;
+    default:
+        assert(false);
+    }
+}
+
+void config_data::bounds::move_data(bounds&& other)
+{
+    switch (_tag)
+    {
+    case type::position:
+        new (&_positions.start) auto(std::move(other._positions.start));
+        new (&_positions.end) auto(std::move(other._positions.end));
+        break;
+    case type::function:
+        new (&_func) auto(std::move(other._func));
+        break;
+    default:
+        assert(false);
+    }
+}
+
 template<typename S, typename E>
 config_data::bounds::bounds(S&& s, E&& e) :
-    _start(std::forward<S>(s)),
-    _end(std::forward<E>(e))
+    _tag(type::position),
+    _positions{ std::forward<S>(s), std::forward<E>(e) }
 {}
 
 template
@@ -431,14 +510,92 @@ config_data::bounds::bounds(config_data::position&&, const config_data::position
 template
 config_data::bounds::bounds(config_data::position&&, config_data::position&&);
 
+config_data::bounds::bounds(const function& func) :
+    _tag(type::function),
+    _func(func)
+{}
+
+config_data::bounds::bounds(function&& func) :
+    _tag(type::function),
+    _func(std::move(func))
+{}
+
+config_data::bounds::~bounds()
+{
+    switch (_tag)
+    {
+    case type::position:
+        _positions.start.~position();
+        _positions.end.~position();
+        break;
+    case type::function:
+        _func.~function();
+        break;
+    default:
+        assert(false);
+    }
+}
+
+config_data::bounds::bounds(const bounds& other) :
+    _tag(other._tag)
+{
+    copy_data(other);
+}
+
+config_data::bounds::bounds(bounds&& other) :
+    _tag(std::move(other._tag))
+{
+    move_data(std::move(other));
+}
+
+config_data::bounds& config_data::bounds::operator=(const bounds& other)
+{
+    if (_tag != other._tag)
+    {
+        this->~bounds();
+        _tag = other._tag;
+    }
+    copy_data(other);
+    return *this;
+}
+
+config_data::bounds& config_data::bounds::operator=(bounds&& other)
+{
+    if (_tag != other._tag)
+    {
+        this->~bounds();
+        _tag = std::move(other._tag);
+    }
+    move_data(std::move(other));
+    return *this;
+}
+
+bool config_data::bounds::has_positions() const
+{
+    return _tag == type::position;
+}
+
+bool config_data::bounds::has_function() const
+{
+    return _tag == type::function;
+}
+
 const config_data::position& config_data::bounds::start() const
 {
-    return _start;
+    assert(_tag == type::position);
+    return _positions.start;
 }
 
 const config_data::position& config_data::bounds::end() const
 {
-    return _end;
+    assert(_tag == type::position);
+    return _positions.end;
+}
+
+const config_data::function& config_data::bounds::func() const
+{
+    assert(_tag == type::function);
+    return _func;
 }
 
 
@@ -682,9 +839,27 @@ std::ostream& tep::operator<<(std::ostream& os, const config_data::position& p)
     return os;
 }
 
-std::ostream& tep::operator<<(std::ostream& os, const config_data::bounds& s)
+std::ostream& tep::operator<<(std::ostream& os, const config_data::function& f)
 {
-    os << s.start() << " - " << s.end();
+    if (f.has_cu())
+        os << f.cu() << ":";
+    os << f.name();
+    return os;
+}
+
+std::ostream& tep::operator<<(std::ostream& os, const config_data::bounds& b)
+{
+    switch (b._tag)
+    {
+    case config_data::bounds::type::position:
+        os << b.start() << " - " << b.end();
+        break;
+    case config_data::bounds::type::function:
+        os << b.func();
+        break;
+    default:
+        assert(false);
+    }
     return os;
 }
 
@@ -722,6 +897,11 @@ bool tep::operator==(const config_data::params& lhs, const config_data::params& 
 bool tep::operator==(const config_data::position& lhs, const config_data::position& rhs)
 {
     return lhs.compilation_unit() == rhs.compilation_unit() && lhs.line() == rhs.line();
+}
+
+bool tep::operator==(const config_data::function& lhs, const config_data::function& rhs)
+{
+    return lhs.cu() == rhs.cu() && lhs.name() == rhs.name();
 }
 
 bool tep::operator==(const config_data::bounds& lhs, const config_data::bounds& rhs)
