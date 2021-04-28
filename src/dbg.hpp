@@ -2,12 +2,16 @@
 
 #pragma once
 
-#include <expected.hpp>
-
 #include <string>
 #include <iosfwd>
 #include <vector>
 #include <map>
+
+namespace cmmn
+{
+    template<typename R, typename E>
+    class expected;
+}
 
 namespace tep
 {
@@ -27,10 +31,7 @@ namespace tep
 
     struct dbg_error
     {
-        static dbg_error success()
-        {
-            return { dbg_error_code::SUCCESS, "No error" };
-        }
+        static dbg_error success();
 
         dbg_error_code code;
         std::string message;
@@ -39,10 +40,7 @@ namespace tep
         dbg_error(dbg_error_code c, const std::string& msg);
         dbg_error(dbg_error_code c, std::string&& msg);
 
-        operator bool() const
-        {
-            return code != dbg_error_code::SUCCESS;
-        }
+        explicit operator bool() const;
     };
 
     // types

@@ -12,6 +12,8 @@
 #include <cerrno>
 #include <filesystem>
 
+#include <expected.hpp>
+
 using namespace tep;
 
 
@@ -65,6 +67,15 @@ dbg_error::dbg_error(dbg_error_code c, std::string&& msg) :
     code(c), message(std::move(msg))
 {}
 
+dbg_error dbg_error::success()
+{
+    return { dbg_error_code::SUCCESS, "No error" };
+}
+
+dbg_error::operator bool() const
+{
+    return code != dbg_error_code::SUCCESS;
+}
 
 // begin compilation_unit
 
