@@ -110,6 +110,26 @@ namespace tep
             uint32_t line() const;
         };
 
+        class function
+        {
+        private:
+            std::string _cu;
+            std::string _name;
+
+        public:
+            template<typename C, typename N>
+            function(C&& cu, N&& name);
+
+            function(const std::string& name);
+            function(std::string&& name);
+            function(const char* name);
+
+            const std::string& cu() const;
+            const std::string& name() const;
+
+            bool has_cu() const;
+        };
+
         class bounds
         {
         private:

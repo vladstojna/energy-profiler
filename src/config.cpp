@@ -372,6 +372,45 @@ uint32_t config_data::position::line() const
 }
 
 
+// function
+
+template<typename C, typename N>
+config_data::function::function(C&& cu, N&& name) :
+    _cu(std::forward<C>(cu)),
+    _name(std::forward<N>(name))
+{}
+
+config_data::function::function(const std::string& name) :
+    _cu(),
+    _name(name)
+{}
+
+config_data::function::function(std::string&& name) :
+    _cu(),
+    _name(std::move(name))
+{}
+
+config_data::function::function(const char* name) :
+    _cu(),
+    _name(name)
+{}
+
+const std::string& config_data::function::cu() const
+{
+    return _cu;
+}
+
+const std::string& config_data::function::name() const
+{
+    return _name;
+}
+
+bool config_data::function::has_cu() const
+{
+    return !_cu.empty();
+}
+
+
 // bounds
 
 template<typename S, typename E>
