@@ -50,11 +50,17 @@ namespace tep
 
         BOUNDS_NO_START,
         BOUNDS_NO_END,
+        BOUNDS_EMPTY,
+        BOUNDS_TOO_MANY,
 
         POS_NO_COMP_UNIT,
         POS_NO_LINE,
         POS_INVALID_COMP_UNIT,
-        POS_INVALID_LINE
+        POS_INVALID_LINE,
+
+        FUNC_INVALID_COMP_UNIT,
+        FUNC_NO_NAME,
+        FUNC_INVALID_NAME
     };
 
     class cfg_error

@@ -60,11 +60,17 @@ static const char* error_messages[] =
 
     "bounds: node <start></start> not found",
     "bounds: node <end></end> not found",
+    "bounds: cannot be empty: must contain either <func/> or <start/> and <end/>",
+    "bounds: too many nodes: must contain either <func/> or <start/> and <end/>",
 
-    "Node <cu></cu> not found",
-    "Node <line></line> not found",
-    "Invalid compilation unit: cannot be empty",
-    "Invalid line number: must be a positive integer"
+    "start/end: node <cu></cu> or attribute 'cu' not found",
+    "start/end: node <line></line> or attribute 'line' not found",
+    "start/end: invalid compilation unit: cannot be empty",
+    "start/end: invalid line number: must be a positive integer",
+
+    "func: invalid compilation unit: cannot be empty",
+    "func: attribute 'name' not found",
+    "func: invalid name: cannot be empty"
 };
 
 
@@ -241,27 +247,64 @@ cfg_expected<config_data::position> get_position(const pugi::xml_node& pos_node)
     return { std::move(cu.value()), lineno.value() };
 }
 
+cfg_expected<config_data::function> get_function(const pugi::xml_node& func_node)
+{
+    using namespace pugi;
+    // attribute "cu" exists
+    std::string cu;
+    xml_attribute cu_attr = func_node.attribute("cu");
+    if (cu_attr)
+    {
+        // if attribute exists - it cannot be empty
+        if (!*cu_attr.value())
+            return cfg_error(cfg_error_code::FUNC_INVALID_COMP_UNIT);
+        cu.append(cu_attr.value());
+    }
+    xml_attribute name_attr = func_node.attribute("name");
+    if (!name_attr)
+        return cfg_error(cfg_error_code::FUNC_NO_NAME);
+    if (!*name_attr.value())
+        return cfg_error(cfg_error_code::FUNC_INVALID_NAME);
+    return config_data::function(std::move(cu), name_attr.value());
+}
+
 cfg_expected<config_data::bounds> get_bounds(const pugi::xml_node& bounds)
 {
     using namespace pugi;
-    // <start></start>
-    xml_node start = bounds.child("start");
-    if (!start)
-        return cfg_error(cfg_error_code::BOUNDS_NO_START);
-    // <end></end>
-    xml_node end = bounds.child("end");
-    if (!end)
-        return cfg_error(cfg_error_code::BOUNDS_NO_END);
+    // <start/>
+    xml_node nstart = bounds.child("start");
+    // <end/>
+    xml_node nend = bounds.child("end");
+    // <func/>
+    xml_node nfunc = bounds.child("func");
 
-    // position error checks
-    cfg_expected<config_data::position> pstart = get_position(start);
-    if (!pstart)
-        return std::move(pstart.error());
-    cfg_expected<config_data::position> pend = get_position(end);
-    if (!pend)
-        return std::move(pend.error());
+    if (nstart || nend)
+    {
+        if (nfunc)
+            return cfg_error(cfg_error_code::BOUNDS_TOO_MANY);
+        if (!nend)
+            return cfg_error(cfg_error_code::BOUNDS_NO_END);
+        if (!nstart)
+            return cfg_error(cfg_error_code::BOUNDS_NO_START);
 
-    return { std::move(pstart.value()), std::move(pend.value()) };
+        cfg_expected<config_data::position> pstart = get_position(nstart);
+        if (!pstart)
+            return std::move(pstart.error());
+        cfg_expected<config_data::position> pend = get_position(nend);
+        if (!pend)
+            return std::move(pend.error());
+
+        return { std::move(pstart.value()), std::move(pend.value()) };
+    }
+    else if (nfunc)
+    {
+        assert(!nstart && !nend);
+        cfg_expected<config_data::function> func = get_function(nfunc);
+        if (!func)
+            return std::move(func.error());
+        return std::move(func.value());
+    }
+    return cfg_error(cfg_error_code::BOUNDS_EMPTY);
 }
 
 cfg_expected<config_data::profiling_method> get_method(const pugi::xml_node& nsection,
