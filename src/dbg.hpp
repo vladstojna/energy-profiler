@@ -27,7 +27,8 @@ namespace tep
         COMPILATION_UNIT_AMBIGUOUS,
         INVALID_LINE,
         DWARF_ERROR,
-        PIPE_ERROR
+        PIPE_ERROR,
+        FORMAT_ERROR
     };
 
     struct dbg_error
@@ -50,6 +51,57 @@ namespace tep
     using dbg_expected = cmmn::expected<R, dbg_error>;
 
     // classes
+
+    class position
+    {
+    private:
+        std::string _cu;
+        uint32_t _line;
+
+    public:
+        position(const std::string& cu, uint32_t line);
+        position(std::string&& cu, uint32_t line);
+        position(const char* cu, uint32_t line);
+
+        const std::string& cu() const;
+        uint32_t line() const;
+    };
+
+    class function_bounds
+    {
+    private:
+        uintptr_t _start;
+        std::vector<uintptr_t> _rets;
+
+    public:
+        function_bounds(uintptr_t start, const std::vector<uintptr_t>& rets);
+        function_bounds(uintptr_t start, std::vector<uintptr_t>&& rets);
+
+        uintptr_t start() const;
+        const std::vector<uintptr_t> returns() const;
+    };
+
+    class function
+    {
+    private:
+        std::string _name;
+        position _pos;
+        function_bounds _bounds;
+
+    public:
+        function(const std::string& name, const position& pos, const function_bounds& bounds);
+        function(const std::string& name, const position& pos, function_bounds&& bounds);
+        function(const std::string& name, position&& pos, const function_bounds& bounds);
+        function(const std::string& name, position&& pos, function_bounds&& bounds);
+        function(std::string&& name, const position& pos, const function_bounds& bounds);
+        function(std::string&& name, const position& pos, function_bounds&& bounds);
+        function(std::string&& name, position&& pos, const function_bounds& bounds);
+        function(std::string&& name, position&& pos, function_bounds&& bounds);
+
+        const std::string& name() const;
+        const position& pos() const;
+        const function_bounds& bounds() const;
+    };
 
     class compilation_unit
     {
@@ -77,6 +129,7 @@ namespace tep
 
     private:
         std::vector<compilation_unit> _units;
+        std::vector<function> _funcs;
 
         dbg_line_info(const char* filename, dbg_error& err);
 
@@ -92,6 +145,7 @@ namespace tep
 
     private:
         dbg_error get_line_info(int fd);
+        dbg_error get_functions(const char* filename);
     };
 
     // operator overloads

@@ -22,10 +22,21 @@ using namespace tep;
 
 static constexpr const char file_base[] = "/tmp/profiler733978";
 
+
+// begin helper structs
+
+struct parsed_func
+{
+    std::string name;
+    uintptr_t addr;
+    size_t size;
+    position pos;
+};
+
+
 // begin helper functions
 
-
-std::string get_system_error(int errnum)
+static std::string get_system_error(int errnum)
 {
     char buffer[256];
     return { strerror_r(errnum, buffer, 256) };
@@ -45,19 +56,19 @@ static std::string concat(T&&... args)
     return result;
 }
 
-std::string cu_ambiguous_msg(const std::string& name, const compilation_unit& first, const compilation_unit& second)
+static std::string cu_ambiguous_msg(const std::string& name, const compilation_unit& first, const compilation_unit& second)
 {
     return concat("Compilation unit ", name,
         " ambiguous; found two matches: '", first.name(),
         "' and '", second.name(), "'");
 }
 
-std::string cu_not_found_msg(const std::string& name)
+static std::string cu_not_found_msg(const std::string& name)
 {
     return concat("Compilation unit '", name, "' not found");
 }
 
-dbg_expected<std::vector<uintptr_t>> get_return_addresses(const char* target)
+static dbg_expected<std::vector<uintptr_t>> get_return_addresses(const char* target)
 {
     std::vector<uintptr_t> addresses;
     std::string output = concat(file_base, ".returns");
@@ -87,18 +98,84 @@ dbg_expected<std::vector<uintptr_t>> get_return_addresses(const char* target)
         auto [p, ec] = std::from_chars(view.begin(), view.end(), addr, 16);
         std::error_code code = make_error_code(ec);
         if (code)
-            return dbg_error(dbg_error_code::SYSTEM_ERROR,
-                get_system_error(code.value()));
+            return dbg_error(dbg_error_code::FORMAT_ERROR, get_system_error(code.value()));
         addresses.push_back(addr);
     }
     return addresses;
+}
+
+static std::vector<std::string_view> split_line(const std::string& line,
+    const std::string_view& delim)
+{
+    std::vector<std::string_view> tokens;
+    std::string::size_type current = 0;
+    std::string::size_type next;
+    while ((next = line.find_first_of(delim, current)) != std::string::npos)
+    {
+        tokens.emplace_back(&line[current], next - current);
+        current = next + delim.length();
+    }
+    if (current < line.length())
+        tokens.emplace_back(&line[current], line.length() - current);
+    return tokens;
+}
+
+static dbg_expected<std::vector<parsed_func>> get_functions(const char* target)
+{
+    std::vector<parsed_func> funcs;
+    std::string output = concat(file_base, ".syms");
+    cmmn::expected<file_descriptor, pipe_error> fd = file_descriptor::create(
+        output.c_str(), fd_flags::write, fd_mode::rdwr_all);
+    if (!fd)
+        return dbg_error(dbg_error_code::PIPE_ERROR, std::move(fd.error().msg()));
+
+    constexpr const size_t token_count = 5;
+    piped_commands cmd("nm", "-lSC", "--defined-only", "--format=posix", target);
+    cmd.add("sed", "-nE", "s/(.+) T ([0-9a-f]+) ([0-9a-f]+)\\t(.+):([1-9]+)/\\1|\\2|\\3|\\4|\\5/p");
+
+    pipe_error err = cmd.execute(file_descriptor::std_in, fd.value());
+    if (err)
+        return dbg_error(dbg_error_code::PIPE_ERROR, std::move(err.msg()));
+    fd.value().flush();
+
+    std::ifstream ifs(output);
+    if (!ifs)
+        return dbg_error(dbg_error_code::SYSTEM_ERROR,
+            concat("Could not open ", output, " for reading"));
+    for (std::string line; std::getline(ifs, line); )
+    {
+        std::vector<std::string_view> views = split_line(line, "|");
+        if (views.size() < token_count)
+            return dbg_error(dbg_error_code::FORMAT_ERROR, "invalid format for function parsing");
+
+        uintptr_t addr;
+        std::from_chars_result res = std::from_chars(views[1].begin(), views[1].end(), addr, 16);
+        std::error_code code = make_error_code(res.ec);
+        if (code)
+            return dbg_error(dbg_error_code::FORMAT_ERROR, get_system_error(code.value()));
+
+        size_t size;
+        res = std::from_chars(views[2].begin(), views[2].end(), size, 16);
+        code = make_error_code(res.ec);
+        if (code)
+            return dbg_error(dbg_error_code::FORMAT_ERROR, get_system_error(code.value()));
+
+        uint32_t lineno;
+        res = std::from_chars(views[4].begin(), views[4].end(), lineno, 10);
+        code = make_error_code(res.ec);
+        if (code)
+            return dbg_error(dbg_error_code::FORMAT_ERROR, get_system_error(code.value()));
+
+        funcs.push_back({ std::string(views[0]), addr, size, position(std::string(views[3]), lineno) });
+    }
+    return funcs;
 }
 
 
 // end helper functions
 
 
-// begin dbg_error
+// dbg_error
 
 dbg_error::dbg_error(dbg_error_code c, const char* msg) :
     code(c), message(msg)
@@ -122,8 +199,128 @@ dbg_error::operator bool() const
     return code != dbg_error_code::SUCCESS;
 }
 
-// begin compilation_unit
 
+// position
+
+position::position(const std::string& cu, uint32_t line) :
+    _cu(cu),
+    _line(line)
+{}
+
+
+position::position(std::string&& cu, uint32_t line) :
+    _cu(std::move(cu)),
+    _line(line)
+{}
+
+position::position(const char* cu, uint32_t line) :
+    _cu(cu),
+    _line(line)
+{
+    assert(cu != nullptr);
+}
+
+const std::string& position::cu() const
+{
+    return _cu;
+}
+
+uint32_t position::line() const
+{
+    return _line;
+}
+
+
+// function_bounds
+
+function_bounds::function_bounds(uintptr_t start, const std::vector<uintptr_t>& rets) :
+    _start(start),
+    _rets(rets)
+{}
+
+function_bounds::function_bounds(uintptr_t start, std::vector<uintptr_t>&& rets) :
+    _start(start),
+    _rets(std::move(rets))
+{}
+
+uintptr_t function_bounds::start() const
+{
+    return _start;
+}
+
+const std::vector<uintptr_t> function_bounds::returns() const
+{
+    return _rets;
+}
+
+
+// function
+
+function::function(const std::string& name, const position& pos, const function_bounds& bounds) :
+    _name(name),
+    _pos(pos),
+    _bounds(bounds)
+{}
+
+function::function(const std::string& name, const position& pos, function_bounds&& bounds) :
+    _name(name),
+    _pos(pos),
+    _bounds(std::move(bounds))
+{}
+
+function::function(const std::string& name, position&& pos, const function_bounds& bounds) :
+    _name(name),
+    _pos(std::move(pos)),
+    _bounds(bounds)
+{}
+
+function::function(const std::string& name, position&& pos, function_bounds&& bounds) :
+    _name(name),
+    _pos(std::move(pos)),
+    _bounds(std::move(bounds))
+{}
+
+function::function(std::string&& name, const position& pos, const function_bounds& bounds) :
+    _name(std::move(name)),
+    _pos(pos),
+    _bounds(bounds)
+{}
+
+function::function(std::string&& name, const position& pos, function_bounds&& bounds) :
+    _name(std::move(name)),
+    _pos(pos),
+    _bounds(std::move(bounds))
+{}
+
+function::function(std::string&& name, position&& pos, const function_bounds& bounds) :
+    _name(std::move(name)),
+    _pos(std::move(pos)),
+    _bounds(bounds)
+{}
+
+function::function(std::string&& name, position&& pos, function_bounds&& bounds) :
+    _name(std::move(name)),
+    _pos(std::move(pos)),
+    _bounds(std::move(bounds))
+{}
+
+const std::string& function::name() const
+{
+    return _name;
+}
+
+const position& function::pos() const
+{
+    return _pos;
+}
+
+const function_bounds& function::bounds() const
+{
+    return _bounds;
+}
+
+
+// compilation_unit
 
 compilation_unit::compilation_unit(const char* name) :
     _name(name),
@@ -172,8 +369,10 @@ dbg_expected<dbg_line_info> dbg_line_info::create(const char* filename)
 }
 
 dbg_line_info::dbg_line_info(const char* filename, dbg_error& err) :
-    _units()
+    _units(),
+    _funcs()
 {
+    assert(filename != nullptr);
     FILE* img = fopen(filename, "r");
     if (img == NULL)
     {
@@ -181,10 +380,10 @@ dbg_line_info::dbg_line_info(const char* filename, dbg_error& err) :
         return;
     }
 
-    dbg_error gli_error = get_line_info(fileno(img));
-    if (gli_error)
+    dbg_error error = get_line_info(fileno(img));
+    if (error)
     {
-        err = std::move(gli_error);
+        err = std::move(error);
         return;
     }
     if (fclose(img) != 0)
@@ -193,10 +392,10 @@ dbg_line_info::dbg_line_info(const char* filename, dbg_error& err) :
         return;
     }
 
-    dbg_expected<std::vector<uintptr_t>> returns = get_return_addresses(filename);
-    if (!returns)
+    error = get_functions(filename);
+    if (error)
     {
-        err = std::move(returns.error());
+        err = std::move(error);
         return;
     }
 }
@@ -322,9 +521,31 @@ dbg_error dbg_line_info::get_line_info(int fd)
     return dbg_error::success();
 }
 
+dbg_error dbg_line_info::get_functions(const char* filename)
+{
+    dbg_expected<std::vector<uintptr_t>> returns = get_return_addresses(filename);
+    if (!returns)
+        return std::move(returns.error());
+    dbg_expected<std::vector<parsed_func>> funcs = ::get_functions(filename);
+    if (!funcs)
+        return std::move(returns.error());
+
+    for (auto& pf : funcs.value())
+    {
+        std::vector<uintptr_t> effrets;
+        for (uintptr_t ret : returns.value())
+        {
+            if (ret > pf.addr && ret < pf.addr + pf.size)
+                effrets.push_back(ret);
+        }
+        _funcs.emplace_back(std::move(pf.name), std::move(pf.pos),
+            function_bounds(pf.addr, std::move(effrets)));
+    }
+    return dbg_error::success();
+}
+
 
 // operator overloads
-
 
 std::ostream& tep::operator<<(std::ostream& os, const dbg_error& de)
 {
