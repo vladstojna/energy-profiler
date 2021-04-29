@@ -78,7 +78,7 @@ namespace tep
         function_bounds(uintptr_t start, std::vector<uintptr_t>&& rets);
 
         uintptr_t start() const;
-        const std::vector<uintptr_t> returns() const;
+        const std::vector<uintptr_t>& returns() const;
     };
 
     class function

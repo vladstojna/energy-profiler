@@ -248,7 +248,7 @@ uintptr_t function_bounds::start() const
     return _start;
 }
 
-const std::vector<uintptr_t> function_bounds::returns() const
+const std::vector<uintptr_t>& function_bounds::returns() const
 {
     return _rets;
 }
