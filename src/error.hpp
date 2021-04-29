@@ -18,6 +18,7 @@ namespace tep
         SIGNAL_DURING_SECTION_ERROR,
         NO_SYMBOL,
         NO_TRAP,
+        UNSUPPORTED,
         UNKNOWN_ERROR,
     };
 
