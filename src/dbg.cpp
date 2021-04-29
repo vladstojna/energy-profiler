@@ -257,16 +257,16 @@ uint32_t position::line() const
     return _line;
 }
 
-bool position::matches(const std::string& cu) const
+bool position::contains(const std::string& cu) const
 {
-    // existing path is always absolute
-    std::filesystem::path existing_path(_cu);
-    std::filesystem::path subpath(cu);
-
-    if (existing_path == subpath)
+    if (cu.empty())
         return true;
-    if (std::search(existing_path.begin(), existing_path.end(),
-        subpath.begin(), subpath.end()) != existing_path.end())
+    // existing path is always absolute
+    std::filesystem::path path(_cu);
+    std::filesystem::path sub(cu);
+    if (path == sub)
+        return true;
+    if (std::search(path.begin(), path.end(), sub.begin(), sub.end()) != path.end())
         return true;
     return false;
 }
@@ -360,14 +360,11 @@ const function_bounds& function::bounds() const
     return _bounds;
 }
 
-bool function::matches(const std::string& name) const
-{
-    return _name.find(remove_spaces(name));
-}
-
 bool function::matches(const std::string& name, const std::string& cu) const
 {
-    return matches(name) && _pos.matches(cu);
+    std::string_view view(_name.data(), _name.size());
+    std::string_view start(name.data(), name.size());
+    return view.substr(0, start.size()) == start && _pos.contains(cu);
 }
 
 
@@ -433,10 +430,7 @@ dbg_line_info::dbg_line_info(const char* filename, dbg_error& err) :
 
     dbg_error error = get_line_info(fileno(img));
     if (error)
-    {
         err = std::move(error);
-        return;
-    }
     if (fclose(img) != 0)
     {
         err = { dbg_error_code::SYSTEM_ERROR, get_system_error(errno) };
@@ -445,10 +439,7 @@ dbg_line_info::dbg_line_info(const char* filename, dbg_error& err) :
 
     error = get_functions(filename);
     if (error)
-    {
         err = std::move(error);
-        return;
-    }
 }
 
 bool dbg_line_info::has_dbg_symbols() const
@@ -498,31 +489,13 @@ dbg_expected<compilation_unit*> dbg_line_info::find_cu(const char* name)
     return contains;
 }
 
-dbg_expected<const function*> dbg_line_info::find_function(const std::string& name) const
-{
-    const function* match = nullptr;
-    for (const auto& f : _funcs)
-    {
-        if (f.matches(name))
-        {
-            if (match != nullptr)
-                return dbg_error(dbg_error_code::FUNCTION_AMBIGUOUS,
-                    func_ambiguous_msg(name, f, *match));
-            match = &f;
-        }
-    }
-    if (match == nullptr)
-        return dbg_error(dbg_error_code::FUNCTION_NOT_FOUND, func_not_found_msg(name));
-    return match;
-}
-
 dbg_expected<const function*> dbg_line_info::find_function(const std::string& name,
     const std::string& cu) const
 {
     const function* match = nullptr;
     for (const auto& f : _funcs)
     {
-        if (f.matches(name, cu))
+        if (f.matches(remove_spaces(name), cu))
         {
             if (match != nullptr)
                 return dbg_error(dbg_error_code::FUNCTION_AMBIGUOUS,

@@ -68,7 +68,7 @@ namespace tep
         const std::string& cu() const;
         uint32_t line() const;
 
-        bool matches(const std::string& cu) const;
+        bool contains(const std::string& cu) const;
     };
 
     class function_bounds
@@ -106,8 +106,7 @@ namespace tep
         const position& pos() const;
         const function_bounds& bounds() const;
 
-        bool matches(const std::string& name) const;
-        bool matches(const std::string& name, const std::string& cu) const;
+        bool matches(const std::string& name, const std::string& cu = "") const;
     };
 
     class compilation_unit
@@ -148,7 +147,6 @@ namespace tep
         dbg_expected<compilation_unit*> find_cu(const std::string& name);
         dbg_expected<compilation_unit*> find_cu(const char* name);
 
-        dbg_expected<const function*> find_function(const std::string& name) const;
         dbg_expected<const function*> find_function(const std::string& name,
             const std::string& cu) const;
 
