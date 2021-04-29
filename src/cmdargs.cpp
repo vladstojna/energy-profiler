@@ -151,12 +151,23 @@ void print_usage(const char* profiler_name)
     std::cout << "Usage:\n\n";
     std::cout << profiler_name << " [options] [--] [executable] [executable-args]\n\n";
     std::cout << "options:\n\n";
-    std::cout << "-c, --config <file> required: read from configuration file <file>\n";
-    std::cout << "                    must be provided and cannot be empty\n";
-    std::cout << "-o, --output <file> optional: write profiling results to <file> (default: stdout)\n";
-    std::cout << "                    if <file> is - then stdout is used\n";
-    std::cout << "                    if <file> is -- then stderr is used\n";
-    std::cout << "-h, --help          print this message\n";
+    std::cout << "-h, --help            print this message\n";
+    std::cout << "\n";
+    std::cout << "-c, --config <file>   (required) read from configuration file <file>\n";
+    std::cout << "                      cannot be empty\n";
+    std::cout << "\n";
+    std::cout << "-o, --output <file>   (optional) write profiling results to <file>\n";
+    std::cout << "                      if <file> is 'stdout' then stdout is used\n";
+    std::cout << "                      if <file> is 'stderr' then stderr is used\n";
+    std::cout << "                      (default: stdout)\n";
+    std::cout << "\n";
+    std::cout << "--pie                 (default) the target executable is a position\n";
+    std::cout << "                      independent executable (PIE)\n";
+    std::cout << "--no-pie              the target executable is not a position\n";
+    std::cout << "                      independent executable\n";
+    std::cout << "\n";
+    std::cout << "--idle                (default) gather idle readings at startup\n";
+    std::cout << "--no-idle             do not gather idle readings at startup\n";
     std::cout << std::endl;
 }
 
