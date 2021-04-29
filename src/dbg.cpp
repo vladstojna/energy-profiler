@@ -14,6 +14,7 @@
 #include <fstream>
 #include <iomanip>
 #include <iostream>
+#include <locale>
 #include <system_error>
 
 #include <expected.hpp>
@@ -56,9 +57,29 @@ static std::string concat(T&&... args)
     return result;
 }
 
-static std::string cu_ambiguous_msg(const std::string& name, const compilation_unit& first, const compilation_unit& second)
+template<typename T>
+static std::string remove_spaces(T&& txt)
+{
+    std::string ret(std::forward<T>(txt));
+    ret.erase(std::remove_if(ret.begin(), ret.end(), [](unsigned char c)
+        {
+            return std::isspace(c);
+        }), ret.end());
+    return ret;
+}
+
+static std::string cu_ambiguous_msg(const std::string& name, const compilation_unit& first,
+    const compilation_unit& second)
 {
     return concat("Compilation unit ", name,
+        " ambiguous; found two matches: '", first.name(),
+        "' and '", second.name(), "'");
+}
+
+static std::string func_ambiguous_msg(const std::string& name, const function& first,
+    const function& second)
+{
+    return concat("Function ", name,
         " ambiguous; found two matches: '", first.name(),
         "' and '", second.name(), "'");
 }
@@ -66,6 +87,11 @@ static std::string cu_ambiguous_msg(const std::string& name, const compilation_u
 static std::string cu_not_found_msg(const std::string& name)
 {
     return concat("Compilation unit '", name, "' not found");
+}
+
+static std::string func_not_found_msg(const std::string& name)
+{
+    return concat("Function '", name, "' not found");
 }
 
 static dbg_expected<std::vector<uintptr_t>> get_return_addresses(const char* target)
@@ -166,7 +192,8 @@ static dbg_expected<std::vector<parsed_func>> get_functions(const char* target)
         if (code)
             return dbg_error(dbg_error_code::FORMAT_ERROR, get_system_error(code.value()));
 
-        funcs.push_back({ std::string(views[0]), addr, size, position(std::string(views[3]), lineno) });
+        funcs.push_back({ remove_spaces(views[0]), addr, size,
+        position(std::string(views[3]), lineno) });
     }
     return funcs;
 }
@@ -228,6 +255,20 @@ const std::string& position::cu() const
 uint32_t position::line() const
 {
     return _line;
+}
+
+bool position::matches(const std::string& cu) const
+{
+    // existing path is always absolute
+    std::filesystem::path existing_path(_cu);
+    std::filesystem::path subpath(cu);
+
+    if (existing_path == subpath)
+        return true;
+    if (std::search(existing_path.begin(), existing_path.end(),
+        subpath.begin(), subpath.end()) != existing_path.end())
+        return true;
+    return false;
 }
 
 
@@ -317,6 +358,16 @@ const position& function::pos() const
 const function_bounds& function::bounds() const
 {
     return _bounds;
+}
+
+bool function::matches(const std::string& name) const
+{
+    return _name.find(remove_spaces(name));
+}
+
+bool function::matches(const std::string& name, const std::string& cu) const
+{
+    return matches(name) && _pos.matches(cu);
 }
 
 
@@ -447,6 +498,43 @@ dbg_expected<compilation_unit*> dbg_line_info::find_cu(const char* name)
     return contains;
 }
 
+dbg_expected<const function*> dbg_line_info::find_function(const std::string& name) const
+{
+    const function* match = nullptr;
+    for (const auto& f : _funcs)
+    {
+        if (f.matches(name))
+        {
+            if (match != nullptr)
+                return dbg_error(dbg_error_code::FUNCTION_AMBIGUOUS,
+                    func_ambiguous_msg(name, f, *match));
+            match = &f;
+        }
+    }
+    if (match == nullptr)
+        return dbg_error(dbg_error_code::FUNCTION_NOT_FOUND, func_not_found_msg(name));
+    return match;
+}
+
+dbg_expected<const function*> dbg_line_info::find_function(const std::string& name,
+    const std::string& cu) const
+{
+    const function* match = nullptr;
+    for (const auto& f : _funcs)
+    {
+        if (f.matches(name, cu))
+        {
+            if (match != nullptr)
+                return dbg_error(dbg_error_code::FUNCTION_AMBIGUOUS,
+                    func_ambiguous_msg(name, f, *match));
+            match = &f;
+        }
+    }
+    if (match == nullptr)
+        return dbg_error(dbg_error_code::FUNCTION_NOT_FOUND, func_not_found_msg(name));
+    return match;
+}
+
 
 // TODO: need to rewrite this using newer functions
 dbg_error dbg_line_info::get_line_info(int fd)
@@ -469,7 +557,8 @@ dbg_error dbg_line_info::get_line_info(int fd)
         Dwarf_Die dw_die;
         Dwarf_Line* linebuf;
         Dwarf_Signed linecount;
-        if ((rv = dwarf_next_cu_header(dw_dbg, NULL, NULL, NULL, NULL, &next_cu_size, &dw_err)) != DW_DLV_OK)
+        if ((rv = dwarf_next_cu_header(dw_dbg, NULL, NULL, NULL, NULL, &next_cu_size, &dw_err)) !=
+            DW_DLV_OK)
         {
             // if no more compilation units left
             if (rv == DW_DLV_NO_ENTRY)

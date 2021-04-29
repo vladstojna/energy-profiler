@@ -28,7 +28,9 @@ namespace tep
         INVALID_LINE,
         DWARF_ERROR,
         PIPE_ERROR,
-        FORMAT_ERROR
+        FORMAT_ERROR,
+        FUNCTION_NOT_FOUND,
+        FUNCTION_AMBIGUOUS
     };
 
     struct dbg_error
@@ -65,6 +67,8 @@ namespace tep
 
         const std::string& cu() const;
         uint32_t line() const;
+
+        bool matches(const std::string& cu) const;
     };
 
     class function_bounds
@@ -101,6 +105,9 @@ namespace tep
         const std::string& name() const;
         const position& pos() const;
         const function_bounds& bounds() const;
+
+        bool matches(const std::string& name) const;
+        bool matches(const std::string& name, const std::string& cu) const;
     };
 
     class compilation_unit
@@ -140,6 +147,10 @@ namespace tep
         dbg_expected<const compilation_unit*> find_cu(const char* name) const;
         dbg_expected<compilation_unit*> find_cu(const std::string& name);
         dbg_expected<compilation_unit*> find_cu(const char* name);
+
+        dbg_expected<const function*> find_function(const std::string& name) const;
+        dbg_expected<const function*> find_function(const std::string& name,
+            const std::string& cu) const;
 
         friend std::ostream& operator<<(std::ostream& os, const dbg_line_info& cu);
 
