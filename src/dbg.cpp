@@ -554,6 +554,28 @@ std::ostream& tep::operator<<(std::ostream& os, const dbg_error& de)
     return os;
 }
 
+std::ostream& tep::operator<<(std::ostream& os, const position& p)
+{
+    os << p.cu() << ":" << p.line();
+    return os;
+}
+
+std::ostream& tep::operator<<(std::ostream& os, const function_bounds& fb)
+{
+    std::ios::fmtflags os_flags(os.flags());
+    os << std::hex << "[0x" << fb.start() << "] -";
+    for (uintptr_t ret : fb.returns())
+        os << " 0x" << ret;
+    os.flags(os_flags);
+    return os;
+}
+
+std::ostream& tep::operator<<(std::ostream& os, const function& f)
+{
+    os << f.name() << " @ " << f.pos() << ": " << f.bounds();
+    return os;
+}
+
 std::ostream& tep::operator<<(std::ostream& os, const compilation_unit& cu)
 {
     for (const auto& [no, addrs] : cu._lines)
@@ -572,6 +594,9 @@ std::ostream& tep::operator<<(std::ostream& os, const dbg_line_info& dbg_info)
 {
     for (const auto& cu : dbg_info._units)
         os << cu;
+    os << "\n";
+    for (const auto& f : dbg_info._funcs)
+        os << f << "\n";
     return os;
 }
 

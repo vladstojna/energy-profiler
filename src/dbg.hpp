@@ -151,6 +151,9 @@ namespace tep
     // operator overloads
 
     std::ostream& operator<<(std::ostream& os, const dbg_error& de);
+    std::ostream& operator<<(std::ostream& os, const position& p);
+    std::ostream& operator<<(std::ostream& os, const function_bounds& fb);
+    std::ostream& operator<<(std::ostream& os, const function& f);
     std::ostream& operator<<(std::ostream& os, const compilation_unit& cu);
     std::ostream& operator<<(std::ostream& os, const dbg_line_info& cu);
 
