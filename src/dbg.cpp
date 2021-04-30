@@ -68,6 +68,14 @@ static std::string remove_spaces(T&& txt)
     return ret;
 }
 
+static void remove_spaces(std::string& str)
+{
+    str.erase(std::remove_if(str.begin(), str.end(), [](unsigned char c)
+        {
+            return std::isspace(c);
+        }), str.end());
+}
+
 static std::string cu_ambiguous_msg(const std::string& name, const compilation_unit& first,
     const compilation_unit& second)
 {
@@ -203,8 +211,9 @@ static dbg_expected<std::vector<parsed_func>> get_functions(const char* target)
         if (code)
             return dbg_error(dbg_error_code::FORMAT_ERROR, get_system_error(code.value()));
 
-        funcs.push_back({ remove_spaces(views[0]), addr, size,
-        position(std::string(views[3]), lineno) });
+        funcs.push_back(
+            { std::string(views[0]), addr, size, position(std::string(views[3]), lineno) }
+        );
     }
     return funcs;
 }
@@ -639,6 +648,7 @@ dbg_error dbg_line_info::get_functions(const char* filename)
             if (ret > pf.addr && ret < pf.addr + pf.size)
                 effrets.push_back(ret);
         }
+        remove_spaces(pf.name);
         _funcs.emplace_back(std::move(pf.name), std::move(pf.pos),
             function_bounds(pf.addr, std::move(effrets)));
     }
