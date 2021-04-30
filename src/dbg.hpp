@@ -110,23 +110,24 @@ namespace tep
         bool equals(const std::string& name, const std::string& cu = "") const;
     };
 
-    class compilation_unit
+    class unit_lines
     {
     private:
         std::string _name;
         std::map<uint32_t, std::vector<uintptr_t>> _lines;
 
     public:
-        compilation_unit(const char* name);
-        compilation_unit(const std::string& name);
-        compilation_unit(std::string&& name);
+        unit_lines(const char* name);
+        unit_lines(const std::string& name);
+        unit_lines(std::string&& name);
 
-        const std::string& name()  const { return _name; }
         void add_address(uint32_t lineno, uintptr_t lineaddr);
+
+        const std::string& name()  const;
         dbg_expected<uintptr_t> line_first_addr(uint32_t lineno) const;
         dbg_expected<uintptr_t> line_addr(uint32_t lineno, size_t order) const;
 
-        friend std::ostream& operator<<(std::ostream& os, const compilation_unit& cu);
+        friend std::ostream& operator<<(std::ostream& os, const unit_lines& cu);
     };
 
     class dbg_line_info
@@ -135,7 +136,7 @@ namespace tep
         static dbg_expected<dbg_line_info> create(const char* filename);
 
     private:
-        std::vector<compilation_unit> _units;
+        std::vector<unit_lines> _lines;
         std::vector<function> _funcs;
 
         dbg_line_info(const char* filename, dbg_error& err);
@@ -143,10 +144,10 @@ namespace tep
     public:
         bool has_dbg_symbols() const;
 
-        dbg_expected<const compilation_unit*> find_cu(const std::string& name) const;
-        dbg_expected<const compilation_unit*> find_cu(const char* name) const;
-        dbg_expected<compilation_unit*> find_cu(const std::string& name);
-        dbg_expected<compilation_unit*> find_cu(const char* name);
+        dbg_expected<const unit_lines*> find_lines(const std::string& name) const;
+        dbg_expected<const unit_lines*> find_lines(const char* name) const;
+        dbg_expected<unit_lines*> find_lines(const std::string& name);
+        dbg_expected<unit_lines*> find_lines(const char* name);
 
         dbg_expected<const function*> find_function(const std::string& name,
             const std::string& cu) const;
@@ -164,9 +165,9 @@ namespace tep
     std::ostream& operator<<(std::ostream& os, const position& p);
     std::ostream& operator<<(std::ostream& os, const function_bounds& fb);
     std::ostream& operator<<(std::ostream& os, const function& f);
-    std::ostream& operator<<(std::ostream& os, const compilation_unit& cu);
+    std::ostream& operator<<(std::ostream& os, const unit_lines& cu);
     std::ostream& operator<<(std::ostream& os, const dbg_line_info& cu);
 
-    bool operator==(const compilation_unit& lhs, const compilation_unit& rhs);
+    bool operator==(const unit_lines& lhs, const unit_lines& rhs);
 
 }

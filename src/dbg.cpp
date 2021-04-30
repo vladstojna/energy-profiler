@@ -76,8 +76,8 @@ static void remove_spaces(std::string& str)
         }), str.end());
 }
 
-static std::string cu_ambiguous_msg(const std::string& name, const compilation_unit& first,
-    const compilation_unit& second)
+static std::string cu_ambiguous_msg(const std::string& name, const unit_lines& first,
+    const unit_lines& second)
 {
     return concat("Compilation unit ", name,
         " ambiguous; found two matches: '", first.name(),
@@ -393,34 +393,39 @@ bool function::equals(const std::string& name, const std::string& cu) const
 }
 
 
-// compilation_unit
+// unit_lines
 
-compilation_unit::compilation_unit(const char* name) :
+unit_lines::unit_lines(const char* name) :
     _name(name),
     _lines()
 {}
 
-compilation_unit::compilation_unit(const std::string& name) :
+unit_lines::unit_lines(const std::string& name) :
     _name(name),
     _lines()
 {}
 
-compilation_unit::compilation_unit(std::string&& name) :
+unit_lines::unit_lines(std::string&& name) :
     _name(std::move(name)),
     _lines()
 {}
 
-void compilation_unit::add_address(uint32_t lineno, uintptr_t lineaddr)
+void unit_lines::add_address(uint32_t lineno, uintptr_t lineaddr)
 {
     _lines[lineno].push_back(lineaddr);
 }
 
-dbg_expected<uintptr_t> compilation_unit::line_first_addr(uint32_t lineno) const
+const std::string& unit_lines::name() const
+{
+    return _name;
+}
+
+dbg_expected<uintptr_t> unit_lines::line_first_addr(uint32_t lineno) const
 {
     return line_addr(lineno, 0);
 }
 
-dbg_expected<uintptr_t> compilation_unit::line_addr(uint32_t lineno, size_t order) const
+dbg_expected<uintptr_t> unit_lines::line_addr(uint32_t lineno, size_t order) const
 {
     assert(order < _lines.size());
     for (const auto& [no, addrs] : _lines)
@@ -442,7 +447,7 @@ dbg_expected<dbg_line_info> dbg_line_info::create(const char* filename)
 }
 
 dbg_line_info::dbg_line_info(const char* filename, dbg_error& err) :
-    _units(),
+    _lines(),
     _funcs()
 {
     assert(filename != nullptr);
@@ -469,28 +474,28 @@ dbg_line_info::dbg_line_info(const char* filename, dbg_error& err) :
 
 bool dbg_line_info::has_dbg_symbols() const
 {
-    return !_units.empty();
+    return !_lines.empty();
 }
 
-dbg_expected<const compilation_unit*> dbg_line_info::find_cu(const std::string& name) const
+dbg_expected<const unit_lines*> dbg_line_info::find_lines(const std::string& name) const
 {
-    return find_cu(name.c_str());
+    return find_lines(name.c_str());
 }
 
-dbg_expected<const compilation_unit*> dbg_line_info::find_cu(const char* name) const
+dbg_expected<const unit_lines*> dbg_line_info::find_lines(const char* name) const
 {
-    return find_cu(name);
+    return find_lines(name);
 }
 
-dbg_expected<compilation_unit*> dbg_line_info::find_cu(const std::string& name)
+dbg_expected<unit_lines*> dbg_line_info::find_lines(const std::string& name)
 {
-    return find_cu(name.c_str());
+    return find_lines(name.c_str());
 }
 
-dbg_expected<compilation_unit*> dbg_line_info::find_cu(const char* name)
+dbg_expected<unit_lines*> dbg_line_info::find_lines(const char* name)
 {
-    compilation_unit* contains = nullptr;
-    for (auto& cu : _units)
+    unit_lines* contains = nullptr;
+    for (auto& cu : _lines)
     {
         // existing path is always absolute
         std::filesystem::path existing_path(cu.name());
@@ -604,11 +609,11 @@ dbg_error dbg_line_info::get_line_info(int fd)
             if ((rv = dwarf_lineaddr(linebuf[ix], &lineaddr, &dw_err)) != DW_DLV_OK)
                 return { dbg_error_code::DWARF_ERROR, dwarf_errmsg(dw_err) };
 
-            dbg_expected<compilation_unit*> cu = find_cu(srcfile);
+            dbg_expected<unit_lines*> cu = find_lines(srcfile);
             if (!cu)
             {
                 if (cu.error().code == dbg_error_code::COMPILATION_UNIT_NOT_FOUND)
-                    _units.emplace_back(srcfile).add_address(lineno, lineaddr);
+                    _lines.emplace_back(srcfile).add_address(lineno, lineaddr);
                 // should never happen since we're comparing absolute paths
                 else if (cu.error().code == dbg_error_code::COMPILATION_UNIT_AMBIGUOUS)
                     return std::move(cu.error());
@@ -687,7 +692,7 @@ std::ostream& tep::operator<<(std::ostream& os, const function& f)
     return os;
 }
 
-std::ostream& tep::operator<<(std::ostream& os, const compilation_unit& cu)
+std::ostream& tep::operator<<(std::ostream& os, const unit_lines& cu)
 {
     for (const auto& [no, addrs] : cu._lines)
     {
@@ -703,8 +708,8 @@ std::ostream& tep::operator<<(std::ostream& os, const compilation_unit& cu)
 
 std::ostream& tep::operator<<(std::ostream& os, const dbg_line_info& dbg_info)
 {
-    for (const auto& cu : dbg_info._units)
-        os << cu;
+    for (const auto& l : dbg_info._lines)
+        os << l;
     os << "\n";
     for (const auto& f : dbg_info._funcs)
         os << f << "\n";
@@ -712,7 +717,7 @@ std::ostream& tep::operator<<(std::ostream& os, const dbg_line_info& dbg_info)
 }
 
 
-bool tep::operator==(const compilation_unit& lhs, const compilation_unit& rhs)
+bool tep::operator==(const unit_lines& lhs, const unit_lines& rhs)
 {
     return lhs.name() == rhs.name();
 }

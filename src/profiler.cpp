@@ -256,14 +256,14 @@ tracer_expected<profiling_results> profiler::run()
             const config_data::position& start = bounds.start();
             const config_data::position& end = bounds.end();
 
-            auto start_cu = _dli.find_cu(start.compilation_unit());
+            auto start_cu = _dli.find_lines(start.compilation_unit());
             if (!start_cu)
             {
                 log(log_lvl::error, "[%d] start compilation unit: %s",
                     _tid, start_cu.error().message.c_str());
                 return tracer_error(tracer_errcode::NO_SYMBOL, std::move(start_cu.error().message));
             }
-            auto end_cu = _dli.find_cu(end.compilation_unit());
+            auto end_cu = _dli.find_lines(end.compilation_unit());
             if (!end_cu)
             {
                 log(log_lvl::error, "[%d] end compilation unit: %s",
