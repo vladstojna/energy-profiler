@@ -107,6 +107,7 @@ namespace tep
         const function_bounds& bounds() const;
 
         bool matches(const std::string& name, const std::string& cu = "") const;
+        bool equals(const std::string& name, const std::string& cu = "") const;
     };
 
     class compilation_unit

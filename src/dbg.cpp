@@ -84,6 +84,17 @@ static std::string func_ambiguous_msg(const std::string& name, const function& f
         "' and '", second.name(), "'");
 }
 
+static std::string func_ambiguous_msg(const std::string& name,
+    const std::vector<const function*>& matches)
+{
+    std::string msg = concat("Function '", name, "' ambiguous; found matches:");
+    for (const function* fptr : matches)
+        msg.append(" '")
+        .append(fptr->name())
+        .append("'");
+    return msg;
+}
+
 static std::string cu_not_found_msg(const std::string& name)
 {
     return concat("Compilation unit '", name, "' not found");
@@ -367,6 +378,11 @@ bool function::matches(const std::string& name, const std::string& cu) const
     return view.substr(0, start.size()) == start && _pos.contains(cu);
 }
 
+bool function::equals(const std::string& name, const std::string& cu) const
+{
+    return _name == name && _pos.contains(cu);
+}
+
 
 // compilation_unit
 
@@ -492,20 +508,43 @@ dbg_expected<compilation_unit*> dbg_line_info::find_cu(const char* name)
 dbg_expected<const function*> dbg_line_info::find_function(const std::string& name,
     const std::string& cu) const
 {
-    const function* match = nullptr;
-    for (const auto& f : _funcs)
+    std::string nospaces = remove_spaces(name);
+    std::vector<const function*> matches;
+
+    // first, iterate all functions and find matched candidates
+    for (const function& f : _funcs)
+        if (f.matches(nospaces, cu))
+            matches.push_back(&f);
+    // no matches found means the function does not exist
+    if (matches.empty())
+        return dbg_error(dbg_error_code::FUNCTION_NOT_FOUND, func_not_found_msg(name));
+
+    // next, iterate all matches and check if any of them equal the function we are
+    // searching for
+    const function* retval = nullptr;
+    for (const function* fptr : matches)
     {
-        if (f.matches(remove_spaces(name), cu))
+        if (fptr->equals(nospaces, cu))
         {
-            if (match != nullptr)
+            // another equal function was previously located
+            if (retval != nullptr)
                 return dbg_error(dbg_error_code::FUNCTION_AMBIGUOUS,
-                    func_ambiguous_msg(name, f, *match));
-            match = &f;
+                    func_ambiguous_msg(name, *retval, *fptr));
+            retval = fptr;
         }
     }
-    if (match == nullptr)
-        return dbg_error(dbg_error_code::FUNCTION_NOT_FOUND, func_not_found_msg(name));
-    return match;
+
+    // if no equal function found
+    if (retval == nullptr)
+    {
+        if (matches.size() > 1)
+            return dbg_error(dbg_error_code::FUNCTION_AMBIGUOUS, func_ambiguous_msg(name, matches));
+        else
+            retval = matches.front();
+    }
+
+    assert(retval != nullptr);
+    return retval;
 }
 
 
