@@ -52,6 +52,10 @@ namespace tep
 
     private:
         tracer_error obtain_idle_results();
+        tracer_error insert_traps_function(const config_data::section& s,
+            const config_data::function& f, uintptr_t entrypoint);
+        tracer_error insert_traps_position(const config_data::section& s,
+            const config_data::position& p, uintptr_t entrypoint);
     };
 
     template<typename D, typename C>
