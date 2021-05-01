@@ -50,11 +50,17 @@ namespace tep
 
         BOUNDS_NO_START,
         BOUNDS_NO_END,
+        BOUNDS_EMPTY,
+        BOUNDS_TOO_MANY,
 
         POS_NO_COMP_UNIT,
         POS_NO_LINE,
         POS_INVALID_COMP_UNIT,
-        POS_INVALID_LINE
+        POS_INVALID_LINE,
+
+        FUNC_INVALID_COMP_UNIT,
+        FUNC_NO_NAME,
+        FUNC_INVALID_NAME
     };
 
     class cfg_error
@@ -110,18 +116,74 @@ namespace tep
             uint32_t line() const;
         };
 
+        class function
+        {
+        private:
+            std::string _cu;
+            std::string _name;
+
+        public:
+            template<typename C, typename N>
+            function(C&& cu, N&& name);
+            template<typename N>
+            function(const char* cu, N&& name);
+            template<typename C>
+            function(C&& cu, const char* name);
+
+            function(const char* cu, const char* name);
+
+            function(const std::string& name);
+            function(std::string&& name);
+            function(const char* name);
+
+            const std::string& cu() const;
+            const std::string& name() const;
+
+            bool has_cu() const;
+        };
+
         class bounds
         {
         private:
-            config_data::position _start;
-            config_data::position _end;
+            enum class type;
+
+            type _tag;
+            union
+            {
+                struct
+                {
+                    position start;
+                    position end;
+                } _positions;
+                function _func;
+            };
+
+            void copy_data(const bounds& other);
+            void move_data(bounds&& other);
 
         public:
             template<typename S, typename E>
             bounds(S&& s, E&& e);
 
-            const config_data::position& start() const;
-            const config_data::position& end() const;
+            bounds(const function& func);
+            bounds(function&& func);
+
+            ~bounds();
+
+            bounds(const bounds& other);
+            bounds(bounds&& other);
+
+            bounds& operator=(const bounds& other);
+            bounds& operator=(bounds&& other);
+
+            bool has_positions() const;
+            bool has_function() const;
+
+            const position& start() const;
+            const position& end() const;
+            const function& func() const;
+
+            friend std::ostream& operator<<(std::ostream&, const bounds&);
         };
 
         class params
@@ -204,12 +266,14 @@ namespace tep
     std::ostream& operator<<(std::ostream& os, const config_data::profiling_method& pm);
     std::ostream& operator<<(std::ostream& os, const config_data::params& p);
     std::ostream& operator<<(std::ostream& os, const config_data::position& p);
+    std::ostream& operator<<(std::ostream& os, const config_data::function& f);
     std::ostream& operator<<(std::ostream& os, const config_data::bounds& b);
     std::ostream& operator<<(std::ostream& os, const config_data::section& s);
     std::ostream& operator<<(std::ostream& os, const config_data& cd);
 
     bool operator==(const config_data::params& lhs, const config_data::params& rhs);
     bool operator==(const config_data::position& lhs, const config_data::position& rhs);
+    bool operator==(const config_data::function& lhs, const config_data::function& rhs);
     bool operator==(const config_data::bounds& lhs, const config_data::bounds& rhs);
     bool operator==(const config_data::section& lhs, const config_data::section& rhs);
 

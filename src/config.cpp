@@ -60,11 +60,17 @@ static const char* error_messages[] =
 
     "bounds: node <start></start> not found",
     "bounds: node <end></end> not found",
+    "bounds: cannot be empty: must contain either <func/> or <start/> and <end/>",
+    "bounds: too many nodes: must contain either <func/> or <start/> and <end/>",
 
-    "Node <cu></cu> not found",
-    "Node <line></line> not found",
-    "Invalid compilation unit: cannot be empty",
-    "Invalid line number: must be a positive integer"
+    "start/end: node <cu></cu> or attribute 'cu' not found",
+    "start/end: node <line></line> or attribute 'line' not found",
+    "start/end: invalid compilation unit: cannot be empty",
+    "start/end: invalid line number: must be a positive integer",
+
+    "func: invalid compilation unit: cannot be empty",
+    "func: attribute 'name' not found",
+    "func: invalid name: cannot be empty"
 };
 
 
@@ -241,27 +247,64 @@ cfg_expected<config_data::position> get_position(const pugi::xml_node& pos_node)
     return { std::move(cu.value()), lineno.value() };
 }
 
+cfg_expected<config_data::function> get_function(const pugi::xml_node& func_node)
+{
+    using namespace pugi;
+    // attribute "cu" exists
+    std::string cu;
+    xml_attribute cu_attr = func_node.attribute("cu");
+    if (cu_attr)
+    {
+        // if attribute exists - it cannot be empty
+        if (!*cu_attr.value())
+            return cfg_error(cfg_error_code::FUNC_INVALID_COMP_UNIT);
+        cu.append(cu_attr.value());
+    }
+    xml_attribute name_attr = func_node.attribute("name");
+    if (!name_attr)
+        return cfg_error(cfg_error_code::FUNC_NO_NAME);
+    if (!*name_attr.value())
+        return cfg_error(cfg_error_code::FUNC_INVALID_NAME);
+    return config_data::function(std::move(cu), name_attr.value());
+}
+
 cfg_expected<config_data::bounds> get_bounds(const pugi::xml_node& bounds)
 {
     using namespace pugi;
-    // <start></start>
-    xml_node start = bounds.child("start");
-    if (!start)
-        return cfg_error(cfg_error_code::BOUNDS_NO_START);
-    // <end></end>
-    xml_node end = bounds.child("end");
-    if (!end)
-        return cfg_error(cfg_error_code::BOUNDS_NO_END);
+    // <start/>
+    xml_node nstart = bounds.child("start");
+    // <end/>
+    xml_node nend = bounds.child("end");
+    // <func/>
+    xml_node nfunc = bounds.child("func");
 
-    // position error checks
-    cfg_expected<config_data::position> pstart = get_position(start);
-    if (!pstart)
-        return std::move(pstart.error());
-    cfg_expected<config_data::position> pend = get_position(end);
-    if (!pend)
-        return std::move(pend.error());
+    if (nstart || nend)
+    {
+        if (nfunc)
+            return cfg_error(cfg_error_code::BOUNDS_TOO_MANY);
+        if (!nend)
+            return cfg_error(cfg_error_code::BOUNDS_NO_END);
+        if (!nstart)
+            return cfg_error(cfg_error_code::BOUNDS_NO_START);
 
-    return { std::move(pstart.value()), std::move(pend.value()) };
+        cfg_expected<config_data::position> pstart = get_position(nstart);
+        if (!pstart)
+            return std::move(pstart.error());
+        cfg_expected<config_data::position> pend = get_position(nend);
+        if (!pend)
+            return std::move(pend.error());
+
+        return { std::move(pstart.value()), std::move(pend.value()) };
+    }
+    else if (nfunc)
+    {
+        assert(!nstart && !nend);
+        cfg_expected<config_data::function> func = get_function(nfunc);
+        if (!func)
+            return std::move(func.error());
+        return std::move(func.value());
+    }
+    return cfg_error(cfg_error_code::BOUNDS_EMPTY);
 }
 
 cfg_expected<config_data::profiling_method> get_method(const pugi::xml_node& nsection,
@@ -372,12 +415,130 @@ uint32_t config_data::position::line() const
 }
 
 
+// function
+
+template<typename C, typename N>
+config_data::function::function(C&& cu, N&& name) :
+    _cu(std::forward<C>(cu)),
+    _name(std::forward<N>(name))
+{}
+
+template<typename N>
+config_data::function::function(const char* cu, N&& name) :
+    _cu(cu),
+    _name(std::forward<N>(name))
+{}
+
+template<typename C>
+config_data::function::function(C&& cu, const char* name) :
+    _cu(std::forward<C>(cu)),
+    _name(name)
+{}
+
+template
+config_data::function::function(const std::string&, const std::string&);
+
+template
+config_data::function::function(const std::string&, std::string&&);
+
+template
+config_data::function::function(const std::string&, const char*);
+
+template
+config_data::function::function(std::string&&, const std::string&);
+
+template
+config_data::function::function(std::string&&, std::string&&);
+
+template
+config_data::function::function(std::string&&, const char*);
+
+template
+config_data::function::function(const char*, const std::string&);
+
+template
+config_data::function::function(const char*, std::string&&);
+
+config_data::function::function(const char* cu, const char* name) :
+    _cu(cu),
+    _name(name)
+{}
+
+config_data::function::function(const std::string& name) :
+    _cu(),
+    _name(name)
+{}
+
+config_data::function::function(std::string&& name) :
+    _cu(),
+    _name(std::move(name))
+{}
+
+config_data::function::function(const char* name) :
+    _cu(),
+    _name(name)
+{}
+
+const std::string& config_data::function::cu() const
+{
+    return _cu;
+}
+
+const std::string& config_data::function::name() const
+{
+    return _name;
+}
+
+bool config_data::function::has_cu() const
+{
+    return !_cu.empty();
+}
+
+
 // bounds
+
+enum class config_data::bounds::type
+{
+    position,
+    function
+};
+
+void config_data::bounds::copy_data(const bounds& other)
+{
+    switch (_tag)
+    {
+    case type::position:
+        new (&_positions.start) auto(other._positions.start);
+        new (&_positions.end) auto(other._positions.end);
+        break;
+    case type::function:
+        new (&_func) auto(other._func);
+        break;
+    default:
+        assert(false);
+    }
+}
+
+void config_data::bounds::move_data(bounds&& other)
+{
+    switch (_tag)
+    {
+    case type::position:
+        new (&_positions.start) auto(std::move(other._positions.start));
+        new (&_positions.end) auto(std::move(other._positions.end));
+        break;
+    case type::function:
+        new (&_func) auto(std::move(other._func));
+        break;
+    default:
+        assert(false);
+    }
+}
 
 template<typename S, typename E>
 config_data::bounds::bounds(S&& s, E&& e) :
-    _start(std::forward<S>(s)),
-    _end(std::forward<E>(e))
+    _tag(type::position),
+    _positions{ std::forward<S>(s), std::forward<E>(e) }
 {}
 
 template
@@ -392,14 +553,92 @@ config_data::bounds::bounds(config_data::position&&, const config_data::position
 template
 config_data::bounds::bounds(config_data::position&&, config_data::position&&);
 
+config_data::bounds::bounds(const function& func) :
+    _tag(type::function),
+    _func(func)
+{}
+
+config_data::bounds::bounds(function&& func) :
+    _tag(type::function),
+    _func(std::move(func))
+{}
+
+config_data::bounds::~bounds()
+{
+    switch (_tag)
+    {
+    case type::position:
+        _positions.start.~position();
+        _positions.end.~position();
+        break;
+    case type::function:
+        _func.~function();
+        break;
+    default:
+        assert(false);
+    }
+}
+
+config_data::bounds::bounds(const bounds& other) :
+    _tag(other._tag)
+{
+    copy_data(other);
+}
+
+config_data::bounds::bounds(bounds&& other) :
+    _tag(std::move(other._tag))
+{
+    move_data(std::move(other));
+}
+
+config_data::bounds& config_data::bounds::operator=(const bounds& other)
+{
+    if (_tag != other._tag)
+    {
+        this->~bounds();
+        _tag = other._tag;
+    }
+    copy_data(other);
+    return *this;
+}
+
+config_data::bounds& config_data::bounds::operator=(bounds&& other)
+{
+    if (_tag != other._tag)
+    {
+        this->~bounds();
+        _tag = std::move(other._tag);
+    }
+    move_data(std::move(other));
+    return *this;
+}
+
+bool config_data::bounds::has_positions() const
+{
+    return _tag == type::position;
+}
+
+bool config_data::bounds::has_function() const
+{
+    return _tag == type::function;
+}
+
 const config_data::position& config_data::bounds::start() const
 {
-    return _start;
+    assert(_tag == type::position);
+    return _positions.start;
 }
 
 const config_data::position& config_data::bounds::end() const
 {
-    return _end;
+    assert(_tag == type::position);
+    return _positions.end;
+}
+
+const config_data::function& config_data::bounds::func() const
+{
+    assert(_tag == type::function);
+    return _func;
 }
 
 
@@ -643,9 +882,27 @@ std::ostream& tep::operator<<(std::ostream& os, const config_data::position& p)
     return os;
 }
 
-std::ostream& tep::operator<<(std::ostream& os, const config_data::bounds& s)
+std::ostream& tep::operator<<(std::ostream& os, const config_data::function& f)
 {
-    os << s.start() << " - " << s.end();
+    if (f.has_cu())
+        os << f.cu() << ":";
+    os << f.name();
+    return os;
+}
+
+std::ostream& tep::operator<<(std::ostream& os, const config_data::bounds& b)
+{
+    switch (b._tag)
+    {
+    case config_data::bounds::type::position:
+        os << b.start() << " - " << b.end();
+        break;
+    case config_data::bounds::type::function:
+        os << b.func();
+        break;
+    default:
+        assert(false);
+    }
     return os;
 }
 
@@ -683,6 +940,11 @@ bool tep::operator==(const config_data::params& lhs, const config_data::params& 
 bool tep::operator==(const config_data::position& lhs, const config_data::position& rhs)
 {
     return lhs.compilation_unit() == rhs.compilation_unit() && lhs.line() == rhs.line();
+}
+
+bool tep::operator==(const config_data::function& lhs, const config_data::function& rhs)
+{
+    return lhs.cu() == rhs.cu() && lhs.name() == rhs.name();
 }
 
 bool tep::operator==(const config_data::bounds& lhs, const config_data::bounds& rhs)

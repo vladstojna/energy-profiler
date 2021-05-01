@@ -10,6 +10,7 @@
 
 #include <algorithm>
 #include <cassert>
+#include <sstream>
 
 #include <unistd.h>
 #include <sys/types.h>
@@ -22,6 +23,13 @@ using namespace tep;
 
 
 // start helper functions
+
+tracer_error no_return_addresses(const std::string& func_name)
+{
+    return tracer_error(tracer_errcode::UNSUPPORTED, std::string("unsupported: function '")
+        .append(func_name)
+        .append("' has no return addresses, possibly optimized away"));
+}
 
 // inserts trap at 'addr'
 // returns either error or original word at address 'addr'
@@ -202,54 +210,25 @@ tracer_expected<profiling_results> profiler::run()
 
     for (const auto& sec : _cd.sections())
     {
-        const config_data::position& start = sec.bounds().start();
-        const config_data::position& end = sec.bounds().end();
+        const config_data::bounds& bounds = sec.bounds();
 
-        auto start_cu = _dli.find_cu(start.compilation_unit());
-        if (!start_cu)
+        if (bounds.has_function())
         {
-            log(log_lvl::error, "[%d] start compilation unit: %s",
-                _tid, start_cu.error().message.c_str());
-            return tracer_error(tracer_errcode::NO_SYMBOL, std::move(start_cu.error().message));
+            tracer_error err = insert_traps_function(sec, bounds.func(), entrypoint);
+            if (err)
+                return err;
         }
-        auto end_cu = _dli.find_cu(end.compilation_unit());
-        if (!end_cu)
+        else if (bounds.has_positions())
         {
-            log(log_lvl::error, "[%d] end compilation unit: %s",
-                _tid, end_cu.error().message.c_str());
-            return tracer_error(tracer_errcode::NO_SYMBOL, std::move(end_cu.error().message));
+            tracer_error err = insert_traps_position(sec, bounds.start(), entrypoint);
+            if (err)
+                return err;
+            err = insert_traps_position(sec, bounds.end(), entrypoint);
+            if (err)
+                return err;
         }
-
-        auto start_offset = start_cu.value()->line_first_addr(start.line());
-        if (!start_offset)
-        {
-            log(log_lvl::error, "[%d] start compilation unit: invalid line %" PRIu32, _tid, start.line());
-            return tracer_error(tracer_errcode::NO_SYMBOL, std::move(start_offset.error().message));
-        }
-        auto end_offset = end_cu.value()->line_first_addr(end.line());
-        if (!end_offset)
-        {
-            log(log_lvl::error, "[%d] start compilation unit: invalid line %" PRIu32, _tid, end.line());
-            return tracer_error(tracer_errcode::NO_SYMBOL, std::move(end_offset.error().message));
-        }
-
-        log(log_lvl::debug, "[%d] start offset 0x%" PRIxPTR, _tid, start_offset.value());
-        log(log_lvl::debug, "[%d] end offset 0x%" PRIxPTR, _tid, end_offset.value());
-
-        uintptr_t start_addr = entrypoint + start_offset.value();
-        uintptr_t end_addr = entrypoint + end_offset.value();
-        auto orig_word_start = insert_trap(_tid, waited_pid, start_addr);
-        if (!orig_word_start)
-            return std::move(orig_word_start.error());
-        auto orig_word_end = insert_trap(_tid, waited_pid, end_addr);
-        if (!orig_word_end)
-            return std::move(orig_word_end.error());
-        _traps.emplace(start_addr, orig_word_start.value(), sec);
-        log(log_lvl::info, "[%d] inserted trap @ 0x%" PRIxPTR " (offset 0x%" PRIxPTR ")",
-            _tid, start_addr, start_addr - entrypoint);
-        _traps.emplace(end_addr, orig_word_end.value(), sec);
-        log(log_lvl::info, "[%d] inserted trap @ 0x%" PRIxPTR " (offset 0x%" PRIxPTR ")",
-            _tid, end_addr, end_addr - entrypoint);
+        else
+            assert(false);
     }
 
     // first tracer has the same tracee tgid and tid, since there is only one tracee at this point
@@ -301,5 +280,78 @@ tracer_error profiler::obtain_idle_results()
     }
     _idle = std::move(results.value());
     log(log_lvl::success, "[%d] successfully gathered idle results", _tid);
+    return tracer_error::success();
+}
+
+tracer_error profiler::insert_traps_function(const config_data::section& sec,
+    const config_data::function& cfunc, uintptr_t entrypoint)
+{
+    dbg_expected<const function*> func_res = _dli.find_function(cfunc.name(), cfunc.cu());
+    if (!func_res)
+    {
+        log(log_lvl::error, "[%d] function: %s", _tid, func_res.error().message.c_str());
+        return tracer_error(tracer_errcode::NO_SYMBOL, std::move(func_res.error().message));
+    }
+    std::stringstream ss;
+    const function& func = *func_res.value();
+    const function_bounds& fbnds = func.bounds();
+
+    ss << func;
+    log(log_lvl::success, "[%d] found function: %s", _tid, ss.str().c_str());
+
+    if (fbnds.returns().empty())
+        return no_return_addresses(func.name());
+
+    uintptr_t eaddr = entrypoint + fbnds.start();
+    tracer_expected<long> origw = insert_trap(_tid, _child, eaddr);
+    if (!origw)
+        return std::move(origw.error());
+    _traps.emplace(eaddr, origw.value(), sec);
+    log(log_lvl::info, "[%d] inserted trap at function entry @ 0x%" PRIxPTR
+        " (offset 0x%" PRIxPTR ")", _tid, eaddr, eaddr - entrypoint);
+
+    for (uintptr_t ret : fbnds.returns())
+    {
+        eaddr = entrypoint + ret;
+        origw = insert_trap(_tid, _child, eaddr);
+        if (!origw)
+            return std::move(origw.error());
+        _traps.emplace(eaddr, origw.value(), sec);
+        log(log_lvl::info, "[%d] inserted trap at function return @ 0x%" PRIxPTR
+            " (offset 0x%" PRIxPTR ")", _tid, eaddr, eaddr - entrypoint);
+    }
+    return tracer_error::success();
+}
+
+tracer_error profiler::insert_traps_position(const config_data::section& sec,
+    const config_data::position& p, uintptr_t entrypoint)
+{
+    dbg_expected<unit_lines*> ul = _dli.find_lines(p.compilation_unit());
+    if (!ul)
+    {
+        log(log_lvl::error, "[%d] unit lines: %s", _tid, ul.error().message.c_str());
+        return tracer_error(tracer_errcode::NO_SYMBOL, std::move(ul.error().message));
+    }
+    dbg_expected<uintptr_t> offset = ul.value()->line_first_addr(p.line());
+    if (!offset)
+    {
+        log(log_lvl::error, "[%d] unit lines: invalid line %" PRIu32, _tid, p.line());
+        return tracer_error(tracer_errcode::NO_SYMBOL, std::move(offset.error().message));
+    }
+
+    std::stringstream ss;
+    ss << p;
+    std::string pstr = ss.str();
+    log(log_lvl::debug, "[%d] line %s offset: 0x%" PRIxPTR, _tid, pstr.c_str(), offset.value());
+
+    uintptr_t eaddr = entrypoint + offset.value();
+    tracer_expected<long> origw = insert_trap(_tid, _child, eaddr);
+    if (!origw)
+        return std::move(origw.error());
+    _traps.emplace(eaddr, origw.value(), sec);
+    log(log_lvl::info, "[%d] inserted trap @ 0x%" PRIxPTR " (offset 0x%" PRIxPTR ")",
+        _tid, eaddr, eaddr - entrypoint);
+
+    log(log_lvl::success, "[%d] inserted trap on line: %s", _tid, pstr.c_str());
     return tracer_error::success();
 }
