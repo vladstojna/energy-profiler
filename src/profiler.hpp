@@ -17,7 +17,7 @@ namespace tep
     class profiler
     {
     public:
-        template<typename D = dbg_line_info, typename C = config_data>
+        template<typename D = dbg_info, typename C = config_data>
         static cmmn::expected<profiler, tracer_error> create(pid_t child, const flags& f,
             D&& dli, C&& cd);
 
@@ -25,26 +25,26 @@ namespace tep
         pid_t _tid;
         pid_t _child;
         flags _flags;
-        dbg_line_info _dli;
+        dbg_info _dli;
         config_data _cd;
         reader_container _readers;
         trap_set _traps;
         idle_results _idle;
 
         profiler(pid_t child, const flags& flags,
-            const dbg_line_info& dli, const config_data& cd, tracer_error& err);
+            const dbg_info& dli, const config_data& cd, tracer_error& err);
 
         profiler(pid_t child, const flags& flags,
-            const dbg_line_info& dli, config_data&& cd, tracer_error& err);
+            const dbg_info& dli, config_data&& cd, tracer_error& err);
 
         profiler(pid_t child, const flags& flags,
-            dbg_line_info&& dli, const config_data& cd, tracer_error& err);
+            dbg_info&& dli, const config_data& cd, tracer_error& err);
 
         profiler(pid_t child, const flags& flags,
-            dbg_line_info&& dli, config_data&& cd, tracer_error& err);
+            dbg_info&& dli, config_data&& cd, tracer_error& err);
 
     public:
-        const dbg_line_info& debug_line_info() const;
+        const dbg_info& debug_line_info() const;
         const config_data& config() const;
         const trap_set& traps() const;
 

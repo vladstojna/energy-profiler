@@ -130,16 +130,16 @@ namespace tep
         friend std::ostream& operator<<(std::ostream& os, const unit_lines& cu);
     };
 
-    class dbg_line_info
+    class dbg_info
     {
     public:
-        static dbg_expected<dbg_line_info> create(const char* filename);
+        static dbg_expected<dbg_info> create(const char* filename);
 
     private:
         std::vector<unit_lines> _lines;
         std::vector<function> _funcs;
 
-        dbg_line_info(const char* filename, dbg_error& err);
+        dbg_info(const char* filename, dbg_error& err);
 
     public:
         bool has_dbg_symbols() const;
@@ -152,9 +152,13 @@ namespace tep
         dbg_expected<const function*> find_function(const std::string& name,
             const std::string& cu) const;
 
-        friend std::ostream& operator<<(std::ostream& os, const dbg_line_info& cu);
+        friend std::ostream& operator<<(std::ostream& os, const dbg_info& cu);
 
     private:
+        template<typename T>
+        static auto find_lines_impl(T& instance, const char* name)
+            -> decltype(instance.find_lines(name));
+
         dbg_error get_line_info(int fd);
         dbg_error get_functions(const char* filename);
     };
@@ -166,7 +170,7 @@ namespace tep
     std::ostream& operator<<(std::ostream& os, const function_bounds& fb);
     std::ostream& operator<<(std::ostream& os, const function& f);
     std::ostream& operator<<(std::ostream& os, const unit_lines& cu);
-    std::ostream& operator<<(std::ostream& os, const dbg_line_info& cu);
+    std::ostream& operator<<(std::ostream& os, const dbg_info& cu);
 
     bool operator==(const unit_lines& lhs, const unit_lines& rhs);
 
