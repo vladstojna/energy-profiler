@@ -154,9 +154,9 @@ static dbg_expected<std::vector<uintptr_t>> get_return_addresses(const char* tar
 static std::vector<std::string_view> split_line(std::string_view line, std::string_view delim)
 {
     std::vector<std::string_view> tokens;
-    std::string::size_type current = 0;
-    std::string::size_type next;
-    while ((next = line.find_first_of(delim, current)) != std::string::npos)
+    std::string_view::size_type current = 0;
+    std::string_view::size_type next;
+    while ((next = line.find_first_of(delim, current)) != std::string_view::npos)
     {
         tokens.emplace_back(&line[current], next - current);
         current = next + delim.length();
@@ -413,7 +413,7 @@ unit_lines::unit_lines(std::string&& name) :
 
 void unit_lines::add_address(uint32_t lineno, uintptr_t lineaddr)
 {
-    _lines[lineno].push_back(lineaddr);
+    _lines[lineno].insert(lineaddr);
 }
 
 const std::string& unit_lines::name() const
@@ -421,20 +421,46 @@ const std::string& unit_lines::name() const
     return _name;
 }
 
-dbg_expected<uintptr_t> unit_lines::line_first_addr(uint32_t lineno) const
+dbg_expected<uintptr_t> unit_lines::lowest_addr(uint32_t lineno) const
 {
-    return line_addr(lineno, 0);
+    return get_addr_impl(lineno, &unit_lines::get_lowest_addr);
 }
 
-dbg_expected<uintptr_t> unit_lines::line_addr(uint32_t lineno, size_t order) const
+dbg_expected<uintptr_t> unit_lines::highest_addr(uint32_t lineno) const
 {
-    assert(order < _lines.size());
-    for (const auto& [no, addrs] : _lines)
-        if (no >= lineno)
-            return addrs[order];
+    return get_addr_impl(lineno, &unit_lines::get_highest_addr);
+}
+
+dbg_expected<uintptr_t> unit_lines::get_addr_impl(uint32_t lineno, addr_getter fn) const
+{
+    using it = decltype(_lines)::const_iterator;
+    std::pair<it, it> eqrange = _lines.equal_range(lineno);
+    // if there is an element not less than lineno
+    if (eqrange.first != _lines.end())
+        return std::invoke(fn, *this, eqrange.first->second);
+    // otherwise, the first element greater than lineno
+    if (eqrange.second != _lines.end())
+        return std::invoke(fn, *this, eqrange.second->second);
     return dbg_error(dbg_error_code::INVALID_LINE, "Invalid line");
 }
 
+dbg_expected<uintptr_t> unit_lines::get_lowest_addr(
+    const decltype(_lines)::mapped_type& addrs) const
+{
+    assert(!addrs.empty());
+    if (addrs.empty())
+        return dbg_error(dbg_error_code::INVALID_LINE, "Line has no addresses");
+    return *addrs.begin();
+}
+
+dbg_expected<uintptr_t> unit_lines::get_highest_addr(
+    const decltype(_lines)::mapped_type& addrs) const
+{
+    assert(!addrs.empty());
+    if (addrs.empty())
+        return dbg_error(dbg_error_code::INVALID_LINE, "Line has no addresses");
+    return *addrs.rbegin();
+}
 
 // begin dbg_info
 
