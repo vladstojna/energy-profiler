@@ -101,7 +101,7 @@ nrgprf::reader_gpu create_gpu_reader(pid_t tid, const config_data& cd, tracer_er
 
 
 profiler::profiler(pid_t child, const flags& flags,
-    const dbg_line_info& dli, const config_data& cd, tracer_error& err) :
+    const dbg_info& dli, const config_data& cd, tracer_error& err) :
     _tid(gettid()),
     _child(child),
     _flags(flags),
@@ -111,7 +111,7 @@ profiler::profiler(pid_t child, const flags& flags,
 {}
 
 profiler::profiler(pid_t child, const flags& flags,
-    const dbg_line_info& dli, config_data&& cd, tracer_error& err) :
+    const dbg_info& dli, config_data&& cd, tracer_error& err) :
     _tid(gettid()),
     _child(child),
     _flags(flags),
@@ -121,7 +121,7 @@ profiler::profiler(pid_t child, const flags& flags,
 {}
 
 profiler::profiler(pid_t child, const flags& flags,
-    dbg_line_info&& dli, const config_data& cd, tracer_error& err) :
+    dbg_info&& dli, const config_data& cd, tracer_error& err) :
     _tid(gettid()),
     _child(child),
     _flags(flags),
@@ -131,7 +131,7 @@ profiler::profiler(pid_t child, const flags& flags,
 {}
 
 profiler::profiler(pid_t child, const flags& flags,
-    dbg_line_info&& dli, config_data&& cd, tracer_error& err) :
+    dbg_info&& dli, config_data&& cd, tracer_error& err) :
     _tid(gettid()),
     _child(child),
     _flags(flags),
@@ -140,7 +140,7 @@ profiler::profiler(pid_t child, const flags& flags,
     _readers(cd, err)
 {}
 
-const dbg_line_info& profiler::debug_line_info() const
+const dbg_info& profiler::debug_line_info() const
 {
     return _dli;
 }

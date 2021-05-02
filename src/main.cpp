@@ -22,7 +22,7 @@ int main(int argc, char* argv[])
 
     int idx = args.value().target_index();
 
-    dbg_expected<dbg_line_info> dbg_info = dbg_line_info::create(argv[idx]);
+    dbg_expected<dbg_info> dbg_info = dbg_info::create(argv[idx]);
     if (!dbg_info)
     {
         std::cerr << dbg_info.error() << std::endl;

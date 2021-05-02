@@ -436,18 +436,18 @@ dbg_expected<uintptr_t> unit_lines::line_addr(uint32_t lineno, size_t order) con
 }
 
 
-// begin dbg_line_info
+// begin dbg_info
 
-dbg_expected<dbg_line_info> dbg_line_info::create(const char* filename)
+dbg_expected<dbg_info> dbg_info::create(const char* filename)
 {
     dbg_error error(dbg_error::success());
-    dbg_line_info dli(filename, error);
+    dbg_info dli(filename, error);
     if (error)
         return error;
     return dli;
 }
 
-dbg_line_info::dbg_line_info(const char* filename, dbg_error& err) :
+dbg_info::dbg_info(const char* filename, dbg_error& err) :
     _lines(),
     _funcs()
 {
@@ -473,32 +473,32 @@ dbg_line_info::dbg_line_info(const char* filename, dbg_error& err) :
         err = std::move(error);
 }
 
-bool dbg_line_info::has_dbg_symbols() const
+bool dbg_info::has_dbg_symbols() const
 {
     return !_lines.empty();
 }
 
-dbg_expected<const unit_lines*> dbg_line_info::find_lines(const std::string& name) const
+dbg_expected<const unit_lines*> dbg_info::find_lines(const std::string& name) const
 {
     return find_lines(name.c_str());
 }
 
-dbg_expected<const unit_lines*> dbg_line_info::find_lines(const char* name) const
+dbg_expected<const unit_lines*> dbg_info::find_lines(const char* name) const
 {
     return find_lines_impl(*this, name);
 }
 
-dbg_expected<unit_lines*> dbg_line_info::find_lines(const std::string& name)
+dbg_expected<unit_lines*> dbg_info::find_lines(const std::string& name)
 {
     return find_lines(name.c_str());
 }
 
-dbg_expected<unit_lines*> dbg_line_info::find_lines(const char* name)
+dbg_expected<unit_lines*> dbg_info::find_lines(const char* name)
 {
     return find_lines_impl(*this, name);
 }
 
-dbg_expected<const function*> dbg_line_info::find_function(const std::string& name,
+dbg_expected<const function*> dbg_info::find_function(const std::string& name,
     const std::string& cu) const
 {
     std::string nospaces = remove_spaces(name);
@@ -540,7 +540,7 @@ dbg_expected<const function*> dbg_line_info::find_function(const std::string& na
 }
 
 template<typename T>
-auto dbg_line_info::find_lines_impl(T& instance, const char* name)
+auto dbg_info::find_lines_impl(T& instance, const char* name)
 -> decltype(instance.find_lines(name))
 {
     assert(name != nullptr);
@@ -568,7 +568,7 @@ auto dbg_line_info::find_lines_impl(T& instance, const char* name)
 }
 
 // TODO: need to rewrite this using newer functions
-dbg_error dbg_line_info::get_line_info(int fd)
+dbg_error dbg_info::get_line_info(int fd)
 {
     int rv;
     Dwarf_Debug dw_dbg;
@@ -641,7 +641,7 @@ dbg_error dbg_line_info::get_line_info(int fd)
     return dbg_error::success();
 }
 
-dbg_error dbg_line_info::get_functions(const char* filename)
+dbg_error dbg_info::get_functions(const char* filename)
 {
     dbg_expected<std::vector<uintptr_t>> returns = get_return_addresses(filename);
     if (!returns)
@@ -711,7 +711,7 @@ std::ostream& tep::operator<<(std::ostream& os, const unit_lines& cu)
     return os;
 }
 
-std::ostream& tep::operator<<(std::ostream& os, const dbg_line_info& dbg_info)
+std::ostream& tep::operator<<(std::ostream& os, const dbg_info& dbg_info)
 {
     for (const auto& l : dbg_info._lines)
         os << l;
