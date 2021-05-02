@@ -155,6 +155,10 @@ namespace tep
         friend std::ostream& operator<<(std::ostream& os, const dbg_line_info& cu);
 
     private:
+        template<typename T>
+        static auto find_lines_impl(T& instance, const char* name)
+            -> decltype(instance.find_lines(name));
+
         dbg_error get_line_info(int fd);
         dbg_error get_functions(const char* filename);
     };

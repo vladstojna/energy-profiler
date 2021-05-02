@@ -76,23 +76,23 @@ static void remove_spaces(std::string& str)
         }), str.end());
 }
 
-static std::string cu_ambiguous_msg(const std::string& name, const unit_lines& first,
+static dbg_error cu_ambiguous(const std::string& name, const unit_lines& first,
     const unit_lines& second)
 {
-    return concat("Compilation unit ", name,
-        " ambiguous; found two matches: '", first.name(),
-        "' and '", second.name(), "'");
+    return dbg_error(dbg_error_code::COMPILATION_UNIT_AMBIGUOUS,
+        concat("Compilation unit ", name, " ambiguous; found two matches: '",
+            first.name(), "' and '", second.name(), "'"));
 }
 
-static std::string func_ambiguous_msg(const std::string& name, const function& first,
+static dbg_error func_ambiguous(const std::string& name, const function& first,
     const function& second)
 {
-    return concat("Function ", name,
-        " ambiguous; found two matches: '", first.name(),
-        "' and '", second.name(), "'");
+    return dbg_error(dbg_error_code::FUNCTION_AMBIGUOUS,
+        concat("Function ", name, " ambiguous; found two matches: '",
+            first.name(), "' and '", second.name(), "'"));
 }
 
-static std::string func_ambiguous_msg(const std::string& name,
+static dbg_error func_ambiguous(const std::string& name,
     const std::vector<const function*>& matches)
 {
     std::string msg = concat("Function '", name, "' ambiguous; found matches:");
@@ -100,17 +100,19 @@ static std::string func_ambiguous_msg(const std::string& name,
         msg.append(" '")
         .append(fptr->name())
         .append("'");
-    return msg;
+    return dbg_error(dbg_error_code::FUNCTION_AMBIGUOUS, std::move(msg));
 }
 
-static std::string cu_not_found_msg(const std::string& name)
+static dbg_error cu_not_found(const std::string& name)
 {
-    return concat("Compilation unit '", name, "' not found");
+    return dbg_error(dbg_error_code::COMPILATION_UNIT_NOT_FOUND,
+        concat("Compilation unit '", name, "' not found"));
 }
 
-static std::string func_not_found_msg(const std::string& name)
+static dbg_error func_not_found(const std::string& name)
 {
-    return concat("Function '", name, "' not found");
+    return dbg_error(dbg_error_code::FUNCTION_NOT_FOUND,
+        concat("Function '", name, "' not found"));
 }
 
 static dbg_expected<std::vector<uintptr_t>> get_return_addresses(const char* target)
@@ -149,8 +151,7 @@ static dbg_expected<std::vector<uintptr_t>> get_return_addresses(const char* tar
     return addresses;
 }
 
-static std::vector<std::string_view> split_line(const std::string& line,
-    const std::string_view& delim)
+static std::vector<std::string_view> split_line(std::string_view line, std::string_view delim)
 {
     std::vector<std::string_view> tokens;
     std::string::size_type current = 0;
@@ -484,7 +485,7 @@ dbg_expected<const unit_lines*> dbg_line_info::find_lines(const std::string& nam
 
 dbg_expected<const unit_lines*> dbg_line_info::find_lines(const char* name) const
 {
-    return find_lines(name);
+    return find_lines_impl(*this, name);
 }
 
 dbg_expected<unit_lines*> dbg_line_info::find_lines(const std::string& name)
@@ -494,29 +495,7 @@ dbg_expected<unit_lines*> dbg_line_info::find_lines(const std::string& name)
 
 dbg_expected<unit_lines*> dbg_line_info::find_lines(const char* name)
 {
-    unit_lines* contains = nullptr;
-    for (auto& cu : _lines)
-    {
-        // existing path is always absolute
-        std::filesystem::path existing_path(cu.name());
-        std::filesystem::path subpath(name);
-
-        if (existing_path == subpath)
-            return &cu;
-        // check if name is a subpath of an existing CU path
-        else if (std::search(existing_path.begin(), existing_path.end(),
-            subpath.begin(), subpath.end()) != existing_path.end())
-        {
-            if (contains != nullptr)
-                return dbg_error(dbg_error_code::COMPILATION_UNIT_AMBIGUOUS,
-                    cu_ambiguous_msg(name, *contains, cu));
-            contains = &cu;
-        }
-    }
-    if (contains == nullptr)
-        return dbg_error(dbg_error_code::COMPILATION_UNIT_NOT_FOUND,
-            cu_not_found_msg(name));
-    return contains;
+    return find_lines_impl(*this, name);
 }
 
 dbg_expected<const function*> dbg_line_info::find_function(const std::string& name,
@@ -531,7 +510,7 @@ dbg_expected<const function*> dbg_line_info::find_function(const std::string& na
             matches.push_back(&f);
     // no matches found means the function does not exist
     if (matches.empty())
-        return dbg_error(dbg_error_code::FUNCTION_NOT_FOUND, func_not_found_msg(name));
+        return func_not_found(name);
 
     // next, iterate all matches and check if any of them equal the function we are
     // searching for
@@ -542,8 +521,7 @@ dbg_expected<const function*> dbg_line_info::find_function(const std::string& na
         {
             // another equal function was previously located
             if (retval != nullptr)
-                return dbg_error(dbg_error_code::FUNCTION_AMBIGUOUS,
-                    func_ambiguous_msg(name, *retval, *fptr));
+                return func_ambiguous(name, *retval, *fptr);
             retval = fptr;
         }
     }
@@ -552,7 +530,7 @@ dbg_expected<const function*> dbg_line_info::find_function(const std::string& na
     if (retval == nullptr)
     {
         if (matches.size() > 1)
-            return dbg_error(dbg_error_code::FUNCTION_AMBIGUOUS, func_ambiguous_msg(name, matches));
+            return func_ambiguous(name, matches);
         else
             retval = matches.front();
     }
@@ -561,6 +539,33 @@ dbg_expected<const function*> dbg_line_info::find_function(const std::string& na
     return retval;
 }
 
+template<typename T>
+auto dbg_line_info::find_lines_impl(T& instance, const char* name)
+-> decltype(instance.find_lines(name))
+{
+    assert(name != nullptr);
+    decltype(instance.find_lines(name).value()) contains = nullptr;
+    for (auto& cu : instance._lines)
+    {
+        // existing path is always absolute
+        std::filesystem::path existing_path(cu.name());
+        std::filesystem::path subpath(name);
+
+        if (existing_path == subpath)
+            return &cu;
+        // check if name is a subpath of an existing CU path
+        else if (std::search(existing_path.begin(), existing_path.end(),
+            subpath.begin(), subpath.end()) != existing_path.end())
+        {
+            if (contains != nullptr)
+                return cu_ambiguous(name, *contains, cu);
+            contains = &cu;
+        }
+    }
+    if (contains == nullptr)
+        return cu_not_found(name);
+    return contains;
+}
 
 // TODO: need to rewrite this using newer functions
 dbg_error dbg_line_info::get_line_info(int fd)
