@@ -332,7 +332,7 @@ tracer_error profiler::insert_traps_position(const config_data::section& sec,
         log(log_lvl::error, "[%d] unit lines: %s", _tid, ul.error().message.c_str());
         return tracer_error(tracer_errcode::NO_SYMBOL, std::move(ul.error().message));
     }
-    dbg_expected<uintptr_t> offset = ul.value()->line_first_addr(p.line());
+    dbg_expected<uintptr_t> offset = ul.value()->lowest_addr(p.line());
     if (!offset)
     {
         log(log_lvl::error, "[%d] unit lines: invalid line %" PRIu32, _tid, p.line());

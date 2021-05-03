@@ -2,10 +2,11 @@
 
 #pragma once
 
-#include <string>
 #include <iosfwd>
-#include <vector>
 #include <map>
+#include <set>
+#include <string>
+#include <vector>
 
 namespace cmmn
 {
@@ -114,7 +115,7 @@ namespace tep
     {
     private:
         std::string _name;
-        std::map<uint32_t, std::vector<uintptr_t>> _lines;
+        std::map<uint32_t, std::set<uintptr_t>> _lines;
 
     public:
         unit_lines(const char* name);
@@ -124,10 +125,18 @@ namespace tep
         void add_address(uint32_t lineno, uintptr_t lineaddr);
 
         const std::string& name()  const;
-        dbg_expected<uintptr_t> line_first_addr(uint32_t lineno) const;
-        dbg_expected<uintptr_t> line_addr(uint32_t lineno, size_t order) const;
+        dbg_expected<uintptr_t> lowest_addr(uint32_t lineno) const;
+        dbg_expected<uintptr_t> highest_addr(uint32_t lineno) const;
 
         friend std::ostream& operator<<(std::ostream& os, const unit_lines& cu);
+
+    private:
+        using addr_getter =
+            dbg_expected<uintptr_t>(unit_lines::*)(const decltype(_lines)::mapped_type&) const;
+
+        dbg_expected<uintptr_t> get_addr_impl(uint32_t lineno, addr_getter) const;
+        dbg_expected<uintptr_t> get_lowest_addr(const decltype(_lines)::mapped_type&) const;
+        dbg_expected<uintptr_t> get_highest_addr(const decltype(_lines)::mapped_type&) const;
     };
 
     class dbg_info
