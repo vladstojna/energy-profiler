@@ -65,14 +65,8 @@ bool tep::timestamp(char* buff, size_t sz)
     return true;
 }
 
-int tep::get_entrypoint_addr(bool pie, pid_t pid, uintptr_t& addr)
+int tep::get_entrypoint_addr(pid_t pid, uintptr_t& addr)
 {
-    if (!pie)
-    {
-        addr = 0;
-        return 0;
-    }
-
     char filename[24];
     if (snprintf(filename, 24, "/proc/%d/maps", pid) >= 24)
         return -1;

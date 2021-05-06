@@ -235,5 +235,5 @@ cmmn::expected<arguments, arg_error> tep::parse_arguments(int argc, char* const 
         return arg_error();
     }
 
-    return { optind, flags(pie, idle) , std::move(of), std::move(config) };
+    return { optind, flags(idle) , std::move(of), std::move(config) };
 }

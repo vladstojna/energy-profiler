@@ -195,7 +195,7 @@ tracer_expected<profiling_results> profiler::run()
     {
     case header_info::type::dyn:
         log(log_lvl::success, "[%d] target is a PIE", _tid);
-        if (get_entrypoint_addr(_flags.pie(), _child, entrypoint) == -1)
+        if (get_entrypoint_addr(_child, entrypoint) == -1)
             return get_syserror(errno, tracer_errcode::SYSTEM_ERROR, _tid, "get_entrypoint_addr");
         break;
     case header_info::type::exec:

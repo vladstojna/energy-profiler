@@ -10,13 +10,11 @@ namespace tep
     class flags
     {
     private:
-        bool _pie;
         bool _obtain_idle;
 
     public:
-        explicit flags(bool pie, bool idle);
+        explicit flags(bool idle);
 
-        bool pie() const;
         bool obtain_idle_readings() const;
     };
 
