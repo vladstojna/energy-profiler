@@ -161,11 +161,6 @@ void print_usage(const char* profiler_name)
     std::cout << "                      if <file> is 'stderr' then stderr is used\n";
     std::cout << "                      (default: stdout)\n";
     std::cout << "\n";
-    std::cout << "--pie                 (default) the target executable is a position\n";
-    std::cout << "                      independent executable (PIE)\n";
-    std::cout << "--no-pie              the target executable is not a position\n";
-    std::cout << "                      independent executable\n";
-    std::cout << "\n";
     std::cout << "--idle                (default) gather idle readings at startup\n";
     std::cout << "--no-idle             do not gather idle readings at startup\n";
     std::cout << std::endl;
@@ -175,8 +170,6 @@ cmmn::expected<arguments, arg_error> tep::parse_arguments(int argc, char* const 
 {
     int c;
     int option_index = 0;
-
-    int pie = 1;
     int idle = 1;
     std::string output;
     std::string config;
@@ -184,8 +177,6 @@ cmmn::expected<arguments, arg_error> tep::parse_arguments(int argc, char* const 
     struct option long_options[] =
     {
         { "help", no_argument, 0, 'h' },
-        { "pie", no_argument, &pie, 1 },
-        { "no-pie", no_argument, &pie, 0 },
         { "idle", no_argument, &idle, 1},
         { "no-idle", no_argument, &idle, 0},
         { "config", required_argument, 0, 'c' },
@@ -235,5 +226,5 @@ cmmn::expected<arguments, arg_error> tep::parse_arguments(int argc, char* const 
         return arg_error();
     }
 
-    return { optind, flags(idle) , std::move(of), std::move(config) };
+    return { optind, flags(idle), std::move(of), std::move(config) };
 }
