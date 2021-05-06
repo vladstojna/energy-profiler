@@ -22,6 +22,8 @@
 using namespace tep;
 
 static constexpr const char file_base[] = "/tmp/profiler733978";
+static constexpr const char et_dyn[] = "DYN";
+static constexpr const char et_exec[] = "EXEC";
 
 
 // begin helper structs
@@ -462,6 +464,59 @@ dbg_expected<uintptr_t> unit_lines::get_highest_addr(
     return *addrs.rbegin();
 }
 
+
+// header_info
+
+header_info::header_info(const char* target, dbg_error& err) :
+    _exectype(type::unknown)
+{
+    err = get_exec_type(target);
+}
+
+header_info::type header_info::exec_type() const
+{
+    return _exectype;
+}
+
+dbg_error header_info::get_exec_type(const char* target)
+{
+    assert(target != nullptr);
+    std::string output = concat(file_base, ".type");
+    cmmn::expected<file_descriptor, pipe_error> fd = file_descriptor::create(
+        output.c_str(), fd_flags::write, fd_mode::rdwr_all);
+    if (!fd)
+        return dbg_error(dbg_error_code::PIPE_ERROR, std::move(fd.error().msg()));
+
+    piped_commands cmd("readelf", "-h", target);
+    cmd.add("sed", "-nE", "s/.*Type:[[:space:]]+([A-Z]+).*/\\1/p");
+
+    pipe_error err = cmd.execute(file_descriptor::std_in, fd.value());
+    if (err)
+        return dbg_error(dbg_error_code::PIPE_ERROR, std::move(err.msg()));
+    fd.value().flush();
+
+    std::ifstream ifs(output);
+    if (!ifs)
+        return dbg_error(dbg_error_code::SYSTEM_ERROR,
+            concat("Could not open ", output, " for reading"));
+
+    std::string line;
+    if (!std::getline(ifs, line))
+        return dbg_error(dbg_error_code::FORMAT_ERROR, concat("Expected a line in ", output));
+
+    if (line == et_dyn)
+        _exectype = type::dyn;
+    else if (line == et_exec)
+        _exectype = type::exec;
+    else
+        return dbg_error(dbg_error_code::UNKNOWN_TARGET_TYPE,
+            concat("Target ", target, " not of type ", et_dyn, " or ", et_exec));
+
+    assert(_exectype != type::unknown);
+    return dbg_error::success();
+}
+
+
 // begin dbg_info
 
 dbg_expected<dbg_info> dbg_info::create(const char* filename)
@@ -474,10 +529,14 @@ dbg_expected<dbg_info> dbg_info::create(const char* filename)
 }
 
 dbg_info::dbg_info(const char* filename, dbg_error& err) :
+    _hi(filename, err),
     _lines(),
     _funcs()
 {
     assert(filename != nullptr);
+    if (err)
+        return;
+
     FILE* img = fopen(filename, "r");
     if (img == NULL)
     {
@@ -502,6 +561,11 @@ dbg_info::dbg_info(const char* filename, dbg_error& err) :
 bool dbg_info::has_dbg_symbols() const
 {
     return !_lines.empty();
+}
+
+const header_info& dbg_info::header() const
+{
+    return _hi;
 }
 
 dbg_expected<const unit_lines*> dbg_info::find_lines(const std::string& name) const
@@ -737,11 +801,28 @@ std::ostream& tep::operator<<(std::ostream& os, const unit_lines& cu)
     return os;
 }
 
+std::ostream& tep::operator<<(std::ostream& os, const header_info& hi)
+{
+    os << "Target type: ";
+    switch (hi.exec_type())
+    {
+    case header_info::type::dyn:
+        os << et_dyn;
+        break;
+    case header_info::type::exec:
+        os << et_exec;
+        break;
+    default:
+        assert(false);
+    }
+    return os;
+}
+
 std::ostream& tep::operator<<(std::ostream& os, const dbg_info& dbg_info)
 {
+    os << dbg_info.header() << "\n";
     for (const auto& l : dbg_info._lines)
         os << l;
-    os << "\n";
     for (const auto& f : dbg_info._funcs)
         os << f << "\n";
     return os;
