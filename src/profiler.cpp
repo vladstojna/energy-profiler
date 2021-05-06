@@ -191,8 +191,20 @@ tracer_expected<profiling_results> profiler::run()
         return get_syserror(errnum, tracer_errcode::PTRACE_ERROR, _tid, "PTRACE_GETREGS");
 
     uintptr_t entrypoint;
-    if (get_entrypoint_addr(_flags.pie(), _child, entrypoint) == -1)
-        return get_syserror(errno, tracer_errcode::SYSTEM_ERROR, _tid, "get_entrypoint_addr");
+    switch (_dli.header().exec_type())
+    {
+    case header_info::type::dyn:
+        log(log_lvl::success, "[%d] target is a PIE", _tid);
+        if (get_entrypoint_addr(_flags.pie(), _child, entrypoint) == -1)
+            return get_syserror(errno, tracer_errcode::SYSTEM_ERROR, _tid, "get_entrypoint_addr");
+        break;
+    case header_info::type::exec:
+        log(log_lvl::success, "[%d] target is not a PIE", _tid);
+        entrypoint = 0;
+        break;
+    default:
+        assert(false);
+    }
 
     log(log_lvl::info, "[%d] tracee %d rip @ 0x%" PRIxPTR ", entrypoint @ 0x%" PRIxPTR,
         _tid, waited_pid, get_ip(regs), entrypoint);
