@@ -7,7 +7,7 @@
 #include <atomic>
 #include <future>
 
-#include <nrg.hpp>
+#include <nrg/nrg.hpp>
 #include <expected.hpp>
 
 namespace tep
