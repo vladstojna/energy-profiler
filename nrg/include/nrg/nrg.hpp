@@ -1,5 +1,7 @@
 // nrg.hpp
 
+#pragma once
+
 #include "execution.hpp"
 #include "reader_rapl.hpp"
 #include "reader_gpu.hpp"
