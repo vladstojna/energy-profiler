@@ -7,11 +7,20 @@
 #include <cassert>
 #include <stdexcept>
 
+#if defined(GPU_NONE)
+#undef GPU_NONE
+#endif
+
+#if !defined(GPU_NV) && !defined(GPU_AMD)
+#define GPU_NONE
+#endif
+
 #if defined(GPU_NV)
 #include <nvml.h>
 #elif defined(GPU_AMD)
-// TODO
+#include <rocm_smi/rocm_smi.h>
 #endif
+
 
 using namespace nrgprf;
 
@@ -25,12 +34,23 @@ std::string error_str(const char* prefix, nvmlReturn_t result)
         .append(nvmlErrorString(result));
 }
 
+#elif defined(GPU_AMD)
+
+std::string error_str(const char* prefix, rsmi_status_t result)
+{
+    const char* str;
+    rsmi_status_string(result, &str);
+    return std::string(prefix)
+        .append(": ")
+        .append(str);
+}
+
 #endif
 
 
-// lib_handle
+// begin lib_handle
 
-#if defined(GPU_NV)
+#if !defined(GPU_NONE)
 
 struct lib_handle
 {
@@ -44,8 +64,9 @@ struct lib_handle
     lib_handle& operator=(lib_handle&& other);
 };
 
-// lib_handle
+#endif // !defined(GPU_NONE)
 
+#if defined(GPU_NV)
 
 lib_handle::lib_handle(error& ec)
 {
@@ -84,20 +105,63 @@ lib_handle& lib_handle::operator=(lib_handle&& other)
     return *this = other;
 }
 
+#elif defined(GPU_AMD)
+
+lib_handle::lib_handle(error& ec)
+{
+    rsmi_status_t result = rsmi_init(0);
+    if (result != RSMI_STATUS_SUCCESS)
+        ec = { error_code::READER_GPU, error_str("failed to initialise ROCm SMI", result) };
+}
+
+lib_handle::~lib_handle()
+{
+    rsmi_status_t result = rsmi_shut_down();
+    if (result != RSMI_STATUS_SUCCESS)
+        std::cerr << error_str("failed to shutdown ROCm SMI", result) << std::endl;
+}
+
+lib_handle::lib_handle(const lib_handle& other)
+{
+    *this = other;
+}
+
+lib_handle::lib_handle(lib_handle&& other) :
+    lib_handle(other)
+{}
+
+lib_handle& lib_handle::operator=(const lib_handle& other)
+{
+    (void)other;
+    rsmi_status_t result = rsmi_init(0);
+    if (result != RSMI_STATUS_SUCCESS)
+        throw std::runtime_error(error_str("failed to initialise ROCm SMI", result));
+    return *this;
+}
+
+lib_handle& lib_handle::operator=(lib_handle&& other)
+{
+    return *this = other;
+}
+
 #endif
 
-// lib_handle
+// end lib_handle
 
 
 // begin impl
 
 struct reader_gpu::impl
 {
-#if defined(GPU_NV)
+#if !defined(GPU_NONE)
     size_t offset;
     int8_t event_map[MAX_SOCKETS];
     lib_handle handle;
+#endif // !defined(GPU_NONE)
+#if defined(GPU_NV)
     std::vector<nvmlDevice_t> active_handles;
+#elif defined(GPU_AMD)
+    std::vector<uint32_t> active_handles;
 #endif
 
     impl(uint8_t dmask, size_t os, error& ec);
@@ -111,6 +175,7 @@ struct reader_gpu::impl
     result<units_power> get_board_power(const sample& s, uint8_t dev) const;
 };
 
+// constructor
 
 #if defined(GPU_NV)
 
@@ -166,44 +231,74 @@ reader_gpu::impl::impl(uint8_t dev_mask, size_t os, error& ec) :
     assert(active_handles.size() == device_cnt);
 }
 
-error reader_gpu::impl::read(sample& s) const
+#elif defined(GPU_AMD)
+
+reader_gpu::impl::impl(uint8_t dev_mask, size_t os, error& ec) :
+    offset(os),
+    event_map(),
+    handle(ec),
+    active_handles()
 {
-    for (size_t idx = 0; idx < active_handles.size(); idx++)
+    // error constructing lib_handle
+    if (ec)
+        return;
+
+    for (size_t ix = 0; ix < MAX_SOCKETS; ix++)
+        event_map[ix] = -1;
+
+    rsmi_version_t version;
+    rsmi_status_t result = rsmi_version_get(&version);
+    if (result != RSMI_STATUS_SUCCESS)
     {
-        error err = read(s, idx);
-        if (err)
-            return err;
+        ec = { error_code::READER_GPU, error_str("Failed to obtain lib build version", result) };
+        return;
     }
-    return error::success();
-}
 
-error reader_gpu::impl::read(sample& s, int8_t ev_idx) const
-{
-    unsigned int power;
-    nvmlReturn_t result = nvmlDeviceGetPowerUsage(active_handles[ev_idx], &power);
-    if (result != NVML_SUCCESS)
-        return { error_code::READER_GPU, nvmlErrorString(result) };
-    s.set(offset + ev_idx, power);
-    return error::success();
-}
+    std::cout << "ROCm SMI version info\n";
+    std::cout << "major: " << version.major
+        << ", minor: " << version.minor
+        << ", patch: " << version.patch
+        << ", build: " << version.build << "\n";
 
-int8_t reader_gpu::impl::event_idx(uint8_t device) const
-{
-    return event_map[device];
-}
+    uint32_t device_cnt;
+    result = rsmi_num_monitor_devices(&device_cnt);
+    if (result != RSMI_STATUS_SUCCESS)
+    {
+        ec = { error_code::READER_GPU, error_str("Failed to obtain device count", result) };
+        return;
+    }
+    if (device_cnt > MAX_SOCKETS)
+    {
+        ec = { error_code::TOO_MANY_DEVICES, "Too many devices (a maximum of 8 is supported)" };
+        return;
+    }
+    for (uint32_t dev_idx = 0; dev_idx < device_cnt; dev_idx++)
+    {
+        char name[512];
+        uint64_t dev_pci_id;
 
-size_t reader_gpu::impl::num_events() const
-{
-    return active_handles.size();
-}
+        if (!(dev_mask & (1 << dev_idx)))
+            continue;
 
-result<units_power> reader_gpu::impl::get_board_power(const sample& s, uint8_t dev) const
-{
-    int8_t idx = event_idx(dev);
-    if (idx < 0)
-        return error(error_code::NO_EVENT);
-    // NVML returns milliwatts, multiply by 1000 to get microwatts
-    return s.get(offset + idx) * 1000;
+        result = rsmi_dev_pci_id_get(dev_idx, &dev_pci_id);
+        if (result != RSMI_STATUS_SUCCESS)
+        {
+            ec = { error_code::READER_GPU, error_str("Failed to get device PCI ID", result) };
+            return;
+        }
+        result = rsmi_dev_name_get(dev_idx, name, sizeof(name));
+        if (result != RSMI_STATUS_SUCCESS && result != RSMI_STATUS_INSUFFICIENT_SIZE)
+        {
+            ec = { error_code::READER_GPU, error_str("Failed to get device name", result) };
+            return;
+        }
+        std::cout << "idx: " << dev_idx
+            << ", PCI id: " << dev_pci_id
+            << ", name: " << name << "\n";
+        event_map[dev_idx] = active_handles.size();
+        active_handles.push_back(dev_idx);
+    }
+    assert(active_handles.size() == device_cnt);
 }
 
 #else
@@ -216,11 +311,64 @@ reader_gpu::impl::impl(uint8_t dev_mask, size_t os, error& ec)
     std::cout << "No-op GPU reader\n";
 }
 
+#endif
+
+// read all
+
+#if !defined(GPU_NONE)
+
+error reader_gpu::impl::read(sample& s) const
+{
+    for (size_t idx = 0; idx < active_handles.size(); idx++)
+    {
+        error err = read(s, idx);
+        if (err)
+            return err;
+    }
+    return error::success();
+}
+
+#else
+
 error reader_gpu::impl::read(sample& s) const
 {
     (void)s;
     return error::success();
 }
+
+#endif
+
+// read single
+
+#if defined(GPU_NV)
+
+error reader_gpu::impl::read(sample& s, int8_t ev_idx) const
+{
+    unsigned int power;
+    nvmlReturn_t result = nvmlDeviceGetPowerUsage(active_handles[ev_idx], &power);
+    if (result != NVML_SUCCESS)
+        return { error_code::READER_GPU, nvmlErrorString(result) };
+    s.set(offset + ev_idx, power);
+    return error::success();
+}
+
+#elif defined(GPU_AMD)
+
+error reader_gpu::impl::read(sample& s, int8_t ev_idx) const
+{
+    uint64_t power;
+    rsmi_status_t result = rsmi_dev_power_ave_get(active_handles[ev_idx], 0, &power);
+    if (result != RSMI_STATUS_SUCCESS)
+    {
+        const char* str;
+        rsmi_status_string(result, &str);
+        return { error_code::READER_GPU, str };
+    }
+    s.set(offset + ev_idx, power);
+    return error::success();
+}
+
+#else
 
 error reader_gpu::impl::read(sample& s, int8_t ev_idx) const
 {
@@ -228,6 +376,24 @@ error reader_gpu::impl::read(sample& s, int8_t ev_idx) const
     (void)ev_idx;
     return error::success();
 }
+
+#endif
+
+// queries
+
+#if !defined(GPU_NONE)
+
+int8_t reader_gpu::impl::event_idx(uint8_t device) const
+{
+    return event_map[device];
+}
+
+size_t reader_gpu::impl::num_events() const
+{
+    return active_handles.size();
+}
+
+#else
 
 int8_t reader_gpu::impl::event_idx(uint8_t device) const
 {
@@ -239,6 +405,32 @@ size_t reader_gpu::impl::num_events() const
 {
     return 0;
 }
+
+#endif
+
+#if defined(GPU_NV)
+
+result<units_power> reader_gpu::impl::get_board_power(const sample& s, uint8_t dev) const
+{
+    int8_t idx = event_idx(dev);
+    if (idx < 0)
+        return error(error_code::NO_EVENT);
+    // NVML returns milliwatts, multiply by 1000 to get microwatts
+    return s.get(offset + idx) * 1000;
+}
+
+#elif defined(GPU_AMD)
+
+result<units_power> reader_gpu::impl::get_board_power(const sample& s, uint8_t dev) const
+{
+    int8_t idx = event_idx(dev);
+    if (idx < 0)
+        return error(error_code::NO_EVENT);
+    // ROCm SMI reads power in microwatts
+    return s.get(offset + idx);
+}
+
+#else
 
 result<units_power> reader_gpu::impl::get_board_power(const sample& s, uint8_t dev) const
 {

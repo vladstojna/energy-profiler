@@ -5,9 +5,9 @@ obj_dir  := obj
 incl_dir := include
 dep_dir  := $(obj_dir)/.deps
 
-incl := /opt/cuda/include ../util
+incl := ../util
 
-#files
+# files
 src  := $(wildcard $(src_dir)/*.cpp)
 obj  := $(patsubst $(src_dir)/%.cpp, $(obj_dir)/%.o, $(src))
 deps := $(patsubst $(src_dir)/%.cpp, $(dep_dir)/%.d, $(src))
@@ -15,6 +15,35 @@ tgt  := $(tgt_dir)/libnrg.so
 
 DEBUG ?=
 gpu ?=
+
+# linker flags
+ldflags := -shared
+
+# GPU vendor specific
+ifeq ($(gpu),GPU_NV)
+
+incl += /opt/cuda/include
+ldflags += -lnvidia-ml
+
+endif
+
+ifeq ($(gpu),GPU_AMD)
+
+rocm_ver ?=
+ifdef rocm_ver
+rocm := rocm-$(rocm_ver)
+else
+rocm := rocm
+endif
+
+rsmi_base := /opt/$(rocm)/rocm_smi
+export LD_RUN_PATH=$(rsmi_base)/lib
+
+incl += $(rsmi_base)/include
+ldflags += -lrocm_smi64
+ldflags += $(addprefix -L, $(LD_RUN_PATH))
+
+endif
 
 # compiler flags
 cc := g++
@@ -32,11 +61,6 @@ ifdef gpu
 cflags += $(addprefix -D, $(gpu))
 endif
 
-# linker flags
-ldflags := -shared
-ifdef gpu
-ldflags += -lnvidia-ml
-endif
 
 # rules -----------------------------------------------------------------------
 
