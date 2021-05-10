@@ -31,7 +31,8 @@ namespace tep
         PIPE_ERROR,
         FORMAT_ERROR,
         FUNCTION_NOT_FOUND,
-        FUNCTION_AMBIGUOUS
+        FUNCTION_AMBIGUOUS,
+        UNKNOWN_TARGET_TYPE
     };
 
     struct dbg_error
@@ -139,12 +140,35 @@ namespace tep
         dbg_expected<uintptr_t> get_highest_addr(const decltype(_lines)::mapped_type&) const;
     };
 
+    class header_info
+    {
+    public:
+        enum class type
+        {
+            dyn,
+            exec,
+            unknown
+        };
+
+    private:
+        type _exectype;
+
+    public:
+        header_info(const char* target, dbg_error& err);
+
+        type exec_type() const;
+
+    private:
+        dbg_error get_exec_type(const char* target);
+    };
+
     class dbg_info
     {
     public:
         static dbg_expected<dbg_info> create(const char* filename);
 
     private:
+        header_info _hi;
         std::vector<unit_lines> _lines;
         std::vector<function> _funcs;
 
@@ -152,6 +176,7 @@ namespace tep
 
     public:
         bool has_dbg_symbols() const;
+        const header_info& header() const;
 
         dbg_expected<const unit_lines*> find_lines(const std::string& name) const;
         dbg_expected<const unit_lines*> find_lines(const char* name) const;
@@ -179,6 +204,7 @@ namespace tep
     std::ostream& operator<<(std::ostream& os, const function_bounds& fb);
     std::ostream& operator<<(std::ostream& os, const function& f);
     std::ostream& operator<<(std::ostream& os, const unit_lines& cu);
+    std::ostream& operator<<(std::ostream& os, const header_info& hi);
     std::ostream& operator<<(std::ostream& os, const dbg_info& cu);
 
     bool operator==(const unit_lines& lhs, const unit_lines& rhs);
