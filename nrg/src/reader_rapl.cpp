@@ -1,8 +1,7 @@
 // reader_rapl.cpp
 
-#include "reader_rapl.hpp"
-#include "sample.hpp"
-#include "util.hpp"
+#include <nrg/reader_rapl.hpp>
+#include <nrg/sample.hpp>
 
 #include <cassert>
 #include <charconv>

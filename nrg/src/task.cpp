@@ -1,6 +1,6 @@
 // task.cpp
 
-#include "task.hpp"
+#include <nrg/task.hpp>
 
 using namespace nrgprf;
 
