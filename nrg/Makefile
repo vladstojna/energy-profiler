@@ -5,7 +5,7 @@ obj_dir := obj
 inc_dir := include
 dep_dir := $(obj_dir)/.deps
 
-incl := ../util $(incl_dir)
+incl := ../util $(inc_dir)
 
 # files
 src  := $(wildcard $(src_dir)/*.cpp)
