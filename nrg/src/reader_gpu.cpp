@@ -1,6 +1,6 @@
 // reader_gpu.cpp
 
-#include "reader_gpu.hpp"
+#include <nrg/reader_gpu.hpp>
 
 #include <algorithm>
 #include <iostream>

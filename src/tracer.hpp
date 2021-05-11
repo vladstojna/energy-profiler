@@ -7,7 +7,7 @@
 #include <mutex>
 #include <unordered_map>
 
-#include <nrg.hpp>
+#include <nrg/nrg.hpp>
 
 #include "reader_container.hpp"
 #include "config.hpp"

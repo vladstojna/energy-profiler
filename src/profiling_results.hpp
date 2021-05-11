@@ -5,7 +5,7 @@
 #include "config.hpp"
 #include "reader_container.hpp"
 
-#include <nrg.hpp>
+#include <nrg/nrg.hpp>
 
 #include <vector>
 

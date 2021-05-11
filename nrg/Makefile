@@ -1,11 +1,11 @@
 # directories
-src_dir  := src
-tgt_dir  := lib
-obj_dir  := obj
-incl_dir := include
-dep_dir  := $(obj_dir)/.deps
+src_dir := src
+tgt_dir := lib
+obj_dir := obj
+inc_dir := include
+dep_dir := $(obj_dir)/.deps
 
-incl := ../util
+incl := ../util $(inc_dir)
 
 # files
 src  := $(wildcard $(src_dir)/*.cpp)
@@ -64,7 +64,7 @@ endif
 
 # rules -----------------------------------------------------------------------
 
-default: $(tgt) $(incl_dir)
+default: $(tgt)
 
 $(tgt_dir):
 	@mkdir -p $@
@@ -76,9 +76,6 @@ $(dep_dir):
 $(tgt): $(obj) | $(tgt_dir)
 	$(cc) $^ $(ldflags) -o $@
 
-$(incl_dir):
-	ln -s $(src_dir) $@
-
 $(obj_dir)/%.o: $(src_dir)/%.cpp $(dep_dir)/%.d | $(obj_dir) $(dep_dir)
 	$(cc) -MT $@ -MMD -MP -MF $(dep_dir)/$*.d $(cflags) -c -o $@ $<
 
@@ -87,4 +84,4 @@ $(deps):
 include $(wildcard $(deps))
 
 clean:
-	rm -rf $(tgt_dir) $(obj_dir) $(incl_dir)
+	rm -rf $(tgt_dir) $(obj_dir)

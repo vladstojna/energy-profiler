@@ -1,6 +1,6 @@
 // error.cpp
 
-#include "error.hpp"
+#include <nrg/error.hpp>
 
 #include <iostream>
 #include <cassert>

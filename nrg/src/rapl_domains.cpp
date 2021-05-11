@@ -1,6 +1,6 @@
 // rapl_domains.cpp
 
-#include "rapl_domains.hpp"
+#include <nrg/rapl_domains.hpp>
 
 #include <iostream>
 #include <iomanip>

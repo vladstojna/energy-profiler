@@ -2,7 +2,7 @@
 
 #pragma once
 
-#include <nrg.hpp>
+#include <nrg/nrg.hpp>
 
 namespace cmmn
 {

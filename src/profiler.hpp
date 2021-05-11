@@ -2,7 +2,7 @@
 
 #pragma once
 
-#include <nrg.hpp>
+#include <nrg/nrg.hpp>
 
 #include "config.hpp"
 #include "dbg.hpp"
