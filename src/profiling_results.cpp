@@ -286,30 +286,29 @@ std::ostream& operator<<(std::ostream& os, const rdr_task_pair<nrgprf::reader_gp
         }
         os << "\n";
     }
-    if (num_execs > 1)
+    if (num_execs <= 1)
+        return os;
+    std::stringstream ssum;
+    std::stringstream savg;
+    ssum << std::setw(padding) << sum_str << outer_sep << dur_sum;
+    savg << std::setw(padding) << avg_str << outer_sep << dur_sum / num_execs;
+    for (uint8_t dev = 0; dev < MAX_SOCKETS; dev++)
     {
-        std::stringstream ssum;
-        std::stringstream savg;
-        ssum << std::setw(padding) << sum_str << outer_sep << dur_sum;
-        savg << std::setw(padding) << avg_str << outer_sep << dur_sum / num_execs;
-        for (uint8_t dev = 0; dev < MAX_SOCKETS; dev++)
+        if (energy_sum[dev].count() != 0)
         {
-            if (energy_sum[dev].count() != 0)
+            ssum << outer_sep << "device=" << +dev << inner_sep << "board="
+                << energy_sum[dev];
+            savg << outer_sep << "device=" << +dev << inner_sep << "board="
+                << energy_sum[dev] / num_execs;
+            if (has_idle_values && idle_sum[dev].count() > 0)
             {
-                ssum << outer_sep << "device=" << +dev << inner_sep << "board="
-                    << energy_sum[dev];
-                savg << outer_sep << "device=" << +dev << inner_sep << "board="
-                    << energy_sum[dev] / num_execs;
-                if (has_idle_values && idle_sum[dev].count() > 0)
-                {
-                    ssum << " (" << idle_sum[dev] << ")";
-                    savg << " (" << idle_sum[dev] / num_execs << ")";
-                }
+                ssum << " (" << idle_sum[dev] << ")";
+                savg << " (" << idle_sum[dev] / num_execs << ")";
             }
         }
-        os << savg.rdbuf() << "\n";
-        os << ssum.rdbuf() << "\n";
     }
+    os << savg.rdbuf() << "\n";
+    os << ssum.rdbuf() << "\n";
     return os;
 }
 
@@ -407,35 +406,34 @@ std::ostream& operator<<(std::ostream& os, const rdr_task_pair<nrgprf::reader_ra
         }
         os << "\n";
     }
-    if (num_execs > 1)
+    if (num_execs <= 1)
+        return os;
+    std::stringstream ssum;
+    std::stringstream savg;
+    ssum << std::setw(padding) << sum_str << outer_sep << dur_sum;
+    savg << std::setw(padding) << avg_str << outer_sep << dur_sum / num_execs;
+    for (uint8_t skt = 0; skt < MAX_SOCKETS; skt++)
     {
-        std::stringstream ssum;
-        std::stringstream savg;
-        ssum << std::setw(padding) << sum_str << outer_sep << dur_sum;
-        savg << std::setw(padding) << avg_str << outer_sep << dur_sum / num_execs;
-        for (uint8_t skt = 0; skt < MAX_SOCKETS; skt++)
+        if (!socket_has_events(rt.reader(), skt))
+            continue;
+        ssum << outer_sep << "socket=" << +skt;
+        savg << outer_sep << "socket=" << +skt;
+        for (uint8_t dmn = 0; dmn < MAX_RAPL_DOMAINS; dmn++)
         {
-            if (!socket_has_events(rt.reader(), skt))
-                continue;
-            ssum << outer_sep << "socket=" << +skt;
-            savg << outer_sep << "socket=" << +skt;
-            for (uint8_t dmn = 0; dmn < MAX_RAPL_DOMAINS; dmn++)
+            if (energy_sum[skt][dmn].count() != 0)
             {
-                if (energy_sum[skt][dmn].count() != 0)
+                ssum << inner_sep << prefix[dmn] << energy_sum[skt][dmn];
+                savg << inner_sep << prefix[dmn] << energy_sum[skt][dmn] / num_execs;
+                if (rt.idle_values().size() >= 2 && idle_sum[skt][dmn].count() > 0)
                 {
-                    ssum << inner_sep << prefix[dmn] << energy_sum[skt][dmn];
-                    savg << inner_sep << prefix[dmn] << energy_sum[skt][dmn] / num_execs;
-                    if (rt.idle_values().size() >= 2 && idle_sum[skt][dmn].count() > 0)
-                    {
-                        ssum << " (" << idle_sum[skt][dmn] << ")";
-                        savg << " (" << idle_sum[skt][dmn] / num_execs << ")";
-                    }
+                    ssum << " (" << idle_sum[skt][dmn] << ")";
+                    savg << " (" << idle_sum[skt][dmn] / num_execs << ")";
                 }
             }
         }
-        os << savg.rdbuf() << "\n";
-        os << ssum.rdbuf() << "\n";
     }
+    os << savg.rdbuf() << "\n";
+    os << ssum.rdbuf() << "\n";
     return os;
 }
 
