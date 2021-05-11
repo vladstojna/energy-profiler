@@ -83,11 +83,10 @@ private:
     nrgprf::joules<double> _energy;
 
 public:
-    gpu_energy(const nrgprf::reader_gpu& rdr, const nrgprf::execution& exec, uint8_t dev, board_tag tag) :
+    gpu_energy(const nrgprf::reader_gpu& rdr, const nrgprf::execution& exec, uint8_t dev, board_tag) :
         _valid(false),
         _energy{}
     {
-        (void)tag;
         for (size_t s = 1; s < exec.size(); s++)
         {
             const nrgprf::sample& prev = exec.get(s - 1);
@@ -140,29 +139,21 @@ private:
     }
 
 public:
-    cpu_energy(const nrgprf::reader_rapl& reader, const nrgprf::execution& exec, uint8_t skt, pkg_tag tag) :
+    cpu_energy(const nrgprf::reader_rapl& reader, const nrgprf::execution& exec, uint8_t skt, pkg_tag) :
         _energy(subtract(reader.get_pkg_energy(exec.last(), skt), reader.get_pkg_energy(exec.first(), skt)))
-    {
-        (void)tag;
-    }
+    {}
 
-    cpu_energy(const nrgprf::reader_rapl& reader, const nrgprf::execution& exec, uint8_t skt, pp0_tag tag) :
+    cpu_energy(const nrgprf::reader_rapl& reader, const nrgprf::execution& exec, uint8_t skt, pp0_tag) :
         _energy(subtract(reader.get_pp0_energy(exec.last(), skt), reader.get_pp0_energy(exec.first(), skt)))
-    {
-        (void)tag;
-    }
+    {}
 
-    cpu_energy(const nrgprf::reader_rapl& reader, const nrgprf::execution& exec, uint8_t skt, pp1_tag tag) :
+    cpu_energy(const nrgprf::reader_rapl& reader, const nrgprf::execution& exec, uint8_t skt, pp1_tag) :
         _energy(subtract(reader.get_pp1_energy(exec.last(), skt), reader.get_pp1_energy(exec.first(), skt)))
-    {
-        (void)tag;
-    }
+    {}
 
-    cpu_energy(const nrgprf::reader_rapl& reader, const nrgprf::execution& exec, uint8_t skt, dram_tag tag) :
+    cpu_energy(const nrgprf::reader_rapl& reader, const nrgprf::execution& exec, uint8_t skt, dram_tag) :
         _energy(subtract(reader.get_dram_energy(exec.last(), skt), reader.get_dram_energy(exec.first(), skt)))
-    {
-        (void)tag;
-    }
+    {}
 
     const nrgprf::units_energy& get() const
     {
