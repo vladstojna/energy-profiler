@@ -30,37 +30,26 @@ periodic_sampler::periodic_sampler(nrgprf::execution&& exec) :
     _finished(false)
 {}
 
-periodic_sampler::periodic_sampler(nrgprf::reader_rapl& reader, nrgprf::execution&& exec,
+periodic_sampler::periodic_sampler(const nrgprf::reader* reader,
+    nrgprf::execution&& exec,
     const std::chrono::milliseconds& period,
     complete_tag) :
     periodic_sampler(std::move(exec))
 {
-    _future = std::async(std::launch::async, static_cast<nrgprf::error(periodic_sampler::*)
-        (const std::chrono::milliseconds & interval, nrgprf::reader_rapl * reader)>
-        (&periodic_sampler::evaluate),
-        this, period, &reader);
+    assert(reader != nullptr);
+    _future = std::async(std::launch::async, &periodic_sampler::evaluate,
+        this, period, reader);
 }
 
-periodic_sampler::periodic_sampler(nrgprf::reader_rapl& reader, nrgprf::execution&& exec,
+periodic_sampler::periodic_sampler(const nrgprf::reader* reader,
+    nrgprf::execution&& exec,
     const std::chrono::milliseconds& period,
     simple_tag) :
     periodic_sampler(std::move(exec))
 {
-    _future = std::async(std::launch::async, static_cast<nrgprf::error(periodic_sampler::*)
-        (const std::chrono::milliseconds & interval, nrgprf::reader_rapl * reader)>
-        (&periodic_sampler::evaluate_simple),
-        this, period, &reader);
-}
-
-periodic_sampler::periodic_sampler(nrgprf::reader_gpu& reader, nrgprf::execution&& exec,
-    const std::chrono::milliseconds& period,
-    complete_tag) :
-    periodic_sampler(std::move(exec))
-{
-    _future = std::async(std::launch::async, static_cast<nrgprf::error(periodic_sampler::*)
-        (const std::chrono::milliseconds & interval, nrgprf::reader_gpu * reader)>
-        (&periodic_sampler::evaluate),
-        this, period, &reader);
+    assert(reader != nullptr);
+    _future = std::async(std::launch::async, &periodic_sampler::evaluate_simple,
+        this, period, reader);
 }
 
 periodic_sampler::~periodic_sampler() noexcept
@@ -93,8 +82,8 @@ cmmn::expected<nrgprf::execution, nrgprf::error> periodic_sampler::get()
     return std::move(_exec);
 }
 
-template<typename R>
-nrgprf::error periodic_sampler::evaluate(const std::chrono::milliseconds& interval, R* reader)
+nrgprf::error periodic_sampler::evaluate(const std::chrono::milliseconds& interval,
+    const nrgprf::reader* reader)
 {
     assert(reader != nullptr);
 
@@ -122,9 +111,8 @@ nrgprf::error periodic_sampler::evaluate(const std::chrono::milliseconds& interv
     return error;
 }
 
-template<typename R>
 nrgprf::error periodic_sampler::evaluate_simple(const std::chrono::milliseconds& interval,
-    R* reader)
+    const nrgprf::reader* reader)
 {
     assert(reader != nullptr);
 
@@ -158,15 +146,3 @@ nrgprf::error periodic_sampler::evaluate_simple(const std::chrono::milliseconds&
     log(log_lvl::debug, "[%d] %s: finished evaluation", tid, __func__);
     return error;
 }
-
-template
-nrgprf::error periodic_sampler::evaluate(const std::chrono::milliseconds& interval,
-    nrgprf::reader_rapl* reader);
-
-template
-nrgprf::error periodic_sampler::evaluate(const std::chrono::milliseconds& interval,
-    nrgprf::reader_gpu* reader);
-
-template
-nrgprf::error periodic_sampler::evaluate_simple(const std::chrono::milliseconds& interval,
-    nrgprf::reader_rapl* reader);

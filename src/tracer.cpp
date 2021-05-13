@@ -295,17 +295,17 @@ void tracer::launch_async_sampling(const config_data::section& section)
     case config_data::target::cpu:
     {
         if (section.method() == config_data::profiling_method::energy_profile)
-            _sampler = std::make_unique<periodic_sampler>(_readers.reader_rapl(), std::move(exec),
+            _sampler = std::make_unique<periodic_sampler>(&_readers.reader_rapl(), std::move(exec),
                 section.interval(), periodic_sampler::complete);
         else if (section.method() == config_data::profiling_method::energy_total)
-            _sampler = std::make_unique<periodic_sampler>(_readers.reader_rapl(), std::move(exec),
+            _sampler = std::make_unique<periodic_sampler>(&_readers.reader_rapl(), std::move(exec),
                 section.interval(), periodic_sampler::simple);
         else
             assert(false);
     } break;
     case config_data::target::gpu:
     {
-        _sampler = std::make_unique<periodic_sampler>(_readers.reader_gpu(), std::move(exec),
+        _sampler = std::make_unique<periodic_sampler>(&_readers.reader_gpu(), std::move(exec),
             section.interval(), periodic_sampler::complete);
     } break;
     }

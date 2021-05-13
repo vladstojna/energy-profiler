@@ -39,7 +39,7 @@ cmmn::expected<idle_results, tracer_error> idle_evaluator::run()
     exec.add(nrgprf::timepoint_t());
 
     std::unique_ptr<periodic_sampler> sampler =
-        std::make_unique<periodic_sampler>(_readers.reader_rapl(), std::move(exec),
+        std::make_unique<periodic_sampler>(&_readers.reader_rapl(), std::move(exec),
             cpu_interval, periodic_sampler::simple);
     sampler->start();
 
@@ -61,7 +61,7 @@ cmmn::expected<idle_results, tracer_error> idle_evaluator::run()
     exec.reserve(count);
     log(log_lvl::debug, "[%d] reserved %" PRIu32 " samples for GPU evaluation", tid, count);
 
-    sampler = std::make_unique<periodic_sampler>(_readers.reader_gpu(), std::move(exec),
+    sampler = std::make_unique<periodic_sampler>(&_readers.reader_gpu(), std::move(exec),
         gpu_interval, periodic_sampler::complete);
     sampler->start();
 
