@@ -8,7 +8,7 @@
 #include <future>
 
 #include <nrg/nrg.hpp>
-#include <expected.hpp>
+#include <util/expected.hpp>
 
 namespace tep
 {

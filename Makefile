@@ -36,7 +36,7 @@ cppstd := c++17
 
 cflags := -Wall -Wextra -Wno-unknown-pragmas -fPIE -g
 cflags += $(addprefix -I, $(extlibs_incl))
-cflags += $(addprefix -I, util nrg/include)
+cflags += $(addprefix -I, include nrg/include)
 cflags += -std=$(cppstd)
 
 ifdef DEBUG
