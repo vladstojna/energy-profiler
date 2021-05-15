@@ -17,6 +17,9 @@ namespace tep
 
     class idle_evaluator
     {
+    public:
+        static struct reserve_tag {} reserve;
+
     private:
         static std::chrono::seconds default_sleep_duration;
 
@@ -27,10 +30,11 @@ namespace tep
         void idle();
 
     public:
-        idle_evaluator(const nrgprf::reader_rapl* reader,
+        idle_evaluator(const nrgprf::reader* reader,
             const std::chrono::seconds& sleep_for = default_sleep_duration);
 
-        idle_evaluator(const nrgprf::reader_gpu* reader,
+        idle_evaluator(reserve_tag,
+            const nrgprf::reader* reader,
             const std::chrono::seconds& sleep_for = default_sleep_duration);
 
         cmmn::expected<nrgprf::execution, tracer_error> run();

@@ -33,17 +33,18 @@ static nrgprf::execution simple_execution()
     return exec;
 }
 
-
+idle_evaluator::reserve_tag idle_evaluator::reserve;
 std::chrono::seconds idle_evaluator::default_sleep_duration(5);
 
-idle_evaluator::idle_evaluator(const nrgprf::reader_rapl* reader,
+idle_evaluator::idle_evaluator(const nrgprf::reader* reader,
     const std::chrono::seconds& sleep_for) :
     _sleep(sleep_for),
     _sampler(reader, simple_execution(), period_simple,
         periodic_sampler::simple)
 {}
 
-idle_evaluator::idle_evaluator(const nrgprf::reader_gpu* reader,
+idle_evaluator::idle_evaluator(reserve_tag,
+    const nrgprf::reader* reader,
     const std::chrono::seconds& sleep_for) :
     _sleep(sleep_for),
     _sampler(reader, reserve_execution(_sleep, period_full), period_full,

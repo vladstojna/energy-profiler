@@ -301,7 +301,7 @@ tracer_error profiler::obtain_idle_results()
     if (gpu)
     {
         log(log_lvl::info, "gathering idle readings for %s...", "GPU");
-        idle_evaluator eval(&_readers.reader_gpu());
+        idle_evaluator eval(idle_evaluator::reserve, &_readers.reader_gpu());
         cmmn::expected<nrgprf::execution, tracer_error> results = eval.run();
         if (!results)
         {
