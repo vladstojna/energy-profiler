@@ -18,6 +18,8 @@
 #include <sys/wait.h>
 #include <sys/user.h>
 
+#include <util/concat.hpp>
+
 
 using namespace tep;
 
@@ -26,9 +28,9 @@ using namespace tep;
 
 tracer_error no_return_addresses(const std::string& func_name)
 {
-    return tracer_error(tracer_errcode::UNSUPPORTED, std::string("unsupported: function '")
-        .append(func_name)
-        .append("' has no return addresses, possibly optimized away"));
+    return tracer_error(tracer_errcode::UNSUPPORTED,
+        cmmn::concat("unsupported: function '", func_name,
+            "' has no return addresses, possibly optimized away"));
 }
 
 // inserts trap at 'addr'
