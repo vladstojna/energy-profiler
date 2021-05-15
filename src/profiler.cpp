@@ -159,14 +159,9 @@ tracer_expected<profiling_results> profiler::run()
 {
     if (_flags.obtain_idle_readings())
     {
-        log(log_lvl::info, "[%d] gathering idle results...", _tid);
         tracer_error err = obtain_idle_results();
         if (err)
             return err;
-    }
-    else
-    {
-        log(log_lvl::info, "[%d] skipping idle results...", _tid);
     }
 
     int wait_status;
@@ -282,16 +277,41 @@ tracer_expected<profiling_results> profiler::run()
 
 tracer_error profiler::obtain_idle_results()
 {
-    idle_evaluator evaluator(_readers);
-    cmmn::expected<idle_results, tracer_error> results = evaluator.run();
+    bool cpu = _cd.has_section_with(config_data::target::cpu);
+    bool gpu = _cd.has_section_with(config_data::target::gpu);
 
-    if (!results)
+    assert(cpu || gpu);
+    if (!cpu && !gpu)
+        return tracer_error(tracer_errcode::UNKNOWN_ERROR, "no CPU or GPU sections found");
+
+    if (cpu)
     {
-        log(log_lvl::error, "[%d] error gathering idle results", _tid);
-        return std::move(results.error());
+        log(log_lvl::info, "gathering idle readings for %s...", "CPU");
+        idle_evaluator eval(&_readers.reader_rapl());
+        cmmn::expected<nrgprf::execution, tracer_error> results = eval.run();
+        if (!results)
+        {
+            log(log_lvl::error, "unsuccessfuly gathered CPU idle readings: %s",
+                results.error().msg().c_str());
+            return std::move(results.error());
+        }
+        log(log_lvl::success, "successfuly gathered %s idle readings", "CPU");
+        _idle.cpu_readings = std::move(results.value());
     }
-    _idle = std::move(results.value());
-    log(log_lvl::success, "[%d] successfully gathered idle results", _tid);
+    if (gpu)
+    {
+        log(log_lvl::info, "gathering idle readings for %s...", "GPU");
+        idle_evaluator eval(idle_evaluator::reserve, &_readers.reader_gpu());
+        cmmn::expected<nrgprf::execution, tracer_error> results = eval.run();
+        if (!results)
+        {
+            log(log_lvl::error, "unsuccessfuly gathered GPU idle readings: %s",
+                results.error().msg().c_str());
+            return std::move(results.error());
+        }
+        log(log_lvl::success, "successfuly gathered %s idle readings", "GPU");
+        _idle.gpu_readings = std::move(results.value());
+    }
     return tracer_error::success();
 }
 

@@ -755,11 +755,28 @@ const std::vector<config_data::section>& config_data::sections() const
     return _sections;
 }
 
+bool config_data::has_section_with(config_data::target tgt) const
+{
+    for (const auto& sec : _sections)
+        if (sec.target() == tgt)
+            return true;
+    return false;
+}
+
+bool config_data::has_section_with(config_data::profiling_method method) const
+{
+    for (const auto& sec : _sections)
+        if (sec.method() == method)
+            return true;
+    return false;
+}
+
 
 // load_config
 
 cfg_expected<config_data> tep::load_config(const char* file)
 {
+    assert(file != nullptr);
     using namespace pugi;
 
     config_data cfgdata;

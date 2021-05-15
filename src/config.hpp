@@ -257,6 +257,9 @@ namespace tep
 
         std::vector<section>& sections();
         const std::vector<section>& sections() const;
+
+        bool has_section_with(config_data::target) const;
+        bool has_section_with(config_data::profiling_method) const;
     };
 
     // operator overloads

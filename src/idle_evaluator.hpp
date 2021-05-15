@@ -2,7 +2,7 @@
 
 #pragma once
 
-#include "reader_container.hpp"
+#include "periodic_sampler.hpp"
 
 namespace cmmn
 {
@@ -13,26 +13,31 @@ namespace cmmn
 namespace tep
 {
 
-    struct idle_results;
-
     class tracer_error;
 
     class idle_evaluator
     {
+    public:
+        static struct reserve_tag {} reserve;
+
     private:
         static std::chrono::seconds default_sleep_duration;
 
     private:
-        reader_container _readers;
         std::chrono::seconds _sleep;
+        periodic_sampler _sampler;
 
         void idle();
 
     public:
-        idle_evaluator(const reader_container& readers,
+        idle_evaluator(const nrgprf::reader* reader,
             const std::chrono::seconds& sleep_for = default_sleep_duration);
 
-        cmmn::expected<idle_results, tracer_error> run();
+        idle_evaluator(reserve_tag,
+            const nrgprf::reader* reader,
+            const std::chrono::seconds& sleep_for = default_sleep_duration);
+
+        cmmn::expected<nrgprf::execution, tracer_error> run();
     };
 
 }
