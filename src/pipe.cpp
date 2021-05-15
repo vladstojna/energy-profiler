@@ -13,6 +13,7 @@
 #include <wait.h>
 
 #include <util/expected.hpp>
+#include <util/concat.hpp>
 
 #ifdef NDEBUG
 #define Assert(x) do { (void)sizeof(x); } while(false)
@@ -31,9 +32,7 @@ static std::string msg_unknown("Unknown error");
 
 static pipe_error get_system_error(const char* prefix)
 {
-    std::string msg(prefix);
-    msg.append(": ").append(strerror(errno));
-    return pipe_error(pipe_error_code::SYS_ERROR, std::move(msg));
+    return pipe_error(pipe_error_code::SYS_ERROR, cmmn::concat(prefix, ": ", strerror(errno)));
 }
 
 static pipe_error get_command_error(const char* comment, const command& cmd, int exit_status)

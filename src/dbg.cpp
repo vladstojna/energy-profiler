@@ -18,6 +18,7 @@
 #include <system_error>
 
 #include <util/expected.hpp>
+#include <util/concat.hpp>
 
 using namespace tep;
 
@@ -45,20 +46,6 @@ static std::string get_system_error(int errnum)
     return { strerror_r(errnum, buffer, 256) };
 }
 
-template<typename... T>
-static std::string concat(T&&... args)
-{
-    std::string result;
-    std::string_view views[] = { args... };
-    std::string::size_type total_sz = 0;
-    for (const auto& v : views)
-        total_sz += v.size();
-    result.reserve(total_sz);
-    for (const auto& v : views)
-        result.append(v);
-    return result;
-}
-
 template<typename T>
 static std::string remove_spaces(T&& txt)
 {
@@ -82,7 +69,7 @@ static dbg_error cu_ambiguous(const std::string& name, const unit_lines& first,
     const unit_lines& second)
 {
     return dbg_error(dbg_error_code::COMPILATION_UNIT_AMBIGUOUS,
-        concat("Compilation unit ", name, " ambiguous; found two matches: '",
+        cmmn::concat("Compilation unit ", name, " ambiguous; found two matches: '",
             first.name(), "' and '", second.name(), "'"));
 }
 
@@ -90,14 +77,14 @@ static dbg_error func_ambiguous(const std::string& name, const function& first,
     const function& second)
 {
     return dbg_error(dbg_error_code::FUNCTION_AMBIGUOUS,
-        concat("Function ", name, " ambiguous; found two matches: '",
+        cmmn::concat("Function ", name, " ambiguous; found two matches: '",
             first.name(), "' and '", second.name(), "'"));
 }
 
 static dbg_error func_ambiguous(const std::string& name,
     const std::vector<const function*>& matches)
 {
-    std::string msg = concat("Function '", name, "' ambiguous; found matches:");
+    std::string msg = cmmn::concat("Function '", name, "' ambiguous; found matches:");
     for (const function* fptr : matches)
         msg.append(" '")
         .append(fptr->name())
@@ -108,19 +95,19 @@ static dbg_error func_ambiguous(const std::string& name,
 static dbg_error cu_not_found(const std::string& name)
 {
     return dbg_error(dbg_error_code::COMPILATION_UNIT_NOT_FOUND,
-        concat("Compilation unit '", name, "' not found"));
+        cmmn::concat("Compilation unit '", name, "' not found"));
 }
 
 static dbg_error func_not_found(const std::string& name)
 {
     return dbg_error(dbg_error_code::FUNCTION_NOT_FOUND,
-        concat("Function '", name, "' not found"));
+        cmmn::concat("Function '", name, "' not found"));
 }
 
 static dbg_expected<std::vector<uintptr_t>> get_return_addresses(const char* target)
 {
     std::vector<uintptr_t> addresses;
-    std::string output = concat(file_base, ".returns");
+    std::string output = cmmn::concat(file_base, ".returns");
     cmmn::expected<file_descriptor, pipe_error> fd = file_descriptor::create(
         output.c_str(), fd_flags::write, fd_mode::rdwr_all);
     if (!fd)
@@ -139,7 +126,7 @@ static dbg_expected<std::vector<uintptr_t>> get_return_addresses(const char* tar
     std::ifstream ifs(output);
     if (!ifs)
         return dbg_error(dbg_error_code::SYSTEM_ERROR,
-            concat("Could not open ", output, " for reading"));
+            cmmn::concat("Could not open ", output, " for reading"));
     for (std::string line; std::getline(ifs, line); )
     {
         uintptr_t addr;
@@ -171,7 +158,7 @@ static std::vector<std::string_view> split_line(std::string_view line, std::stri
 static dbg_expected<std::vector<parsed_func>> get_functions(const char* target)
 {
     std::vector<parsed_func> funcs;
-    std::string output = concat(file_base, ".syms");
+    std::string output = cmmn::concat(file_base, ".syms");
     cmmn::expected<file_descriptor, pipe_error> fd = file_descriptor::create(
         output.c_str(), fd_flags::write, fd_mode::rdwr_all);
     if (!fd)
@@ -189,7 +176,7 @@ static dbg_expected<std::vector<parsed_func>> get_functions(const char* target)
     std::ifstream ifs(output);
     if (!ifs)
         return dbg_error(dbg_error_code::SYSTEM_ERROR,
-            concat("Could not open ", output, " for reading"));
+            cmmn::concat("Could not open ", output, " for reading"));
     for (std::string line; std::getline(ifs, line); )
     {
         std::vector<std::string_view> views = split_line(line, "|");
@@ -481,7 +468,7 @@ header_info::type header_info::exec_type() const
 dbg_error header_info::get_exec_type(const char* target)
 {
     assert(target != nullptr);
-    std::string output = concat(file_base, ".type");
+    std::string output = cmmn::concat(file_base, ".type");
     cmmn::expected<file_descriptor, pipe_error> fd = file_descriptor::create(
         output.c_str(), fd_flags::write, fd_mode::rdwr_all);
     if (!fd)
@@ -498,11 +485,11 @@ dbg_error header_info::get_exec_type(const char* target)
     std::ifstream ifs(output);
     if (!ifs)
         return dbg_error(dbg_error_code::SYSTEM_ERROR,
-            concat("Could not open ", output, " for reading"));
+            cmmn::concat("Could not open ", output, " for reading"));
 
     std::string line;
     if (!std::getline(ifs, line))
-        return dbg_error(dbg_error_code::FORMAT_ERROR, concat("Expected a line in ", output));
+        return dbg_error(dbg_error_code::FORMAT_ERROR, cmmn::concat("Expected a line in ", output));
 
     if (line == et_dyn)
         _exectype = type::dyn;
@@ -510,7 +497,7 @@ dbg_error header_info::get_exec_type(const char* target)
         _exectype = type::exec;
     else
         return dbg_error(dbg_error_code::UNKNOWN_TARGET_TYPE,
-            concat("Target ", target, " not of type ", et_dyn, " or ", et_exec));
+            cmmn::concat("Target ", target, " not of type ", et_dyn, " or ", et_exec));
 
     assert(_exectype != type::unknown);
     return dbg_error::success();
