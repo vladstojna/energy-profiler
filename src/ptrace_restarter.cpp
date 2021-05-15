@@ -9,7 +9,7 @@
 #include <cstring>
 #include <sys/user.h>
 
-#include <expected.hpp>
+#include <util/expected.hpp>
 
 cmmn::expected<tep::ptrace_restarter, tep::tracer_error>
 tep::ptrace_restarter::create(pid_t tid, pid_t tracee, ptrace_wrapper& pw)

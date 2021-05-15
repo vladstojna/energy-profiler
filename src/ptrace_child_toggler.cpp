@@ -5,7 +5,7 @@
 #include "ptrace_wrapper.hpp"
 #include "util.hpp"
 
-#include <expected.hpp>
+#include <util/expected.hpp>
 
 #include <cassert>
 #include <unistd.h>
