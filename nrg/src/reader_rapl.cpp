@@ -1,5 +1,6 @@
 // reader_rapl.cpp
 
+#include <nrg/error.hpp>
 #include <nrg/reader_rapl.hpp>
 #include <nrg/sample.hpp>
 
@@ -322,7 +323,7 @@ error reader_rapl::add_event(const char* base, rapl_domain dmask, uint8_t skt)
     return error::success();
 }
 
-error reader_rapl::read(sample& s)
+error reader_rapl::read(sample& s) const
 {
     for (size_t ix = 0; ix < _active_events.size(); ix++)
     {
@@ -333,7 +334,7 @@ error reader_rapl::read(sample& s)
     return error::success();
 }
 
-error reader_rapl::read(sample& s, uint8_t idx)
+error reader_rapl::read(sample& s, uint8_t idx) const
 {
     uint64_t curr;
     if (read_uint64(_active_events[idx].fd.value, &curr) == -1)

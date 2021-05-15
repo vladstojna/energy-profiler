@@ -1,6 +1,8 @@
 // reader_gpu.cpp
 
 #include <nrg/reader_gpu.hpp>
+#include <nrg/reader_rapl.hpp>
+#include <nrg/sample.hpp>
 
 #include <algorithm>
 #include <iostream>
@@ -167,7 +169,7 @@ struct reader_gpu::impl
     impl(uint8_t dmask, size_t os, error& ec);
 
     error read(sample& s) const;
-    error read(sample& s, int8_t ev_idx) const;
+    error read(sample& s, uint8_t ev_idx) const;
 
     int8_t event_idx(uint8_t device) const;
     size_t num_events() const;
@@ -342,7 +344,7 @@ error reader_gpu::impl::read(sample& s) const
 
 #if defined(GPU_NV)
 
-error reader_gpu::impl::read(sample& s, int8_t ev_idx) const
+error reader_gpu::impl::read(sample& s, uint8_t ev_idx) const
 {
     unsigned int power;
     nvmlReturn_t result = nvmlDeviceGetPowerUsage(active_handles[ev_idx], &power);
@@ -354,7 +356,7 @@ error reader_gpu::impl::read(sample& s, int8_t ev_idx) const
 
 #elif defined(GPU_AMD)
 
-error reader_gpu::impl::read(sample& s, int8_t ev_idx) const
+error reader_gpu::impl::read(sample& s, uint8_t ev_idx) const
 {
     uint64_t power;
     rsmi_status_t result = rsmi_dev_power_ave_get(active_handles[ev_idx], 0, &power);
@@ -370,7 +372,7 @@ error reader_gpu::impl::read(sample& s, int8_t ev_idx) const
 
 #else
 
-error reader_gpu::impl::read(sample& s, int8_t ev_idx) const
+error reader_gpu::impl::read(sample& s, uint8_t ev_idx) const
 {
     (void)s;
     (void)ev_idx;
@@ -471,7 +473,7 @@ error reader_gpu::read(sample& s) const
     return _impl->read(s);
 }
 
-error reader_gpu::read(sample& s, int8_t ev_idx) const
+error reader_gpu::read(sample& s, uint8_t ev_idx) const
 {
     return _impl->read(s, ev_idx);
 }

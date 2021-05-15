@@ -2,10 +2,9 @@
 
 #pragma once
 
-#include "error.hpp"
 #include "rapl_domains.hpp"
+#include "reader.hpp"
 #include "reader_units.hpp"
-#include "sample.hpp"
 #include "result.hpp"
 
 #include <array>
@@ -13,6 +12,9 @@
 
 namespace nrgprf
 {
+
+    class error;
+    class sample;
 
     namespace detail
     {
@@ -35,15 +37,15 @@ namespace nrgprf
         struct event_data
         {
             file_descriptor fd;
-            uint64_t max;
-            uint64_t prev;
-            uint64_t curr_max;
+            mutable uint64_t max;
+            mutable uint64_t prev;
+            mutable uint64_t curr_max;
             event_data(const file_descriptor& fd, uint64_t max);
             event_data(file_descriptor&& fd, uint64_t max);
         };
     }
 
-    class reader_rapl
+    class reader_rapl : public reader
     {
     private:
         int8_t _event_map[MAX_SOCKETS][MAX_RAPL_DOMAINS];
@@ -53,11 +55,11 @@ namespace nrgprf
         reader_rapl(error& ec);
         reader_rapl(rapl_domain dmask, uint8_t skt_mask, error& ec);
 
-        error read(sample& s);
-        error read(sample& s, uint8_t ev_idx);
+        error read(sample& s) const override;
+        error read(sample& s, uint8_t ev_idx) const override;
+        size_t num_events() const override;
 
         int8_t event_idx(rapl_domain domain, uint8_t skt) const;
-        size_t num_events() const;
 
         result<units_energy> get_pkg_energy(const sample& s, uint8_t skt) const;
         result<units_energy> get_pp0_energy(const sample& s, uint8_t skt) const;

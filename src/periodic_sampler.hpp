@@ -28,17 +28,15 @@ namespace tep
     public:
         explicit periodic_sampler(nrgprf::execution&& exec = nrgprf::execution(0));
 
-        explicit periodic_sampler(nrgprf::reader_rapl& reader, nrgprf::execution&& exec,
+        explicit periodic_sampler(const nrgprf::reader* reader,
+            nrgprf::execution&& exec,
             const std::chrono::milliseconds& period,
-            complete_tag tag);
+            complete_tag);
 
-        explicit periodic_sampler(nrgprf::reader_rapl& reader, nrgprf::execution&& exec,
+        explicit periodic_sampler(const nrgprf::reader* reader,
+            nrgprf::execution&& exec,
             const std::chrono::milliseconds& period,
-            simple_tag tag);
-
-        explicit periodic_sampler(nrgprf::reader_gpu& reader, nrgprf::execution&& exec,
-            const std::chrono::milliseconds& period,
-            complete_tag tag);
+            simple_tag);
 
         ~periodic_sampler() noexcept;
 
@@ -49,11 +47,11 @@ namespace tep
         cmmn::expected<nrgprf::execution, nrgprf::error> get();
 
     private:
-        template<typename R>
-        nrgprf::error evaluate(const std::chrono::milliseconds& interval, R* reader);
+        nrgprf::error evaluate(const std::chrono::milliseconds& interval,
+            const nrgprf::reader* reader);
 
-        template<typename R>
-        nrgprf::error evaluate_simple(const std::chrono::milliseconds& interval, R* reader);
+        nrgprf::error evaluate_simple(const std::chrono::milliseconds& interval,
+            const nrgprf::reader* reader);
     };
 
 }
