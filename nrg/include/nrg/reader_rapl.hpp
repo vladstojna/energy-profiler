@@ -47,6 +47,12 @@ namespace nrgprf
 
     class reader_rapl : public reader
     {
+    public:
+        static struct package_tag {} package;
+        static struct cores_tag {} cores;
+        static struct uncore_tag {} uncore;
+        static struct dram_tag {} dram;
+
     private:
         int8_t _event_map[max_sockets][rapl_domains];
         std::vector<detail::event_data> _active_events;
@@ -61,10 +67,8 @@ namespace nrgprf
 
         int8_t event_idx(rapl_domain domain, uint8_t skt) const;
 
-        result<units_energy> get_pkg_energy(const sample& s, uint8_t skt) const;
-        result<units_energy> get_pp0_energy(const sample& s, uint8_t skt) const;
-        result<units_energy> get_pp1_energy(const sample& s, uint8_t skt) const;
-        result<units_energy> get_dram_energy(const sample& s, uint8_t skt) const;
+        template<typename Tag>
+        result<units_energy> get_energy(const sample& s, uint8_t skt, Tag) const;
 
     private:
         error add_event(const char* base, rapl_domain dmask, uint8_t skt);

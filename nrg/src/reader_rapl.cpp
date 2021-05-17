@@ -258,6 +258,11 @@ detail::event_data::event_data(file_descriptor&& fd, uint64_t max) :
 // reader_rapl
 
 
+reader_rapl::package_tag reader_rapl::package;
+reader_rapl::cores_tag reader_rapl::cores;
+reader_rapl::uncore_tag reader_rapl::uncore;
+reader_rapl::dram_tag reader_rapl::dram;
+
 reader_rapl::reader_rapl(rapl_domain dmask, uint8_t skt_mask, error& ec) :
     _event_map(),
     _active_events()
@@ -374,22 +379,26 @@ size_t reader_rapl::num_events() const
     return _active_events.size();
 }
 
-result<units_energy> reader_rapl::get_pkg_energy(const sample& s, uint8_t skt) const
+template<>
+result<units_energy> reader_rapl::get_energy(const sample& s, uint8_t skt, package_tag) const
 {
     return get_value(s, _event_map, skt, EVENT_PKG_IDX);
 }
 
-result<units_energy> reader_rapl::get_pp0_energy(const sample& s, uint8_t skt) const
+template<>
+result<units_energy> reader_rapl::get_energy(const sample& s, uint8_t skt, cores_tag) const
 {
     return get_value(s, _event_map, skt, EVENT_PP0_IDX);
 }
 
-result<units_energy> reader_rapl::get_pp1_energy(const sample& s, uint8_t skt) const
+template<>
+result<units_energy> reader_rapl::get_energy(const sample& s, uint8_t skt, uncore_tag) const
 {
     return get_value(s, _event_map, skt, EVENT_PP1_IDX);
 }
 
-result<units_energy> reader_rapl::get_dram_energy(const sample& s, uint8_t skt) const
+template<>
+result<units_energy> reader_rapl::get_energy(const sample& s, uint8_t skt, dram_tag) const
 {
     return get_value(s, _event_map, skt, EVENT_DRAM_IDX);
 }
