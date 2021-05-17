@@ -1,7 +1,6 @@
 // reader_gpu.cpp
 
 #include <nrg/reader_gpu.hpp>
-#include <nrg/reader_rapl.hpp>
 #include <nrg/sample.hpp>
 
 #include <algorithm>
@@ -156,8 +155,7 @@ lib_handle& lib_handle::operator=(lib_handle&& other)
 struct reader_gpu::impl
 {
 #if !defined(GPU_NONE)
-    size_t offset;
-    int8_t event_map[MAX_SOCKETS];
+    int8_t event_map[max_devices];
     lib_handle handle;
 #endif // !defined(GPU_NONE)
 #if defined(GPU_NV)
@@ -166,7 +164,7 @@ struct reader_gpu::impl
     std::vector<uint32_t> active_handles;
 #endif
 
-    impl(uint8_t dmask, size_t os, error& ec);
+    impl(uint8_t dmask, error& ec);
 
     error read(sample& s) const;
     error read(sample& s, uint8_t ev_idx) const;
@@ -181,8 +179,7 @@ struct reader_gpu::impl
 
 #if defined(GPU_NV)
 
-reader_gpu::impl::impl(uint8_t dev_mask, size_t os, error& ec) :
-    offset(os),
+reader_gpu::impl::impl(uint8_t dev_mask, error& ec) :
     event_map(),
     handle(ec),
     active_handles()
@@ -191,7 +188,7 @@ reader_gpu::impl::impl(uint8_t dev_mask, size_t os, error& ec) :
     if (ec)
         return;
 
-    for (size_t ix = 0; ix < MAX_SOCKETS; ix++)
+    for (size_t ix = 0; ix < max_devices; ix++)
         event_map[ix] = -1;
 
     unsigned int device_cnt;
@@ -201,7 +198,7 @@ reader_gpu::impl::impl(uint8_t dev_mask, size_t os, error& ec) :
         ec = { error_code::READER_GPU, error_str("Failed to obtain device count", result) };
         return;
     }
-    if (device_cnt > MAX_SOCKETS)
+    if (device_cnt > max_devices)
     {
         ec = { error_code::TOO_MANY_DEVICES, "Too many devices (a maximum of 8 is supported)" };
         return;
@@ -235,8 +232,7 @@ reader_gpu::impl::impl(uint8_t dev_mask, size_t os, error& ec) :
 
 #elif defined(GPU_AMD)
 
-reader_gpu::impl::impl(uint8_t dev_mask, size_t os, error& ec) :
-    offset(os),
+reader_gpu::impl::impl(uint8_t dev_mask, error& ec) :
     event_map(),
     handle(ec),
     active_handles()
@@ -245,7 +241,7 @@ reader_gpu::impl::impl(uint8_t dev_mask, size_t os, error& ec) :
     if (ec)
         return;
 
-    for (size_t ix = 0; ix < MAX_SOCKETS; ix++)
+    for (size_t ix = 0; ix < max_devices; ix++)
         event_map[ix] = -1;
 
     rsmi_version_t version;
@@ -269,7 +265,7 @@ reader_gpu::impl::impl(uint8_t dev_mask, size_t os, error& ec) :
         ec = { error_code::READER_GPU, error_str("Failed to obtain device count", result) };
         return;
     }
-    if (device_cnt > MAX_SOCKETS)
+    if (device_cnt > max_devices)
     {
         ec = { error_code::TOO_MANY_DEVICES, "Too many devices (a maximum of 8 is supported)" };
         return;
@@ -305,10 +301,9 @@ reader_gpu::impl::impl(uint8_t dev_mask, size_t os, error& ec) :
 
 #else
 
-reader_gpu::impl::impl(uint8_t dev_mask, size_t os, error& ec)
+reader_gpu::impl::impl(uint8_t dev_mask, error& ec)
 {
     (void)dev_mask;
-    (void)os;
     (void)ec;
     std::cout << "No-op GPU reader\n";
 }
@@ -350,7 +345,8 @@ error reader_gpu::impl::read(sample& s, uint8_t ev_idx) const
     nvmlReturn_t result = nvmlDeviceGetPowerUsage(active_handles[ev_idx], &power);
     if (result != NVML_SUCCESS)
         return { error_code::READER_GPU, nvmlErrorString(result) };
-    s.set(offset + ev_idx, power);
+    // NVML returns milliwatts, multiply by 1000 to get microwatts
+    s.at_gpu(ev_idx) = power * 1000;
     return error::success();
 }
 
@@ -366,7 +362,8 @@ error reader_gpu::impl::read(sample& s, uint8_t ev_idx) const
         rsmi_status_string(result, &str);
         return { error_code::READER_GPU, str };
     }
-    s.set(offset + ev_idx, power);
+    // ROCm SMI reads power in microwatts
+    s.at_gpu(ev_idx) = power;
     return error::success();
 }
 
@@ -410,26 +407,17 @@ size_t reader_gpu::impl::num_events() const
 
 #endif
 
-#if defined(GPU_NV)
+#if !defined(GPU_NONE)
 
 result<units_power> reader_gpu::impl::get_board_power(const sample& s, uint8_t dev) const
 {
     int8_t idx = event_idx(dev);
     if (idx < 0)
         return error(error_code::NO_EVENT);
-    // NVML returns milliwatts, multiply by 1000 to get microwatts
-    return s.get(offset + idx) * 1000;
-}
-
-#elif defined(GPU_AMD)
-
-result<units_power> reader_gpu::impl::get_board_power(const sample& s, uint8_t dev) const
-{
-    int8_t idx = event_idx(dev);
-    if (idx < 0)
-        return error(error_code::NO_EVENT);
-    // ROCm SMI reads power in microwatts
-    return s.get(offset + idx);
+    result<sample::value_type> result = s.at_gpu(idx);
+    if (!result)
+        return std::move(result.error());
+    return result.value();
 }
 
 #else
@@ -447,24 +435,12 @@ result<units_power> reader_gpu::impl::get_board_power(const sample& s, uint8_t d
 // end impl
 
 
-reader_gpu::reader_gpu(uint8_t dev_mask, size_t offset, error& ec) :
-    _impl(std::make_shared<reader_gpu::impl>(dev_mask, offset, ec))
-{}
-
-reader_gpu::reader_gpu(uint8_t dev_mask, const reader_rapl& reader, error& ec) :
-    reader_gpu(dev_mask, reader.num_events(), ec)
-{}
-
 reader_gpu::reader_gpu(uint8_t dev_mask, error& ec) :
-    reader_gpu(dev_mask, 0, ec)
-{}
-
-reader_gpu::reader_gpu(const reader_rapl& reader, error& ec) :
-    reader_gpu(0xff, reader.num_events(), ec)
+    _impl(std::make_shared<reader_gpu::impl>(dev_mask, ec))
 {}
 
 reader_gpu::reader_gpu(error& ec) :
-    reader_gpu(0xff, 0, ec)
+    reader_gpu(0xff, ec)
 {}
 
 

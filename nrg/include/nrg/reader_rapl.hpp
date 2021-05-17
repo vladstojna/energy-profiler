@@ -2,10 +2,10 @@
 
 #pragma once
 
-#include "rapl_domains.hpp"
-#include "reader.hpp"
-#include "reader_units.hpp"
-#include "result.hpp"
+#include <nrg/rapl_domains.hpp>
+#include <nrg/constants.hpp>
+#include <nrg/reader.hpp>
+#include <nrg/types.hpp>
 
 #include <array>
 #include <vector>
@@ -48,7 +48,7 @@ namespace nrgprf
     class reader_rapl : public reader
     {
     private:
-        int8_t _event_map[MAX_SOCKETS][MAX_RAPL_DOMAINS];
+        int8_t _event_map[max_sockets][rapl_domains];
         std::vector<detail::event_data> _active_events;
 
     public:

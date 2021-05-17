@@ -84,7 +84,7 @@ int read_uint64(int fd, uint64_t* res)
 result<uint8_t> count_sockets()
 {
     char filename[128];
-    bool pkg_found[MAX_SOCKETS]{ false };
+    bool pkg_found[max_sockets]{ false };
     uint8_t ret = 0;
     for (int i = 0; ; i++)
     {
@@ -98,7 +98,7 @@ result<uint8_t> count_sockets()
             return std::move(filed.error());
         if (read_uint64(filed.value().value, &pkg) < 0)
             return error(error_code::SYSTEM, system_error_str(filename));
-        if (pkg >= MAX_SOCKETS)
+        if (pkg >= max_sockets)
             return error(error_code::TOO_MANY_SOCKETS,
                 "Too many sockets (a maximum of 8 is supported)");
         if (!pkg_found[pkg])
@@ -128,11 +128,14 @@ domain_index domain_index_from_name(const char* name)
 
 
 result<units_energy> get_value(const sample& s,
-    const int8_t(&map)[MAX_SOCKETS][MAX_RAPL_DOMAINS], uint8_t skt, uint8_t idx)
+    const int8_t(&map)[max_sockets][rapl_domains], uint8_t skt, uint8_t idx)
 {
     if (map[skt][idx] < 0)
         return error(error_code::NO_EVENT);
-    return s.get(map[skt][idx]);
+    result<sample::value_type> result = s.at_cpu(idx);
+    if (!result)
+        return std::move(result.error());
+    return result.value();
 }
 
 
@@ -259,8 +262,8 @@ reader_rapl::reader_rapl(rapl_domain dmask, uint8_t skt_mask, error& ec) :
     _event_map(),
     _active_events()
 {
-    for (uint8_t skt = 0; skt < MAX_SOCKETS; skt++)
-        for (uint8_t ev = 0; ev < MAX_RAPL_DOMAINS; ev++)
+    for (uint8_t skt = 0; skt < max_sockets; skt++)
+        for (uint8_t ev = 0; ev < rapl_domains; ev++)
             _event_map[skt][ev] = -1;
 
     result<uint8_t> num_skts = count_sockets();
@@ -285,7 +288,7 @@ reader_rapl::reader_rapl(rapl_domain dmask, uint8_t skt_mask, error& ec) :
             return;
         }
         // already found one domain above
-        for (uint8_t domain_count = 0; domain_count < MAX_RAPL_DOMAINS - 1; domain_count++)
+        for (uint8_t domain_count = 0; domain_count < rapl_domains - 1; domain_count++)
         {
             snprintf(base + written, sizeof(base) - written, "/intel-rapl:%u:%u", skt, domain_count);
             // only consider the domain if the file exists
@@ -345,7 +348,7 @@ error reader_rapl::read(sample& s, uint8_t idx) const
         _active_events[idx].curr_max += _active_events[idx].max;
     }
     _active_events[idx].prev = curr;
-    s.set(idx, curr + _active_events[idx].curr_max);
+    s.at_cpu(idx) = curr + _active_events[idx].curr_max;
     return error::success();
 }
 

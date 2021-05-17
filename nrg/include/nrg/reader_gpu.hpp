@@ -2,9 +2,8 @@
 
 #pragma once
 
-#include "reader.hpp"
-#include "reader_units.hpp"
-#include "result.hpp"
+#include <nrg/reader.hpp>
+#include <nrg/types.hpp>
 
 #include <memory>
 
@@ -13,7 +12,6 @@ namespace nrgprf
 
     class error;
     class sample;
-    class reader_rapl;
 
     class reader_gpu : public reader
     {
@@ -23,9 +21,7 @@ namespace nrgprf
 
     public:
         reader_gpu(error& ec);
-        reader_gpu(const reader_rapl& reader, error& ec);
         reader_gpu(uint8_t dev_mask, error& ec);
-        reader_gpu(uint8_t dev_mask, const reader_rapl& reader, error& ec);
 
         error read(sample& s) const override;
         error read(sample& s, uint8_t ev_idx) const override;

@@ -2,23 +2,71 @@
 
 #pragma once
 
-#include "basic_sample.hpp"
-#include "rapl_domains.hpp"
+#include <nrg/constants.hpp>
+#include <nrg/types.hpp>
+
+#include <array>
 
 namespace nrgprf
 {
 
-    class sample : public basic_sample
+    class error;
+    class reader;
+
+    class sample
     {
+    public:
+        using value_type = units_energy::rep;
+
     private:
-        uintmax_t _values[MAX_SOCKETS * MAX_RAPL_DOMAINS + MAX_SOCKETS];
+        std::array<value_type, max_cpu_events + max_gpu_events> _values;
 
     public:
-        sample(const timepoint_t& tp) : basic_sample(tp) {}
-        sample(timepoint_t&& tp) : basic_sample(std::move(tp)) {}
+        sample(const reader&, error&);
 
-        uintmax_t get(size_t idx) const { return _values[idx]; }
-        void set(size_t idx, uintmax_t val) { _values[idx] = val; }
+        value_type& at_cpu(size_t idx);
+        value_type& at_gpu(size_t idx);
+
+        result<value_type> at_cpu(size_t idx) const;
+        result<value_type> at_gpu(size_t idx) const;
+
+        bool operator==(const sample& rhs) const;
+        bool operator!=(const sample& rhs) const;
+
+        sample operator+(const sample& rhs) const;
+        sample operator-(const sample& rhs) const;
+        sample operator/(sample::value_type rhs) const;
+        sample operator*(sample::value_type rhs) const;
+
+        sample& operator+=(const sample& rhs);
+        sample& operator-=(const sample& rhs);
+        sample& operator*=(sample::value_type rhs);
+        sample& operator/=(sample::value_type rhs);
+    };
+
+
+    class timed_sample
+    {
+    public:
+        using time_point = std::chrono::time_point<std::chrono::high_resolution_clock>;
+        using duration = std::chrono::nanoseconds;
+
+    private:
+        time_point _timepoint;
+        sample _sample;
+
+    public:
+        timed_sample(const reader&, error&);
+
+        sample& smp();
+        const sample& smp() const;
+
+        const time_point& timepoint() const;
+
+        bool operator==(const timed_sample& rhs);
+        bool operator!=(const timed_sample& rhs);
+
+        duration operator-(const timed_sample& rhs);
     };
 
 }

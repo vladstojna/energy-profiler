@@ -10,10 +10,6 @@
 namespace nrgprf
 {
 
-    // RAPL has up to 4 domains (Skylake has 5 but we ignore PSys for now)
-    constexpr uint8_t MAX_RAPL_DOMAINS = 4;
-    constexpr uint8_t MAX_SOCKETS = 8;
-
     // define the domain mask
     enum class rapl_domain : uint8_t
     {
