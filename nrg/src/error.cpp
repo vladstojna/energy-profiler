@@ -14,6 +14,10 @@ static const std::string error_success("No error");
 static const std::string error_unknown("Unknown error");
 static const std::string error_no_event("No such event");
 
+error error::success()
+{
+    return { error_code::SUCCESS };
+}
 
 error::error(error_code code) :
     _code(code),

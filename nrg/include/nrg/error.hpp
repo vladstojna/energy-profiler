@@ -33,10 +33,7 @@ namespace nrgprf
     class error
     {
     public:
-        static error success()
-        {
-            return { error_code::SUCCESS };
-        }
+        static error success();
 
     private:
         error_code _code;
