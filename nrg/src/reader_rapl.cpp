@@ -3,6 +3,7 @@
 #include <nrg/error.hpp>
 #include <nrg/reader_rapl.hpp>
 #include <nrg/sample.hpp>
+#include <util/concat.hpp>
 
 #include <cassert>
 #include <charconv>
@@ -13,6 +14,8 @@
 #include <sys/stat.h>
 #include <unistd.h>
 #include <fcntl.h>
+
+#include "util.hpp"
 
 using namespace nrgprf;
 
@@ -277,12 +280,12 @@ reader_rapl::reader_rapl(rapl_domain dmask, uint8_t skt_mask, error& ec) :
         ec = std::move(num_skts.error());
         return;
     }
-    std::cout << "found " << +num_skts.value() << " sockets\n";
+    std::cout << fileline(cmmn::concat("found ", std::to_string(num_skts.value()), " sockets\n"));
     for (uint8_t skt = 0; skt < num_skts.value(); skt++)
     {
         if (!(skt_mask & (1 << skt)))
             continue;
-        std::cout << "socket " << +skt << " not masked\n";
+        std::cout << fileline(cmmn::concat("registered socket: ", std::to_string(skt), "\n"));
 
         char base[96];
         int written = snprintf(base, sizeof(base), "/sys/class/powercap/intel-rapl/intel-rapl:%u", skt);
@@ -324,7 +327,7 @@ error reader_rapl::add_event(const char* base, rapl_domain dmask, uint8_t skt)
         result<detail::event_data> event_data = get_event_data(base);
         if (!event_data)
             return std::move(event_data.error());
-        std::cout << "added event: " << base << "\n";
+        std::cout << fileline(cmmn::concat("added event: ", base, "\n"));
         _event_map[skt][didx.value().index] = _active_events.size();
         _active_events.push_back(std::move(event_data.value()));
     }
@@ -349,7 +352,7 @@ error reader_rapl::read(sample& s, uint8_t idx) const
         return { error_code::SYSTEM, system_error_str("Error reading counters") };
     if (curr < _active_events[idx].prev)
     {
-        std::cout << "reader_rapl: detected wraparound\n";
+        std::cout << fileline("reader_rapl: detected wraparound\n");
         _active_events[idx].curr_max += _active_events[idx].max;
     }
     _active_events[idx].prev = curr;

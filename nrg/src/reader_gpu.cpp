@@ -2,6 +2,7 @@
 
 #include <nrg/reader_gpu.hpp>
 #include <nrg/sample.hpp>
+#include <util/concat.hpp>
 
 #include <algorithm>
 #include <iostream>
@@ -22,6 +23,7 @@
 #include <rocm_smi/rocm_smi.h>
 #endif
 
+#include "util.hpp"
 
 using namespace nrgprf;
 
@@ -79,6 +81,7 @@ lib_handle::lib_handle(error& ec)
 lib_handle::~lib_handle()
 {
     nvmlReturn_t result = nvmlShutdown();
+    assert(result == NVML_SUCCESS);
     if (result != NVML_SUCCESS)
         std::cerr << error_str("failed to shutdown NVML", result) << std::endl;
 }
@@ -118,6 +121,7 @@ lib_handle::lib_handle(error& ec)
 lib_handle::~lib_handle()
 {
     rsmi_status_t result = rsmi_shut_down();
+    assert(result == RSMI_STATUS_SUCCESS);
     if (result != RSMI_STATUS_SUCCESS)
         std::cerr << error_str("failed to shutdown ROCm SMI", result) << std::endl;
 }
@@ -223,7 +227,8 @@ reader_gpu::impl::impl(uint8_t dev_mask, error& ec) :
             ec = { error_code::READER_GPU, error_str("Failed to get device name", result) };
             return;
         }
-        std::cout << "device: " << i << ", name: " << name << "\n";
+
+        std::cout << fileline(cmmn::concat("device: ", std::to_string(i), ", name: ", name, "\n"));
         event_map[i] = active_handles.size();
         active_handles.push_back(handle);
     }
@@ -252,11 +257,9 @@ reader_gpu::impl::impl(uint8_t dev_mask, error& ec) :
         return;
     }
 
-    std::cout << "ROCm SMI version info\n";
-    std::cout << "major: " << version.major
-        << ", minor: " << version.minor
-        << ", patch: " << version.patch
-        << ", build: " << version.build << "\n";
+    std::cout << fileline("ROCm SMI version info: ");
+    std::cout << "major: " << version.major << ", minor: " << version.minor
+        << ", patch: " << version.patch << ", build: " << version.build << "\n";
 
     uint32_t device_cnt;
     result = rsmi_num_monitor_devices(&device_cnt);
@@ -290,6 +293,7 @@ reader_gpu::impl::impl(uint8_t dev_mask, error& ec) :
             ec = { error_code::READER_GPU, error_str("Failed to get device name", result) };
             return;
         }
+        std::cout << fileline("");
         std::cout << "idx: " << dev_idx
             << ", PCI id: " << dev_pci_id
             << ", name: " << name << "\n";
@@ -305,7 +309,7 @@ reader_gpu::impl::impl(uint8_t dev_mask, error& ec)
 {
     (void)dev_mask;
     (void)ec;
-    std::cout << "No-op GPU reader\n";
+    std::cout << fileline("No-op GPU reader\n");
 }
 
 #endif
