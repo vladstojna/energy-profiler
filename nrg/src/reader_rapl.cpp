@@ -5,6 +5,7 @@
 #include <nrg/sample.hpp>
 #include <util/concat.hpp>
 
+#include <algorithm>
 #include <cassert>
 #include <charconv>
 #include <cstdio>
@@ -405,3 +406,65 @@ result<units_energy> reader_rapl::get_energy(const sample& s, uint8_t skt, dram_
 {
     return get_value(s, _event_map, skt, EVENT_DRAM_IDX);
 }
+
+template<typename Tag>
+std::vector<reader_rapl::skt_energy> reader_rapl::get_energy(const sample& s, Tag tag) const
+{
+    std::vector<reader_rapl::skt_energy> retval;
+    for (uint32_t skt = 0; skt < max_sockets; skt++)
+    {
+        result<units_energy> nrg = get_energy(s, skt, tag);
+        if (nrg)
+            retval.push_back({ skt, std::move(nrg.value()) });
+    };
+    return retval;
+}
+
+std::vector<reader_rapl::skt_energy_all> reader_rapl::get_energy(const sample& s) const
+{
+    std::vector<reader_rapl::skt_energy_all> retval;
+    for (uint32_t skt = 0; skt < max_sockets; skt++)
+    {
+        auto domains = get_all_domains(s, skt);
+        if (std::find_if(domains.begin(), domains.end(),
+            [](const result<units_energy>& i) { return i; }) == domains.end())
+        {
+            continue;
+        }
+
+        retval.push_back({ skt, {} });
+
+        if (domains[0])
+            retval.back().energy.push_back({ rapl_domain::PKG, std::move(domains[0].value()) });
+        if (domains[1])
+            retval.back().energy.push_back({ rapl_domain::PP0, std::move(domains[1].value()) });
+        if (domains[2])
+            retval.back().energy.push_back({ rapl_domain::PP1, std::move(domains[2].value()) });
+        if (domains[3])
+            retval.back().energy.push_back({ rapl_domain::DRAM, std::move(domains[3].value()) });
+    };
+    return retval;
+}
+
+std::array<result<units_energy>, rapl_domains>
+reader_rapl::get_all_domains(const sample& s, uint32_t skt) const
+{
+    return {
+        get_energy(s, skt, package),
+        get_energy(s, skt, cores),
+        get_energy(s, skt, uncore),
+        get_energy(s, skt, dram)
+    };
+}
+
+
+// explicit instantiation
+
+template
+std::vector<reader_rapl::skt_energy> reader_rapl::get_energy(const sample& s, package_tag) const;
+template
+std::vector<reader_rapl::skt_energy> reader_rapl::get_energy(const sample& s, cores_tag) const;
+template
+std::vector<reader_rapl::skt_energy> reader_rapl::get_energy(const sample& s, uncore_tag) const;
+template
+std::vector<reader_rapl::skt_energy> reader_rapl::get_energy(const sample& s, dram_tag) const;

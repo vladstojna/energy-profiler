@@ -472,3 +472,15 @@ result<units_power> reader_gpu::get_board_power(const sample& s, uint8_t dev) co
 {
     return _impl->get_board_power(s, dev);
 }
+
+std::vector<reader_gpu::dev_pwr> reader_gpu::get_board_power(const sample& s) const
+{
+    std::vector<reader_gpu::dev_pwr> retval;
+    for (uint32_t d = 0; d < max_devices; d++)
+    {
+        auto pwr = get_board_power(s, d);
+        if (pwr)
+            retval.push_back({ d, std::move(pwr.value()) });
+    }
+    return retval;
+}

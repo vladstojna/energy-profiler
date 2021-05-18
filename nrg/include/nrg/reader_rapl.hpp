@@ -53,6 +53,24 @@ namespace nrgprf
         static struct uncore_tag {} uncore;
         static struct dram_tag {} dram;
 
+        struct skt_energy
+        {
+            uint32_t skt;
+            units_energy energy;
+        };
+
+        struct domain_energy
+        {
+            rapl_domain domain;
+            units_energy energy;
+        };
+
+        struct skt_energy_all
+        {
+            uint32_t skt;
+            std::vector<domain_energy> energy;
+        };
+
     private:
         int8_t _event_map[max_sockets][rapl_domains];
         std::vector<detail::event_data> _active_events;
@@ -70,8 +88,16 @@ namespace nrgprf
         template<typename Tag>
         result<units_energy> get_energy(const sample& s, uint8_t skt, Tag) const;
 
+        template<typename Tag>
+        std::vector<skt_energy> get_energy(const sample& s, Tag) const;
+
+        std::vector<skt_energy_all> get_energy(const sample& s) const;
+
     private:
         error add_event(const char* base, rapl_domain dmask, uint8_t skt);
+
+        std::array<result<units_energy>, rapl_domains>
+            get_all_domains(const sample& s, uint32_t skt) const;
     };
 
 }

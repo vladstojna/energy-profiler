@@ -6,6 +6,7 @@
 #include <nrg/types.hpp>
 
 #include <memory>
+#include <vector>
 
 namespace nrgprf
 {
@@ -19,6 +20,12 @@ namespace nrgprf
         struct impl;
         std::shared_ptr<impl> _impl;
 
+        struct dev_pwr
+        {
+            uint32_t dev;
+            units_power power;
+        };
+
     public:
         reader_gpu(error& ec);
         reader_gpu(uint8_t dev_mask, error& ec);
@@ -30,6 +37,8 @@ namespace nrgprf
         int8_t event_idx(uint8_t device) const;
 
         result<units_power> get_board_power(const sample& s, uint8_t dev) const;
+
+        std::vector<dev_pwr> get_board_power(const sample& s) const;
 
     private:
         reader_gpu(uint8_t dev_mask, size_t offset, error& ec);
