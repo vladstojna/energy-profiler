@@ -2,13 +2,13 @@
 
 #pragma once
 
-#include <nrg/rapl_domains.hpp>
 #include <nrg/constants.hpp>
 #include <nrg/reader.hpp>
 #include <nrg/types.hpp>
 
 #include <array>
 #include <vector>
+#include <type_traits>
 
 namespace nrgprf
 {
@@ -48,10 +48,10 @@ namespace nrgprf
     class reader_rapl : public reader
     {
     public:
-        static struct package_tag {} package;
-        static struct cores_tag {} cores;
-        static struct uncore_tag {} uncore;
-        static struct dram_tag {} dram;
+        static struct package_tag : std::integral_constant<int32_t, 0> {} package;
+        static struct cores_tag : std::integral_constant<int32_t, 1> {} cores;
+        static struct uncore_tag : std::integral_constant<int32_t, 2> {} uncore;
+        static struct dram_tag : std::integral_constant<int32_t, 3> {} dram;
 
         struct skt_energy
         {
@@ -59,31 +59,22 @@ namespace nrgprf
             units_energy energy;
         };
 
-        struct domain_energy
-        {
-            rapl_domain domain;
-            units_energy energy;
-        };
-
-        struct skt_energy_all
-        {
-            uint32_t skt;
-            std::vector<domain_energy> energy;
-        };
-
     private:
-        int8_t _event_map[max_sockets][rapl_domains];
+        std::array<std::array<int32_t, rapl_domains>, max_sockets> _event_map;
         std::vector<detail::event_data> _active_events;
 
     public:
-        reader_rapl(error& ec);
-        reader_rapl(rapl_domain dmask, uint8_t skt_mask, error& ec);
+        reader_rapl(rapl_mask, socket_mask, error&);
+        reader_rapl(rapl_mask, error&);
+        reader_rapl(socket_mask, error&);
+        reader_rapl(error&);
 
         error read(sample& s) const override;
         error read(sample& s, uint8_t ev_idx) const override;
         size_t num_events() const override;
 
-        int8_t event_idx(rapl_domain domain, uint8_t skt) const;
+        template<typename Tag>
+        int32_t event_idx(uint8_t skt, Tag) const;
 
         template<typename Tag>
         result<units_energy> get_energy(const sample& s, uint8_t skt, Tag) const;
@@ -91,13 +82,8 @@ namespace nrgprf
         template<typename Tag>
         std::vector<skt_energy> get_energy(const sample& s, Tag) const;
 
-        std::vector<skt_energy_all> get_energy(const sample& s) const;
-
     private:
-        error add_event(const char* base, rapl_domain dmask, uint8_t skt);
-
-        std::array<result<units_energy>, rapl_domains>
-            get_all_domains(const sample& s, uint32_t skt) const;
+        error add_event(const char* base, rapl_mask dmask, uint8_t skt);
     };
 
 }

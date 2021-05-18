@@ -168,7 +168,7 @@ struct reader_gpu::impl
     std::vector<uint32_t> active_handles;
 #endif
 
-    impl(uint8_t dmask, error& ec);
+    impl(device_mask dmask, error& ec);
 
     error read(sample& s) const;
     error read(sample& s, uint8_t ev_idx) const;
@@ -183,7 +183,7 @@ struct reader_gpu::impl
 
 #if defined(GPU_NV)
 
-reader_gpu::impl::impl(uint8_t dev_mask, error& ec) :
+reader_gpu::impl::impl(device_mask dev_mask, error& ec) :
     event_map(),
     handle(ec),
     active_handles()
@@ -212,7 +212,7 @@ reader_gpu::impl::impl(uint8_t dev_mask, error& ec) :
         nvmlDevice_t handle;
         char name[NVML_DEVICE_NAME_BUFFER_SIZE];
 
-        if (!(dev_mask & (1 << i)))
+        if (!dev_mask[i])
             continue;
 
         result = nvmlDeviceGetHandleByIndex(i, &handle);
@@ -237,7 +237,7 @@ reader_gpu::impl::impl(uint8_t dev_mask, error& ec) :
 
 #elif defined(GPU_AMD)
 
-reader_gpu::impl::impl(uint8_t dev_mask, error& ec) :
+reader_gpu::impl::impl(device_mask dev_mask, error& ec) :
     event_map(),
     handle(ec),
     active_handles()
@@ -278,7 +278,7 @@ reader_gpu::impl::impl(uint8_t dev_mask, error& ec) :
         char name[512];
         uint64_t dev_pci_id;
 
-        if (!(dev_mask & (1 << dev_idx)))
+        if (!dev_mask[dev_idx])
             continue;
 
         result = rsmi_dev_pci_id_get(dev_idx, &dev_pci_id);
@@ -305,7 +305,7 @@ reader_gpu::impl::impl(uint8_t dev_mask, error& ec) :
 
 #else
 
-reader_gpu::impl::impl(uint8_t dev_mask, error& ec)
+reader_gpu::impl::impl(device_mask dev_mask, error& ec)
 {
     (void)dev_mask;
     (void)ec;
@@ -439,7 +439,7 @@ result<units_power> reader_gpu::impl::get_board_power(const sample& s, uint8_t d
 // end impl
 
 
-reader_gpu::reader_gpu(uint8_t dev_mask, error& ec) :
+reader_gpu::reader_gpu(device_mask dev_mask, error& ec) :
     _impl(std::make_shared<reader_gpu::impl>(dev_mask, ec))
 {}
 

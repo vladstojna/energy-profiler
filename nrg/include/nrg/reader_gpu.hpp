@@ -27,8 +27,8 @@ namespace nrgprf
         };
 
     public:
-        reader_gpu(error& ec);
-        reader_gpu(uint8_t dev_mask, error& ec);
+        reader_gpu(error&);
+        reader_gpu(device_mask, error&);
 
         error read(sample& s) const override;
         error read(sample& s, uint8_t ev_idx) const override;

@@ -4,7 +4,6 @@
 
 #include <nrg/constants.hpp>
 #include <nrg/error.hpp>
-#include <nrg/rapl_domains.hpp>
 #include <nrg/reader_gpu.hpp>
 #include <nrg/reader_rapl.hpp>
 #include <nrg/reader.hpp>
