@@ -63,10 +63,10 @@ namespace nrgprf
 
         const time_point& timepoint() const;
 
-        bool operator==(const timed_sample& rhs);
-        bool operator!=(const timed_sample& rhs);
+        bool operator==(const timed_sample& rhs) const;
+        bool operator!=(const timed_sample& rhs) const;
 
-        duration operator-(const timed_sample& rhs);
+        duration operator-(const timed_sample& rhs) const;
     };
 
 }

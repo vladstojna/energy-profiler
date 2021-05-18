@@ -132,17 +132,17 @@ const timed_sample::time_point& timed_sample::timepoint() const
     return _timepoint;
 }
 
-bool timed_sample::operator==(const timed_sample& rhs)
+bool timed_sample::operator==(const timed_sample& rhs) const
 {
     return timepoint() == rhs.timepoint() && smp() == rhs.smp();
 }
 
-bool timed_sample::operator!=(const timed_sample& rhs)
+bool timed_sample::operator!=(const timed_sample& rhs) const
 {
-    return !(*this == rhs);
+    return timepoint() != rhs.timepoint() && smp() != rhs.smp();
 }
 
-timed_sample::duration timed_sample::operator-(const timed_sample& rhs)
+timed_sample::duration timed_sample::operator-(const timed_sample& rhs) const
 {
     return timepoint() - rhs.timepoint();
 }
