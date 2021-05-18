@@ -51,15 +51,17 @@ private:
     nrgprf::joules<double> _energy;
 
 public:
-    gpu_energy(const nrgprf::reader_gpu& rdr, const tep::timed_execution& exec, uint8_t dev, board_tag tag) :
+    gpu_energy(const nrgprf::reader_gpu& rdr, const tep::timed_execution& exec,
+        uint8_t dev, board_tag) :
         _valid(false),
         _energy{}
     {
-        (void)tag;
-        for (size_t s = 1; s < exec.size(); s++)
+        if (exec.empty())
+            return;
+        for (auto it = std::next(exec.begin()); it != exec.end(); it++)
         {
-            const auto& prev = exec[s - 1];
-            const auto& curr = exec[s];
+            const auto& prev = *std::prev(it);
+            const auto& curr = *it;
 
             nrgprf::result<nrgprf::units_power> pwr_prev = rdr.get_board_power(prev.smp(), dev);
             nrgprf::result<nrgprf::units_power> pwr_curr = rdr.get_board_power(curr.smp(), dev);
