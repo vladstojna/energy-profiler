@@ -4,6 +4,7 @@
 
 #include "config.hpp"
 #include "reader_container.hpp"
+#include "periodic_sampler.hpp"
 
 #include <nrg/nrg.hpp>
 
@@ -14,17 +15,17 @@ namespace tep
 
     struct idle_results
     {
-        nrgprf::execution cpu_readings;
-        nrgprf::execution gpu_readings;
+        timed_execution cpu_readings;
+        timed_execution gpu_readings;
 
         idle_results();
-        idle_results(nrgprf::execution&& cpur, nrgprf::execution&& gpur);
+        idle_results(timed_execution&& cpur, timed_execution&& gpur);
     };
 
     struct section_results
     {
         config_data::section section;
-        nrgprf::task readings;
+        std::vector<timed_execution> readings;
 
         section_results(const config_data::section& sec);
     };
@@ -36,7 +37,7 @@ namespace tep
         idle_results idle_res;
 
         profiling_results(reader_container&& rc, idle_results&& ir);
-        void add_execution(const config_data::section& sec, nrgprf::execution&& exec);
+        void add_execution(const config_data::section& sec, timed_execution&& exec);
     };
 
 

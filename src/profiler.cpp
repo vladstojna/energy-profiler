@@ -55,50 +55,6 @@ tracer_expected<long> insert_trap(pid_t my_tid, pid_t pid, uintptr_t addr)
     return word;
 }
 
-tracer_error handle_reader_error(pid_t pid, const nrgprf::error& error)
-{
-    log(log_lvl::error, "[%d] could not create reader: %s", pid, error.msg().c_str());
-    return { tracer_errcode::READER_ERROR, error.msg() };
-}
-
-
-nrgprf::rapl_domain get_rapl_domain_mask(const config_data& cd)
-{
-    return static_cast<nrgprf::rapl_domain>(cd.parameters().domain_mask() & 0xff);
-}
-
-uint8_t get_socket_mask(const config_data& cd)
-{
-    return static_cast<uint8_t>(cd.parameters().socket_mask() & 0xff);
-}
-
-uint8_t get_device_mask(const config_data& cd)
-{
-    return static_cast<uint8_t>(cd.parameters().device_mask() & 0xff);
-}
-
-nrgprf::reader_rapl create_cpu_reader(pid_t tid, const config_data& cd, tracer_error& err)
-{
-    nrgprf::error error = nrgprf::error::success();
-    nrgprf::reader_rapl reader(get_rapl_domain_mask(cd), get_socket_mask(cd), error);
-    if (error)
-        err = handle_reader_error(tid, error);
-    else
-        log(log_lvl::success, "[%d] created RAPL reader", tid);
-    return reader;
-}
-
-nrgprf::reader_gpu create_gpu_reader(pid_t tid, const config_data& cd, tracer_error& err)
-{
-    nrgprf::error error = nrgprf::error::success();
-    nrgprf::reader_gpu reader(get_device_mask(cd), error);
-    if (error)
-        err = handle_reader_error(tid, error);
-    else
-        log(log_lvl::success, "[%d] created GPU reader", tid);
-    return reader;
-}
-
 // end helper functions
 
 
@@ -263,7 +219,7 @@ tracer_expected<profiling_results> profiler::run()
         {
             if (exec)
             {
-                sr.readings.add(std::move(exec.value()));
+                sr.readings.push_back(std::move(exec.value()));
                 log(log_lvl::success, "[%d] registered execution of section @ 0x%" PRIxPTR
                     " (offset = 0x%" PRIxPTR ") as successful", _tid, addr, addr - entrypoint);
             }
@@ -290,7 +246,7 @@ tracer_error profiler::obtain_idle_results()
     {
         log(log_lvl::info, "gathering idle readings for %s...", "CPU");
         idle_evaluator eval(&_readers.reader_rapl());
-        cmmn::expected<nrgprf::execution, tracer_error> results = eval.run();
+        auto results = eval.run();
         if (!results)
         {
             log(log_lvl::error, "unsuccessfuly gathered CPU idle readings: %s",
@@ -304,7 +260,7 @@ tracer_error profiler::obtain_idle_results()
     {
         log(log_lvl::info, "gathering idle readings for %s...", "GPU");
         idle_evaluator eval(idle_evaluator::reserve, &_readers.reader_gpu());
-        cmmn::expected<nrgprf::execution, tracer_error> results = eval.run();
+        auto results = eval.run();
         if (!results)
         {
             log(log_lvl::error, "unsuccessfuly gathered GPU idle readings: %s",

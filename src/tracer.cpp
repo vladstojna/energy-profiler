@@ -266,46 +266,24 @@ tracer_error tracer::handle_breakpoint(user_regs_struct& regs, uintptr_t ep, lon
     return tracer_error::success();
 }
 
-nrgprf::execution tracer::prepare_new_exec(const config_data::section& section) const
-{
-    pid_t tid = gettid();
-    nrgprf::execution exec(0);
-    switch (section.method())
-    {
-    case config_data::profiling_method::energy_total:
-    {
-        exec.add(nrgprf::timepoint_t());
-        exec.add(nrgprf::timepoint_t());
-        log(log_lvl::debug, "[%d] added first and last sample to execution", tid);
-    } break;
-    case config_data::profiling_method::energy_profile:
-    {
-        exec.reserve(section.samples());
-        log(log_lvl::debug, "[%d] reserved %zu samples for execution", tid, section.samples());
-    } break;
-    }
-    return exec;
-}
-
 void tracer::launch_async_sampling(const config_data::section& section)
 {
-    nrgprf::execution exec(prepare_new_exec(section));
     switch (section.target())
     {
     case config_data::target::cpu:
     {
         if (section.method() == config_data::profiling_method::energy_profile)
-            _sampler = std::make_unique<periodic_sampler>(&_readers.reader_rapl(), std::move(exec),
+            _sampler = std::make_unique<periodic_sampler>(&_readers.reader_rapl(),
                 section.interval(), periodic_sampler::complete);
         else if (section.method() == config_data::profiling_method::energy_total)
-            _sampler = std::make_unique<periodic_sampler>(&_readers.reader_rapl(), std::move(exec),
+            _sampler = std::make_unique<periodic_sampler>(&_readers.reader_rapl(),
                 section.interval(), periodic_sampler::simple);
         else
             assert(false);
     } break;
     case config_data::target::gpu:
     {
-        _sampler = std::make_unique<periodic_sampler>(&_readers.reader_gpu(), std::move(exec),
+        _sampler = std::make_unique<periodic_sampler>(&_readers.reader_gpu(),
             section.interval(), periodic_sampler::complete);
     } break;
     }
@@ -314,7 +292,7 @@ void tracer::launch_async_sampling(const config_data::section& section)
 void tracer::register_results(uintptr_t bp)
 {
     pid_t tid = gettid();
-    cmmn::expected<nrgprf::execution, nrgprf::error> sampling_results = _sampler->get();
+    auto sampling_results = _sampler->results();
     // if sampling thread generated an error, register execution as a failed one
     // in the gathered results collection
     if (!sampling_results)

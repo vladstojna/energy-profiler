@@ -6,12 +6,15 @@
 
 #include <atomic>
 #include <future>
+#include <vector>
 
 #include <nrg/nrg.hpp>
 #include <util/expected.hpp>
 
 namespace tep
 {
+
+    using timed_execution = std::vector<nrgprf::timed_sample>;
 
     class periodic_sampler
     {
@@ -20,21 +23,18 @@ namespace tep
         static struct complete_tag {} complete;
 
     private:
-        std::future<nrgprf::error> _future;
-        nrgprf::execution _exec;
+        std::future<cmmn::expected<timed_execution, nrgprf::error>> _future;
         signaler _sig;
         std::atomic_bool _finished;
 
-    public:
-        explicit periodic_sampler(nrgprf::execution&& exec = nrgprf::execution(0));
+        explicit periodic_sampler();
 
+    public:
         explicit periodic_sampler(const nrgprf::reader* reader,
-            nrgprf::execution&& exec,
             const std::chrono::milliseconds& period,
             complete_tag);
 
         explicit periodic_sampler(const nrgprf::reader* reader,
-            nrgprf::execution&& exec,
             const std::chrono::milliseconds& period,
             simple_tag);
 
@@ -44,13 +44,15 @@ namespace tep
 
         void start();
 
-        cmmn::expected<nrgprf::execution, nrgprf::error> get();
+        cmmn::expected<timed_execution, nrgprf::error> results();
 
     private:
-        nrgprf::error evaluate(const std::chrono::milliseconds& interval,
+        cmmn::expected<timed_execution, nrgprf::error> evaluate(
+            const std::chrono::milliseconds& interval,
             const nrgprf::reader* reader);
 
-        nrgprf::error evaluate_simple(const std::chrono::milliseconds& interval,
+        cmmn::expected<timed_execution, nrgprf::error> evaluate_simple(
+            const std::chrono::milliseconds& interval,
             const nrgprf::reader* reader);
     };
 

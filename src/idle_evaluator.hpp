@@ -37,7 +37,7 @@ namespace tep
             const nrgprf::reader* reader,
             const std::chrono::seconds& sleep_for = default_sleep_duration);
 
-        cmmn::expected<nrgprf::execution, tracer_error> run();
+        cmmn::expected<timed_execution, tracer_error> run();
     };
 
 }
