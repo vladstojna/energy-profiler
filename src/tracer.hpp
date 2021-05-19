@@ -12,7 +12,7 @@
 #include "reader_container.hpp"
 #include "config.hpp"
 #include "error.hpp"
-#include "periodic_sampler.hpp"
+#include "sampler.hpp"
 #include "trap.hpp"
 
 struct user_regs_struct;
@@ -40,7 +40,7 @@ namespace tep
         const tracer* _parent;
 
         reader_container _readers;
-        std::unique_ptr<periodic_sampler> _sampler;
+        std::unique_ptr<async_sampler> _sampler;
 
         pid_t _tracee_tgid;
         pid_t _tracee;

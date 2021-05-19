@@ -1,7 +1,6 @@
 // profiling_results.cpp
 
 #include "profiling_results.hpp"
-#include "periodic_sampler.hpp"
 
 #include <cmath>
 #include <functional>

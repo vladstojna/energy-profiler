@@ -271,21 +271,33 @@ void tracer::launch_async_sampling(const config_data::section& section)
     switch (section.target())
     {
     case config_data::target::cpu:
-    {
-        if (section.method() == config_data::profiling_method::energy_profile)
-            _sampler = std::make_unique<periodic_sampler>(&_readers.reader_rapl(),
-                section.interval(), periodic_sampler::complete);
-        else if (section.method() == config_data::profiling_method::energy_total)
-            _sampler = std::make_unique<periodic_sampler>(&_readers.reader_rapl(),
-                section.interval(), periodic_sampler::simple);
-        else
+        switch (section.method())
+        {
+        case config_data::profiling_method::energy_profile:
+            _sampler = std::make_unique<unbounded_ps>(&_readers.reader_rapl(), section.samples(),
+                section.interval());
+            break;
+        case config_data::profiling_method::energy_total:
+            _sampler = std::make_unique<bounded_ps>(&_readers.reader_rapl(), section.interval());
+            break;
+        default:
             assert(false);
-    } break;
+        }
+        break;
     case config_data::target::gpu:
-    {
-        _sampler = std::make_unique<periodic_sampler>(&_readers.reader_gpu(),
-            section.interval(), periodic_sampler::complete);
-    } break;
+        switch (section.method())
+        {
+        case config_data::profiling_method::energy_profile:
+            _sampler = std::make_unique<unbounded_ps>(&_readers.reader_gpu(), section.samples(),
+                section.interval());
+            break;
+        case config_data::profiling_method::energy_total:
+            _sampler = std::make_unique<bounded_ps>(&_readers.reader_rapl(), section.interval());
+            break;
+        default:
+            assert(false);
+        }
+        break;
     }
 }
 

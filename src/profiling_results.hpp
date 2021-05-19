@@ -4,7 +4,7 @@
 
 #include "config.hpp"
 #include "reader_container.hpp"
-#include "periodic_sampler.hpp"
+#include "sampler.hpp"
 
 #include <nrg/nrg.hpp>
 

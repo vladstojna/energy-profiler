@@ -1,7 +1,6 @@
 // profiler.cpp
 
 #include "error.hpp"
-#include "idle_evaluator.hpp"
 #include "profiler.hpp"
 #include "profiling_results.hpp"
 #include "ptrace_wrapper.hpp"
@@ -245,13 +244,18 @@ tracer_error profiler::obtain_idle_results()
     if (cpu)
     {
         log(log_lvl::info, "gathering idle readings for %s...", "CPU");
-        idle_evaluator eval(&_readers.reader_rapl());
-        auto results = eval.run();
+
+        sync_sampler sampler(&_readers.reader_rapl(), []()
+            {
+                std::this_thread::sleep_for(idle_sampler::default_sleep);
+            });
+
+        auto results = sampler.results();
         if (!results)
         {
             log(log_lvl::error, "unsuccessfuly gathered CPU idle readings: %s",
                 results.error().msg().c_str());
-            return std::move(results.error());
+            return { tracer_errcode::READER_ERROR, results.error().msg() };
         }
         log(log_lvl::success, "successfuly gathered %s idle readings", "CPU");
         _idle.cpu_readings = std::move(results.value());
@@ -259,13 +263,17 @@ tracer_error profiler::obtain_idle_results()
     if (gpu)
     {
         log(log_lvl::info, "gathering idle readings for %s...", "GPU");
-        idle_evaluator eval(idle_evaluator::reserve, &_readers.reader_gpu());
-        auto results = eval.run();
+
+        idle_sampler sampler(std::make_unique<unbounded_ps>(
+            &_readers.reader_gpu(),
+            idle_sampler::default_sleep / unbounded_ps::default_period + 100));
+
+        auto results = sampler.results();
         if (!results)
         {
             log(log_lvl::error, "unsuccessfuly gathered GPU idle readings: %s",
                 results.error().msg().c_str());
-            return std::move(results.error());
+            return { tracer_errcode::READER_ERROR, results.error().msg() };
         }
         log(log_lvl::success, "successfuly gathered %s idle readings", "GPU");
         _idle.gpu_readings = std::move(results.value());
