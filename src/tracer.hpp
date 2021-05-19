@@ -41,6 +41,7 @@ namespace tep
 
         reader_container _readers;
         std::unique_ptr<async_sampler> _sampler;
+        sampler_promise _promise;
 
         pid_t _tracee_tgid;
         pid_t _tracee;

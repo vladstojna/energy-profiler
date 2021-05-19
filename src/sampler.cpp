@@ -8,6 +8,21 @@
 using namespace tep;
 
 
+sampler_promise sampler_interface::run()&
+{
+    return [this]()
+    {
+        return results();
+    };
+}
+
+sampler_expected sampler_interface::run()&&
+{
+    return run()();
+}
+
+
+
 sampler::sampler(const nrgprf::reader* r) :
     _reader(r)
 {
@@ -21,24 +36,18 @@ const nrgprf::reader* sampler::reader() const
 
 
 
-sync_sampler::sync_sampler(const nrgprf::reader* reader, const std::function<void()>& work) :
-    sampler(reader),
-    _work(work)
+sync_sampler::sync_sampler(const nrgprf::reader* reader) :
+    sampler(reader)
 {}
 
-void sync_sampler::start()
-{
-    // No-op; synchronous samplers do all their work in results()
-}
-
-cmmn::expected<timed_execution, nrgprf::error> sync_sampler::results()
+sampler_expected sync_sampler::results()
 {
     nrgprf::error error = nrgprf::error::success();
     nrgprf::timed_sample s1(*reader(), error);
     if (error)
         return error;
 
-    _work();
+    work();
 
     nrgprf::timed_sample s2(*reader(), error);
     if (error)
@@ -48,15 +57,22 @@ cmmn::expected<timed_execution, nrgprf::error> sync_sampler::results()
 
 
 
-decltype(async_sampler::_future)& async_sampler::ftr()
+sync_sampler_fn::sync_sampler_fn(const nrgprf::reader* r, const std::function<void()>& f) :
+    sync_sampler(r),
+    _work(f)
+{}
+
+sync_sampler_fn::sync_sampler_fn(const nrgprf::reader* r, std::function<void()>&& f) :
+    sync_sampler(r),
+    _work(std::move(f))
+{}
+
+void sync_sampler_fn::work() const
 {
-    return _future;
+    _work();
 }
 
-const decltype(async_sampler::_future)& async_sampler::ftr() const
-{
-    return _future;
-}
+
 
 async_sampler::async_sampler(const nrgprf::reader* r) :
     sampler(r),
@@ -74,26 +90,40 @@ bool async_sampler::valid() const
     return _future.valid();
 }
 
-
-
-std::chrono::milliseconds idle_sampler::default_sleep(5000);
-
-idle_sampler::idle_sampler(std::unique_ptr<async_sampler>&& ptr,
-    const std::chrono::milliseconds& sleep_for) :
-    _sampler(std::move(ptr)),
-    _sleep_for(sleep_for)
-{}
-
-void idle_sampler::start()
+decltype(async_sampler::_future)& async_sampler::ftr()
 {
-    // No-op; idle_sampler is synchronous
+    return _future;
 }
 
-cmmn::expected<timed_execution, nrgprf::error> idle_sampler::results()
+const decltype(async_sampler::_future)& async_sampler::ftr() const
 {
-    _sampler->start();
-    std::this_thread::sleep_for(_sleep_for);
-    return _sampler->results();
+    return _future;
+}
+
+void async_sampler::ftr(decltype(_future) && ftr)
+{
+    _future = std::move(ftr);
+}
+
+
+
+async_sampler_fn::async_sampler_fn(std::unique_ptr<async_sampler>&& s,
+    const std::function<void()>& f) :
+    _sampler(std::move(s)),
+    _work(f)
+{}
+
+async_sampler_fn::async_sampler_fn(std::unique_ptr<async_sampler>&& s,
+    std::function<void()>&& f) :
+    _sampler(std::move(s)),
+    _work(std::move(f))
+{}
+
+sampler_expected async_sampler_fn::results()
+{
+    auto promise = _sampler->run();
+    _work();
+    return promise();
 }
 
 
@@ -105,10 +135,10 @@ periodic_sampler::periodic_sampler(const nrgprf::reader* r,
     _finished(false),
     _period(period)
 {
-    ftr() = std::async(std::launch::async, [this]()
+    ftr(std::async(std::launch::async, [this]()
         {
             return async_work();
-        });
+        }));
 }
 
 periodic_sampler::~periodic_sampler()
@@ -121,17 +151,20 @@ periodic_sampler::~periodic_sampler()
     }
 }
 
-void periodic_sampler::start()
+sampler_promise periodic_sampler::run()&
 {
     _sig.post();
+    return async_sampler::run();
 }
 
-cmmn::expected<timed_execution, nrgprf::error> periodic_sampler::results()
+sampler_expected periodic_sampler::run()&&
+{
+    return std::move(*this).async_sampler::run();
+}
+
+sampler_expected periodic_sampler::results()
 {
     assert(!_finished && ftr().valid());
-    if (_finished || !ftr().valid())
-        return nrgprf::error(nrgprf::error_code::SETUP_ERROR,
-            "Retrieving results without starting sampler");
     _finished = true;
     _sig.post();
     return ftr().get();
@@ -165,7 +198,7 @@ bounded_ps::bounded_ps(const nrgprf::reader* r, const std::chrono::milliseconds&
     periodic_sampler(r, p)
 {}
 
-cmmn::expected<timed_execution, nrgprf::error> bounded_ps::async_work()
+sampler_expected bounded_ps::async_work()
 {
     nrgprf::error error = nrgprf::error::success();
     log(log_lvl::debug, "%s: waiting to start", __func__);
@@ -175,10 +208,8 @@ cmmn::expected<timed_execution, nrgprf::error> bounded_ps::async_work()
     nrgprf::timed_sample last = first;
     if (error)
     {
-        // wait until section or target finishes
         log(log_lvl::error, "%s: error when reading counters: %s",
             __func__, error.msg().c_str());
-        sig().wait();
         return error;
     }
     while (!finished())
@@ -189,7 +220,6 @@ cmmn::expected<timed_execution, nrgprf::error> bounded_ps::async_work()
         {
             log(log_lvl::error, "%s: error when reading counters: %s",
                 __func__, error.msg().c_str());
-            sig().wait();
             return error;
         }
     };
@@ -208,7 +238,7 @@ unbounded_ps::unbounded_ps(const nrgprf::reader* r, size_t initial_size,
     _initial_size(initial_size)
 {}
 
-cmmn::expected<timed_execution, nrgprf::error> unbounded_ps::async_work()
+sampler_expected unbounded_ps::async_work()
 {
     nrgprf::error error = nrgprf::error::success();
     timed_execution exec;
@@ -222,10 +252,8 @@ cmmn::expected<timed_execution, nrgprf::error> unbounded_ps::async_work()
         exec.emplace_back(*reader(), error);
         if (error)
         {
-            // wait until section or target finishes
             log(log_lvl::error, "%s: error when reading counters: %s",
                 __func__, error.msg().c_str());
-            sig().wait();
             return error;
         }
         sig().wait_for(period());
@@ -233,8 +261,11 @@ cmmn::expected<timed_execution, nrgprf::error> unbounded_ps::async_work()
 
     exec.emplace_back(*reader(), error);
     if (error)
+    {
         log(log_lvl::error, "%s: error when reading counters: %s",
             __func__, error.msg().c_str());
+        return error;
+    }
 
     log(log_lvl::success, "%s: finished evaluation with %zu samples",
         __func__, exec.size());

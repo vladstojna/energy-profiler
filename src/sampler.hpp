@@ -15,16 +15,23 @@ namespace tep
 {
 
     using timed_execution = std::vector<nrgprf::timed_sample>;
+    using sampler_expected = cmmn::expected<timed_execution, nrgprf::error>;
+    using sampler_promise = std::function<sampler_expected()>;
 
+    // sampler_interface
 
     class sampler_interface
     {
     public:
         virtual ~sampler_interface() = default;
-        virtual void start() = 0;
-        virtual cmmn::expected<timed_execution, nrgprf::error> results() = 0;
+        virtual sampler_promise run()&;
+        virtual sampler_expected run()&&;
+
+    private:
+        virtual sampler_expected results() = 0;
     };
 
+    // sampler
 
     class sampler : public sampler_interface
     {
@@ -38,24 +45,25 @@ namespace tep
         const nrgprf::reader* reader() const;
     };
 
+    // sync_sampler
 
-    class sync_sampler final : public sampler
+    class sync_sampler : public sampler
     {
-    private:
-        std::function<void()> _work;
-
     public:
-        sync_sampler(const nrgprf::reader*, const std::function<void()>&);
+        sync_sampler(const nrgprf::reader*);
 
-        void start() override;
-        cmmn::expected<timed_execution, nrgprf::error> results() override;
+    private:
+        sampler_expected results() override;
+
+        virtual void work() const = 0;
     };
 
+    // async_sampler
 
     class async_sampler : public sampler
     {
     private:
-        std::future<cmmn::expected<timed_execution, nrgprf::error>> _future;
+        std::future<sampler_expected> _future;
 
     public:
         async_sampler(const nrgprf::reader*);
@@ -66,26 +74,40 @@ namespace tep
     protected:
         decltype(_future)& ftr();
         const decltype(_future)& ftr() const;
+        void ftr(decltype(_future)&&);
 
-        virtual cmmn::expected<timed_execution, nrgprf::error> async_work() = 0;
+        virtual sampler_expected async_work() = 0;
     };
 
+    // sync_sampler_fn
 
-    class idle_sampler : public sampler_interface
+    class sync_sampler_fn final : public sync_sampler
     {
+    private:
+        std::function<void()> _work;
+
     public:
-        static std::chrono::milliseconds default_sleep;
+        sync_sampler_fn(const nrgprf::reader*, const std::function<void()>&);
+        sync_sampler_fn(const nrgprf::reader*, std::function<void()>&&);
 
     private:
+        void work() const override;
+    };
+
+    // async_sampler_fn
+
+    class async_sampler_fn final : public sampler_interface
+    {
+    private:
         std::unique_ptr<async_sampler> _sampler;
-        std::chrono::milliseconds _sleep_for;
+        std::function<void()> _work;
 
     public:
-        idle_sampler(std::unique_ptr<async_sampler>&&,
-            const std::chrono::milliseconds& sleep_for = default_sleep);
+        async_sampler_fn(std::unique_ptr<async_sampler>&&, const std::function<void()>&);
+        async_sampler_fn(std::unique_ptr<async_sampler>&&, std::function<void()>&&);
 
-        void start() override;
-        cmmn::expected<timed_execution, nrgprf::error> results() override;
+    private:
+        sampler_expected results() override;
     };
 
 
@@ -100,8 +122,8 @@ namespace tep
         periodic_sampler(const nrgprf::reader*, const std::chrono::milliseconds& period);
         ~periodic_sampler();
 
-        void start() override;
-        cmmn::expected<timed_execution, nrgprf::error> results() override;
+        sampler_promise run() & override;
+        sampler_expected run() && override;
 
         const std::chrono::milliseconds& period() const;
 
@@ -110,6 +132,9 @@ namespace tep
         const signaler& sig() const;
 
         bool finished() const;
+
+    private:
+        sampler_expected results() override;
     };
 
 
@@ -121,7 +146,7 @@ namespace tep
         bounded_ps(const nrgprf::reader*, const std::chrono::milliseconds& period = default_period);
 
     protected:
-        cmmn::expected<timed_execution, nrgprf::error> async_work() override;
+        sampler_expected async_work() override;
     };
 
 
@@ -137,7 +162,7 @@ namespace tep
             const std::chrono::milliseconds& period = default_period);
 
     protected:
-        cmmn::expected<timed_execution, nrgprf::error> async_work() override;
+        sampler_expected async_work() override;
     };
 
 }

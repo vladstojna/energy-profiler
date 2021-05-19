@@ -304,7 +304,7 @@ void tracer::launch_async_sampling(const config_data::section& section)
 void tracer::register_results(uintptr_t bp)
 {
     pid_t tid = gettid();
-    auto sampling_results = _sampler->results();
+    auto sampling_results = _promise();
     // if sampling thread generated an error, register execution as a failed one
     // in the gathered results collection
     if (!sampling_results)
@@ -391,7 +391,7 @@ tracer_error tracer::trace(const trap_set* traps)
             error = handle_breakpoint(regs, entrypoint, trap.value()->original_word());
             if (error)
                 return error;
-            _sampler->start();
+            _promise = _sampler->run();
 
             // it is during this time that the energy readings are done
             if (pw.ptrace(errnum, PTRACE_CONT, _tracee, 0, 0) == -1)
