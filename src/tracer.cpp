@@ -268,17 +268,19 @@ tracer_error tracer::handle_breakpoint(user_regs_struct& regs, uintptr_t ep, lon
 
 void tracer::launch_async_sampling(const config_data::section& section)
 {
+    const nrgprf::reader* reader_gpu = &_readers.reader_gpu();
+    const nrgprf::reader* reader_cpu = &_readers.reader_rapl();
     switch (section.target())
     {
     case config_data::target::cpu:
         switch (section.method())
         {
         case config_data::profiling_method::energy_profile:
-            _sampler = std::make_unique<unbounded_ps>(&_readers.reader_rapl(), section.samples(),
+            _sampler = std::make_unique<unbounded_ps>(reader_cpu, section.samples(),
                 section.interval());
             break;
         case config_data::profiling_method::energy_total:
-            _sampler = std::make_unique<bounded_ps>(&_readers.reader_rapl(), section.interval());
+            _sampler = std::make_unique<bounded_ps>(reader_cpu, section.interval());
             break;
         default:
             assert(false);
@@ -288,11 +290,11 @@ void tracer::launch_async_sampling(const config_data::section& section)
         switch (section.method())
         {
         case config_data::profiling_method::energy_profile:
-            _sampler = std::make_unique<unbounded_ps>(&_readers.reader_gpu(), section.samples(),
+            _sampler = std::make_unique<unbounded_ps>(reader_gpu, section.samples(),
                 section.interval());
             break;
         case config_data::profiling_method::energy_total:
-            _sampler = std::make_unique<bounded_ps>(&_readers.reader_rapl(), section.interval());
+            _sampler = std::make_unique<bounded_ps>(reader_gpu, section.interval());
             break;
         default:
             assert(false);
