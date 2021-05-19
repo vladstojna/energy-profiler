@@ -125,7 +125,7 @@ tracer_expected<gathered_results> tracer::results()
             return std::move(results.error());
         for (auto& [addr, entry] : results.value())
         {
-            std::vector<fallible_execution>& entries = _results[addr];
+            auto& entries = _results[addr];
             entries.insert(
                 entries.end(),
                 std::make_move_iterator(entry.begin()),

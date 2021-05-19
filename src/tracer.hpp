@@ -22,10 +22,7 @@ namespace tep
 
     template<typename R>
     using tracer_expected = cmmn::expected<R, tracer_error>;
-
-    using fallible_execution = cmmn::expected<timed_execution, nrgprf::error>;
-
-    using gathered_results = std::unordered_map<uintptr_t, std::vector<fallible_execution>>;
+    using gathered_results = std::unordered_map<uintptr_t, std::vector<sampler_expected>>;
 
     class tracer
     {
@@ -80,7 +77,6 @@ namespace tep
 
         tracer_error trace(const trap_set* traps);
 
-        timed_execution prepare_new_exec(const config_data::section& section) const;
         void launch_async_sampling(const config_data::section& sec);
         void register_results(uintptr_t bp);
     };
