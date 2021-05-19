@@ -45,13 +45,21 @@ sampler_expected sync_sampler::results()
     nrgprf::error error = nrgprf::error::success();
     nrgprf::timed_sample s1(*reader(), error);
     if (error)
+    {
+        log(log_lvl::error, "%s: error when reading counters: %s",
+            __func__, error.msg().c_str());
         return error;
+    }
 
     work();
 
     nrgprf::timed_sample s2(*reader(), error);
     if (error)
+    {
+        log(log_lvl::error, "%s: error when reading counters: %s",
+            __func__, error.msg().c_str());
         return error;
+    }
     return timed_execution{ std::move(s1), std::move(s2) };
 }
 

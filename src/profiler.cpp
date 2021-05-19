@@ -245,6 +245,7 @@ tracer_error profiler::obtain_idle_results()
 
     std::function<void()> sleep_func = []()
     {
+        log(log_lvl::info, "sleeping for %lu milliseconds", default_sleep.count());
         std::this_thread::sleep_for(default_sleep);
     };
 
