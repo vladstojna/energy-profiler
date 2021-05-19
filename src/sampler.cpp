@@ -241,13 +241,3 @@ cmmn::expected<timed_execution, nrgprf::error> unbounded_ps::async_work()
 
     return exec;
 }
-
-// static timed_execution reserve_execution(const std::chrono::seconds& sleep,
-//     const std::chrono::milliseconds& period)
-// {
-//     timed_execution exec;
-//     uint32_t count = static_cast<uint32_t>(sleep / period) + 100;
-//     exec.reserve(count);
-//     log(log_lvl::debug, "reserved %zu samples", count);
-//     return exec;
-// }
