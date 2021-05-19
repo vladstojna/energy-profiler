@@ -300,6 +300,8 @@ void tracer::launch_async_sampling(const config_data::section& section)
             assert(false);
         }
         break;
+    default:
+        assert(false);
     }
 }
 
