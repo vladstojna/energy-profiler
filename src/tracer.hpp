@@ -10,7 +10,6 @@
 #include <nrg/nrg.hpp>
 
 #include "reader_container.hpp"
-#include "config.hpp"
 #include "error.hpp"
 #include "sampler.hpp"
 #include "trap.hpp"
@@ -77,7 +76,6 @@ namespace tep
 
         tracer_error trace(const trap_set* traps);
 
-        void launch_async_sampling(const config_data::section& sec);
         void register_results(uintptr_t bp);
     };
 

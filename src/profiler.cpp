@@ -54,6 +54,47 @@ tracer_expected<long> insert_trap(pid_t my_tid, pid_t pid, uintptr_t addr)
     return word;
 }
 
+// instantiates a polymorphic sampler_creator from config section information
+std::unique_ptr<sampler_creator> creator_from_section(const reader_container& readers,
+    const config_data::section& section)
+{
+    const nrgprf::reader_gpu* reader_gpu = &readers.reader_gpu();
+    const nrgprf::reader_rapl* reader_cpu = &readers.reader_rapl();
+    switch (section.target())
+    {
+    case config_data::target::cpu:
+        switch (section.method())
+        {
+        case config_data::profiling_method::energy_profile:
+            return std::make_unique<unbounded_rapl_smpcrt>(reader_cpu,
+                section.interval(), section.samples());
+            break;
+        case config_data::profiling_method::energy_total:
+            return std::make_unique<bounded_rapl_smpcrt>(reader_cpu, section.interval());
+            break;
+        default:
+            assert(false);
+        }
+        break;
+    case config_data::target::gpu:
+        switch (section.method())
+        {
+        case config_data::profiling_method::energy_profile:
+            return std::make_unique<unbounded_gpu_smpcrt>(reader_gpu,
+                section.interval(), section.samples());
+            break;
+        case config_data::profiling_method::energy_total:
+            return std::make_unique<bounded_gpu_smpcrt>(reader_gpu, section.interval());
+            break;
+        default:
+            assert(false);
+        }
+        break;
+    default:
+        assert(false);
+    }
+}
+
 // end helper functions
 
 
@@ -202,33 +243,33 @@ tracer_expected<profiling_results> profiler::run()
         return std::move(results.error());
 
     profiling_results retval(std::move(_readers), std::move(_idle));
-    for (auto& [addr, execs] : results.value())
-    {
-        trap_set::iterator trap = _traps.find(addr);
-        assert(trap != _traps.end());
+    // for (auto& [addr, execs] : results.value())
+    // {
+    //     trap_set::iterator trap = _traps.find(addr);
+    //     assert(trap != _traps.end());
 
-        std::vector<section_results>::iterator srit =
-            std::find(retval.results.begin(), retval.results.end(), trap->section());
+    //     std::vector<section_results>::iterator srit =
+    //         std::find(retval.results.begin(), retval.results.end(), trap->section());
 
-        section_results& sr = srit == retval.results.end() ?
-            retval.results.emplace_back(trap->section()) :
-            *srit;
+    //     section_results& sr = srit == retval.results.end() ?
+    //         retval.results.emplace_back(trap->section()) :
+    //         *srit;
 
-        for (auto& exec : execs)
-        {
-            if (exec)
-            {
-                sr.readings.push_back(std::move(exec.value()));
-                log(log_lvl::success, "[%d] registered execution of section @ 0x%" PRIxPTR
-                    " (offset = 0x%" PRIxPTR ") as successful", _tid, addr, addr - entrypoint);
-            }
-            else
-            {
-                log(log_lvl::error, "[%d] failed to gather results for execution of section @ 0x%"
-                    PRIxPTR " (offset = 0x%" PRIxPTR ")", _tid, addr, addr - entrypoint);
-            }
-        }
-    }
+    //     for (auto& exec : execs)
+    //     {
+    //         if (exec)
+    //         {
+    //             sr.readings.push_back(std::move(exec.value()));
+    //             log(log_lvl::success, "[%d] registered execution of section @ 0x%" PRIxPTR
+    //                 " (offset = 0x%" PRIxPTR ") as successful", _tid, addr, addr - entrypoint);
+    //         }
+    //         else
+    //         {
+    //             log(log_lvl::error, "[%d] failed to gather results for execution of section @ 0x%"
+    //                 PRIxPTR " (offset = 0x%" PRIxPTR ")", _tid, addr, addr - entrypoint);
+    //         }
+    //     }
+    // }
     return retval;
 }
 
@@ -309,7 +350,7 @@ tracer_error profiler::insert_traps_function(const config_data::section& sec,
     tracer_expected<long> origw = insert_trap(_tid, _child, eaddr);
     if (!origw)
         return std::move(origw.error());
-    _traps.emplace(eaddr, origw.value(), sec);
+    _traps.emplace(eaddr, origw.value(), creator_from_section(_readers, sec));
     log(log_lvl::info, "[%d] inserted trap at function entry @ 0x%" PRIxPTR
         " (offset 0x%" PRIxPTR ")", _tid, eaddr, eaddr - entrypoint);
 
@@ -319,7 +360,7 @@ tracer_error profiler::insert_traps_function(const config_data::section& sec,
         origw = insert_trap(_tid, _child, eaddr);
         if (!origw)
             return std::move(origw.error());
-        _traps.emplace(eaddr, origw.value(), sec);
+        _traps.emplace(eaddr, origw.value(), creator_from_section(_readers, sec));
         log(log_lvl::info, "[%d] inserted trap at function return @ 0x%" PRIxPTR
             " (offset 0x%" PRIxPTR ")", _tid, eaddr, eaddr - entrypoint);
     }
@@ -351,7 +392,7 @@ tracer_error profiler::insert_traps_position(const config_data::section& sec,
     tracer_expected<long> origw = insert_trap(_tid, _child, eaddr);
     if (!origw)
         return std::move(origw.error());
-    _traps.emplace(eaddr, origw.value(), sec);
+    _traps.emplace(eaddr, origw.value(), creator_from_section(_readers, sec));
     log(log_lvl::info, "[%d] inserted trap @ 0x%" PRIxPTR " (offset 0x%" PRIxPTR ")",
         _tid, eaddr, eaddr - entrypoint);
 

@@ -266,45 +266,6 @@ tracer_error tracer::handle_breakpoint(user_regs_struct& regs, uintptr_t ep, lon
     return tracer_error::success();
 }
 
-void tracer::launch_async_sampling(const config_data::section& section)
-{
-    const nrgprf::reader* reader_gpu = &_readers.reader_gpu();
-    const nrgprf::reader* reader_cpu = &_readers.reader_rapl();
-    switch (section.target())
-    {
-    case config_data::target::cpu:
-        switch (section.method())
-        {
-        case config_data::profiling_method::energy_profile:
-            _sampler = std::make_unique<unbounded_ps>(reader_cpu, section.samples(),
-                section.interval());
-            break;
-        case config_data::profiling_method::energy_total:
-            _sampler = std::make_unique<bounded_ps>(reader_cpu, section.interval());
-            break;
-        default:
-            assert(false);
-        }
-        break;
-    case config_data::target::gpu:
-        switch (section.method())
-        {
-        case config_data::profiling_method::energy_profile:
-            _sampler = std::make_unique<unbounded_ps>(reader_gpu, section.samples(),
-                section.interval());
-            break;
-        case config_data::profiling_method::energy_total:
-            _sampler = std::make_unique<bounded_ps>(reader_gpu, section.interval());
-            break;
-        default:
-            assert(false);
-        }
-        break;
-    default:
-        assert(false);
-    }
-}
-
 void tracer::register_results(uintptr_t bp)
 {
     pid_t tid = gettid();
@@ -391,10 +352,10 @@ tracer_error tracer::trace(const trap_set* traps)
                 get_trap(*traps, tid, start_bp_addr, entrypoint);
             if (!trap)
                 return std::move(trap.error());
-            launch_async_sampling(trap.value()->section());
             error = handle_breakpoint(regs, entrypoint, trap.value()->original_word());
             if (error)
                 return error;
+            _sampler = trap.value()->create_sampler();
             _promise = _sampler->run();
 
             // it is during this time that the energy readings are done
