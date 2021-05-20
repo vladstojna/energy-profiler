@@ -48,10 +48,10 @@ namespace nrgprf
     class reader_rapl : public reader
     {
     public:
-        static struct package_tag : std::integral_constant<int32_t, 0> {} package;
-        static struct cores_tag : std::integral_constant<int32_t, 1> {} cores;
-        static struct uncore_tag : std::integral_constant<int32_t, 2> {} uncore;
-        static struct dram_tag : std::integral_constant<int32_t, 3> {} dram;
+        struct package : std::integral_constant<int32_t, 0> {};
+        struct cores : std::integral_constant<int32_t, 1> {};
+        struct uncore : std::integral_constant<int32_t, 2> {};
+        struct dram : std::integral_constant<int32_t, 3> {};
 
         struct skt_energy
         {
@@ -74,13 +74,13 @@ namespace nrgprf
         size_t num_events() const override;
 
         template<typename Tag>
-        int32_t event_idx(uint8_t skt, Tag) const;
+        int32_t event_idx(uint8_t skt) const;
 
         template<typename Tag>
-        result<units_energy> get_energy(const sample& s, uint8_t skt, Tag) const;
+        result<units_energy> get_energy(const sample& s, uint8_t skt) const;
 
         template<typename Tag>
-        std::vector<skt_energy> get_energy(const sample& s, Tag) const;
+        std::vector<skt_energy> get_energy(const sample& s) const;
 
     private:
         error add_event(const char* base, rapl_mask dmask, uint8_t skt);

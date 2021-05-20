@@ -97,13 +97,13 @@ result<uint8_t> count_sockets()
 int32_t domain_index_from_name(const char* name)
 {
     if (!strncmp(EVENT_PKG_PREFIX, name, sizeof(EVENT_PKG_PREFIX) - 1))
-        return reader_rapl::package_tag::value;
+        return reader_rapl::package::value;
     if (!strncmp(EVENT_PP0, name, sizeof(EVENT_PP0) - 1))
-        return reader_rapl::cores_tag::value;
+        return reader_rapl::cores::value;
     if (!strncmp(EVENT_PP1, name, sizeof(EVENT_PP1) - 1))
-        return reader_rapl::uncore_tag::value;
+        return reader_rapl::uncore::value;
     if (!strncmp(EVENT_DRAM, name, sizeof(EVENT_DRAM) - 1))
-        return reader_rapl::dram_tag::value;
+        return reader_rapl::dram::value;
     return -1;
 }
 
@@ -239,12 +239,6 @@ detail::event_data::event_data(file_descriptor&& fd, uint64_t max) :
 
 // reader_rapl
 
-
-reader_rapl::package_tag reader_rapl::package;
-reader_rapl::cores_tag reader_rapl::cores;
-reader_rapl::uncore_tag reader_rapl::uncore;
-reader_rapl::dram_tag reader_rapl::dram;
-
 reader_rapl::reader_rapl(rapl_mask dmask, socket_mask skt_mask, error& ec) :
     _event_map(),
     _active_events()
@@ -353,24 +347,24 @@ size_t reader_rapl::num_events() const
 }
 
 template<typename Tag>
-int32_t reader_rapl::event_idx(uint8_t skt, Tag t) const
+int32_t reader_rapl::event_idx(uint8_t skt) const
 {
-    return _event_map[skt][t.value];
+    return _event_map[skt][Tag::value];
 }
 
 template<typename Tag>
-result<units_energy> reader_rapl::get_energy(const sample& s, uint8_t skt, Tag t) const
+result<units_energy> reader_rapl::get_energy(const sample& s, uint8_t skt) const
 {
-    return get_value(s, _event_map, skt, t.value);
+    return get_value(s, _event_map, skt, Tag::value);
 }
 
 template<typename Tag>
-std::vector<reader_rapl::skt_energy> reader_rapl::get_energy(const sample& s, Tag tag) const
+std::vector<reader_rapl::skt_energy> reader_rapl::get_energy(const sample& s) const
 {
     std::vector<reader_rapl::skt_energy> retval;
     for (uint32_t skt = 0; skt < max_sockets; skt++)
     {
-        result<units_energy> nrg = get_energy(s, skt, tag);
+        result<units_energy> nrg = get_energy<Tag>(s, skt);
         if (nrg)
             retval.push_back({ skt, std::move(nrg.value()) });
     };
@@ -380,28 +374,49 @@ std::vector<reader_rapl::skt_energy> reader_rapl::get_energy(const sample& s, Ta
 // explicit instantiation
 
 template
-int32_t reader_rapl::event_idx(uint8_t skt, package_tag tag) const;
-template
-int32_t reader_rapl::event_idx(uint8_t skt, cores_tag tag) const;
-template
-int32_t reader_rapl::event_idx(uint8_t skt, uncore_tag tag) const;
-template
-int32_t reader_rapl::event_idx(uint8_t skt, dram_tag tag) const;
+int32_t
+reader_rapl::event_idx<reader_rapl::package>(uint8_t skt) const;
 
 template
-result<units_energy> reader_rapl::get_energy(const sample& s, uint8_t skt, package_tag) const;
-template
-result<units_energy> reader_rapl::get_energy(const sample& s, uint8_t skt, cores_tag) const;
-template
-result<units_energy> reader_rapl::get_energy(const sample& s, uint8_t skt, uncore_tag) const;
-template
-result<units_energy> reader_rapl::get_energy(const sample& s, uint8_t skt, dram_tag) const;
+int32_t
+reader_rapl::event_idx<reader_rapl::cores>(uint8_t skt) const;
 
 template
-std::vector<reader_rapl::skt_energy> reader_rapl::get_energy(const sample& s, package_tag) const;
+int32_t
+reader_rapl::event_idx<reader_rapl::uncore>(uint8_t skt) const;
+
 template
-std::vector<reader_rapl::skt_energy> reader_rapl::get_energy(const sample& s, cores_tag) const;
+int32_t
+reader_rapl::event_idx<reader_rapl::dram>(uint8_t skt) const;
+
 template
-std::vector<reader_rapl::skt_energy> reader_rapl::get_energy(const sample& s, uncore_tag) const;
+result<units_energy>
+reader_rapl::get_energy<reader_rapl::package>(const sample& s, uint8_t skt) const;
+
 template
-std::vector<reader_rapl::skt_energy> reader_rapl::get_energy(const sample& s, dram_tag) const;
+result<units_energy>
+reader_rapl::get_energy<reader_rapl::cores>(const sample& s, uint8_t skt) const;
+
+template
+result<units_energy>
+reader_rapl::get_energy<reader_rapl::uncore>(const sample& s, uint8_t skt) const;
+
+template
+result<units_energy>
+reader_rapl::get_energy<reader_rapl::dram>(const sample& s, uint8_t skt) const;
+
+template
+std::vector<reader_rapl::skt_energy>
+reader_rapl::get_energy<reader_rapl::package>(const sample& s) const;
+
+template
+std::vector<reader_rapl::skt_energy>
+reader_rapl::get_energy<reader_rapl::cores>(const sample& s) const;
+
+template
+std::vector<reader_rapl::skt_energy>
+reader_rapl::get_energy<reader_rapl::uncore>(const sample& s) const;
+
+template
+std::vector<reader_rapl::skt_energy>
+reader_rapl::get_energy<reader_rapl::dram>(const sample& s) const;

@@ -105,10 +105,10 @@ private:
 public:
     template<typename Tag>
     cpu_energy(const nrgprf::reader_rapl& reader, const tep::timed_execution& exec,
-        uint8_t skt, Tag tag) :
+        uint8_t skt, Tag) :
         _energy(subtract(
-            reader.get_energy(exec.back().smp(), skt, tag),
-            reader.get_energy(exec.front().smp(), skt, tag)))
+            reader.get_energy<Tag>(exec.back().smp(), skt),
+            reader.get_energy<Tag>(exec.front().smp(), skt)))
     {}
 
     const nrgprf::units_energy& get() const
@@ -237,10 +237,10 @@ std::ostream& operator<<(std::ostream& os, const rdr_task_pair<nrgprf::reader_ra
         os << std::setw(3) << std::distance(rt.task().begin(), it) << " | " << duration;
         for (uint8_t skt = 0; skt < max_sockets; skt++)
         {
-            cpu_energy pkg(rt.reader(), exec, skt, reader_rapl::package);
-            cpu_energy pp0(rt.reader(), exec, skt, reader_rapl::cores);
-            cpu_energy pp1(rt.reader(), exec, skt, reader_rapl::uncore);
-            cpu_energy dram(rt.reader(), exec, skt, reader_rapl::dram);
+            cpu_energy pkg(rt.reader(), exec, skt, reader_rapl::package{});
+            cpu_energy pp0(rt.reader(), exec, skt, reader_rapl::cores{});
+            cpu_energy pp1(rt.reader(), exec, skt, reader_rapl::uncore{});
+            cpu_energy dram(rt.reader(), exec, skt, reader_rapl::dram{});
 
             if (!pkg && !pp0 && !pp1 && !dram)
                 continue;
@@ -251,7 +251,7 @@ std::ostream& operator<<(std::ostream& os, const rdr_task_pair<nrgprf::reader_ra
                 os << ", package=" << pkg.get();
                 if (rt.idle_values().size() >= 2)
                     os << " " << idle_delta(pkg, duration,
-                        cpu_energy(rt.reader(), rt.idle_values(), skt, reader_rapl::package),
+                        cpu_energy(rt.reader(), rt.idle_values(), skt, reader_rapl::package{}),
                         get_duration(rt.idle_values()));
             }
             if (pp0)
@@ -259,7 +259,7 @@ std::ostream& operator<<(std::ostream& os, const rdr_task_pair<nrgprf::reader_ra
                 os << ", cores=" << pp0.get();
                 if (rt.idle_values().size() >= 2)
                     os << " " << idle_delta(pp0, duration,
-                        cpu_energy(rt.reader(), rt.idle_values(), skt, reader_rapl::cores),
+                        cpu_energy(rt.reader(), rt.idle_values(), skt, reader_rapl::cores{}),
                         get_duration(rt.idle_values()));
             }
             if (pp1)
@@ -267,7 +267,7 @@ std::ostream& operator<<(std::ostream& os, const rdr_task_pair<nrgprf::reader_ra
                 os << ", uncore=" << pp1.get();
                 if (rt.idle_values().size() >= 2)
                     os << " " << idle_delta(pp1, duration,
-                        cpu_energy(rt.reader(), rt.idle_values(), skt, reader_rapl::uncore),
+                        cpu_energy(rt.reader(), rt.idle_values(), skt, reader_rapl::uncore{}),
                         get_duration(rt.idle_values()));
             }
             if (dram)
@@ -275,7 +275,7 @@ std::ostream& operator<<(std::ostream& os, const rdr_task_pair<nrgprf::reader_ra
                 os << ", dram=" << dram.get();
                 if (rt.idle_values().size() >= 2)
                     os << " " << idle_delta(dram, duration,
-                        cpu_energy(rt.reader(), rt.idle_values(), skt, reader_rapl::dram),
+                        cpu_energy(rt.reader(), rt.idle_values(), skt, reader_rapl::dram{}),
                         get_duration(rt.idle_values()));
             }
         }
