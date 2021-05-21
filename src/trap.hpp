@@ -204,6 +204,8 @@ namespace tep
         const position_single& at() const&;
         std::unique_ptr<const position_single> at()&&;
 
+        friend std::ostream& operator<<(std::ostream&, const trap&);
+
     protected:
         virtual std::ostream& print(std::ostream& os) const;
     };
@@ -268,6 +270,7 @@ namespace tep
     bool operator!=(end_addr lhs, end_addr rhs);
 
     std::ostream& operator<<(std::ostream&, const position_interface&);
+    std::ostream& operator<<(std::ostream&, const trap&);
 
     // types
 

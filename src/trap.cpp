@@ -252,6 +252,10 @@ std::ostream& tep::operator<<(std::ostream& os, const position_interface& pi)
     return pi.print(os);
 }
 
+std::ostream& tep::operator<<(std::ostream& os, const trap& t)
+{
+    return t.print(os);
+}
 
 
 trap::trap(long origword, std::unique_ptr<const position_single>&& at) :
@@ -309,7 +313,9 @@ start_addr end_trap::associated_with() const
 
 std::ostream& end_trap::print(std::ostream& os) const
 {
-    return print(os) << " <-> " << associated_with();
+    trap::print(os);
+    os << " <-> " << associated_with();
+    return os;
 }
 
 
