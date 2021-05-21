@@ -25,6 +25,14 @@ using namespace tep;
 
 // start helper functions
 
+template<typename T>
+static std::string to_string(const T& obj)
+{
+    std::stringstream ss;
+    ss << obj;
+    return ss.str();
+}
+
 tracer_error no_return_addresses(const std::string& func_name)
 {
     return tracer_error(tracer_errcode::UNSUPPORTED,
@@ -93,6 +101,8 @@ std::unique_ptr<sampler_creator> creator_from_section(const reader_container& re
     default:
         assert(false);
     }
+    assert(false);
+    return {};
 }
 
 // end helper functions
@@ -148,7 +158,7 @@ const config_data& profiler::config() const
     return _cd;
 }
 
-const trap_set& profiler::traps() const
+const registered_traps& profiler::traps() const
 {
     return _traps;
 }
@@ -225,10 +235,12 @@ tracer_expected<profiling_results> profiler::run()
         }
         else if (bounds.has_positions())
         {
-            tracer_error err = insert_traps_position(sec, bounds.start(), entrypoint);
-            if (err)
-                return err;
-            err = insert_traps_position(sec, bounds.end(), entrypoint);
+            auto insert_start = insert_traps_position_start(sec, bounds.start(), entrypoint);
+            if (!insert_start)
+                return std::move(insert_start.error());
+
+            tracer_error err = insert_traps_position_end(bounds.end(), entrypoint,
+                insert_start.value());
             if (err)
                 return err;
         }
@@ -237,8 +249,8 @@ tracer_expected<profiling_results> profiler::run()
     }
 
     // first tracer has the same tracee tgid and tid, since there is only one tracee at this point
-    tracer trc(_readers, _traps, _child, _child, entrypoint, std::launch::deferred);
-    tracer_expected<gathered_results> results = trc.results();
+    tracer trc(_traps, _child, _child, entrypoint, std::launch::deferred);
+    tracer_expected<tracer::gathered_results> results = trc.results();
     if (!results)
         return std::move(results.error());
 
@@ -272,6 +284,7 @@ tracer_expected<profiling_results> profiler::run()
     // }
     return retval;
 }
+
 
 tracer_error profiler::obtain_idle_results()
 {
@@ -327,6 +340,7 @@ tracer_error profiler::obtain_idle_results()
     return tracer_error::success();
 }
 
+
 tracer_error profiler::insert_traps_function(const config_data::section& sec,
     const config_data::function& cfunc, uintptr_t entrypoint)
 {
@@ -336,39 +350,69 @@ tracer_error profiler::insert_traps_function(const config_data::section& sec,
         log(log_lvl::error, "[%d] function: %s", _tid, func_res.error().message.c_str());
         return tracer_error(tracer_errcode::NO_SYMBOL, std::move(func_res.error().message));
     }
-    std::stringstream ss;
     const function& func = *func_res.value();
     const function_bounds& fbnds = func.bounds();
 
-    ss << func;
-    log(log_lvl::success, "[%d] found function: %s", _tid, ss.str().c_str());
+    position_line pl(std::filesystem::path(func.pos().cu()), func.pos().line());
+    std::unique_ptr<position_func> pf = std::make_unique<position_func>(func.name(), pl);
+    std::string pos_func_str = to_string(*pf);
+
+    log(log_lvl::success, "[%d] found function: %s", _tid, pos_func_str.c_str());
 
     if (fbnds.returns().empty())
-        return no_return_addresses(func.name());
+        return no_return_addresses(pos_func_str);
 
-    uintptr_t eaddr = entrypoint + fbnds.start();
-    tracer_expected<long> origw = insert_trap(_tid, _child, eaddr);
+    start_addr start = entrypoint + fbnds.start();
+    tracer_expected<long> origw = insert_trap(_tid, _child, start.val());
     if (!origw)
         return std::move(origw.error());
-    _traps.emplace(eaddr, origw.value(), creator_from_section(_readers, sec));
-    log(log_lvl::info, "[%d] inserted trap at function entry @ 0x%" PRIxPTR
-        " (offset 0x%" PRIxPTR ")", _tid, eaddr, eaddr - entrypoint);
+
+    log(log_lvl::info, "[%d] inserted trap at function %s entry @ 0x%" PRIxPTR
+        " (offset 0x%" PRIxPTR ")",
+        _tid, pos_func_str.c_str(), start.val(), start.val() - entrypoint);
+
+    auto insert_res = _traps.insert(start,
+        start_trap(origw.value(), std::move(pf), creator_from_section(_readers, sec)));
+
+    if (!insert_res.second)
+    {
+        log(log_lvl::error, "[%d] trap @ 0x%" PRIxPTR " (offset 0x%" PRIxPTR ") already exists",
+            _tid, start.val(), start.val() - entrypoint);
+        return tracer_error(tracer_errcode::NO_TRAP,
+            cmmn::concat("Trap ", to_string(start), " already exists"));
+    }
 
     for (uintptr_t ret : fbnds.returns())
     {
-        eaddr = entrypoint + ret;
-        origw = insert_trap(_tid, _child, eaddr);
+        uintptr_t offset = ret - fbnds.start();
+        std::unique_ptr<position_func_off> pf_off
+            = std::make_unique<position_func_off>(position_func(func.name(), pl), offset);
+        pos_func_str = to_string(*pf_off);
+
+        end_addr end = entrypoint + ret;
+        origw = insert_trap(_tid, _child, end.val());
         if (!origw)
             return std::move(origw.error());
-        _traps.emplace(eaddr, origw.value(), creator_from_section(_readers, sec));
-        log(log_lvl::info, "[%d] inserted trap at function return @ 0x%" PRIxPTR
-            " (offset 0x%" PRIxPTR ")", _tid, eaddr, eaddr - entrypoint);
+        log(log_lvl::info, "[%d] inserted trap at function return @ %s",
+            _tid, pos_func_str.c_str());
+
+        auto insert_res = _traps.insert(end, end_trap(origw.value(), std::move(pf_off), start));
+        if (!insert_res.second)
+        {
+            log(log_lvl::error, "[%d] trap @ 0x%" PRIxPTR " (offset 0x%" PRIxPTR ") already exists",
+                _tid, end.val(), end.val() - entrypoint);
+            return tracer_error(tracer_errcode::NO_TRAP,
+                cmmn::concat("Trap ", std::to_string(end.val()), " already exists"));
+        }
     }
     return tracer_error::success();
 }
 
-tracer_error profiler::insert_traps_position(const config_data::section& sec,
-    const config_data::position& p, uintptr_t entrypoint)
+
+cmmn::expected<start_addr, tracer_error> profiler::insert_traps_position_start(
+    const config_data::section& s,
+    const config_data::position& p,
+    uintptr_t entrypoint)
 {
     dbg_expected<unit_lines*> ul = _dli.find_lines(p.compilation_unit());
     if (!ul)
@@ -376,26 +420,80 @@ tracer_error profiler::insert_traps_position(const config_data::section& sec,
         log(log_lvl::error, "[%d] unit lines: %s", _tid, ul.error().message.c_str());
         return tracer_error(tracer_errcode::NO_SYMBOL, std::move(ul.error().message));
     }
-    dbg_expected<uintptr_t> offset = ul.value()->lowest_addr(p.line());
-    if (!offset)
+    dbg_expected<std::pair<uint32_t, uintptr_t>> line_addr = ul.value()->lowest_addr(p.line());
+    if (!line_addr)
     {
         log(log_lvl::error, "[%d] unit lines: invalid line %" PRIu32, _tid, p.line());
-        return tracer_error(tracer_errcode::NO_SYMBOL, std::move(offset.error().message));
+        return tracer_error(tracer_errcode::NO_SYMBOL, std::move(line_addr.error().message));
     }
 
-    std::stringstream ss;
-    ss << p;
-    std::string pstr = ss.str();
-    log(log_lvl::debug, "[%d] line %s offset: 0x%" PRIxPTR, _tid, pstr.c_str(), offset.value());
+    std::unique_ptr<position_line> posline = std::make_unique<position_line>(
+        ul.value()->name(), line_addr.value().first);
+    std::string pstr = to_string(*posline);
 
-    uintptr_t eaddr = entrypoint + offset.value();
-    tracer_expected<long> origw = insert_trap(_tid, _child, eaddr);
+    start_addr eaddr = entrypoint + line_addr.value().second;
+    tracer_expected<long> origw = insert_trap(_tid, _child, eaddr.val());
     if (!origw)
         return std::move(origw.error());
-    _traps.emplace(eaddr, origw.value(), creator_from_section(_readers, sec));
     log(log_lvl::info, "[%d] inserted trap @ 0x%" PRIxPTR " (offset 0x%" PRIxPTR ")",
-        _tid, eaddr, eaddr - entrypoint);
+        _tid, eaddr.val(), eaddr.val() - entrypoint);
 
+    auto insert_res = _traps.insert(eaddr,
+        start_trap(origw.value(), std::move(posline), creator_from_section(_readers, s))
+    );
+    if (!insert_res.second)
+    {
+        log(log_lvl::error, "[%d] trap @ 0x%" PRIxPTR " (offset 0x%" PRIxPTR ") already exists",
+            _tid, eaddr.val(), eaddr.val() - entrypoint);
+        return tracer_error(tracer_errcode::NO_TRAP,
+            cmmn::concat("Trap ", to_string(eaddr), " already exists"));
+    }
+
+    log(log_lvl::debug, "[%d] line %s @ offset 0x%" PRIxPTR,
+        _tid, pstr.c_str(), line_addr.value().second);
+    log(log_lvl::success, "[%d] inserted trap on line: %s", _tid, pstr.c_str());
+    return eaddr;
+}
+
+tracer_error profiler::insert_traps_position_end(const config_data::position& p,
+    uintptr_t entrypoint,
+    start_addr start)
+{
+    dbg_expected<unit_lines*> ul = _dli.find_lines(p.compilation_unit());
+    if (!ul)
+    {
+        log(log_lvl::error, "[%d] unit lines: %s", _tid, ul.error().message.c_str());
+        return tracer_error(tracer_errcode::NO_SYMBOL, std::move(ul.error().message));
+    }
+    dbg_expected<std::pair<uint32_t, uintptr_t>> line_addr = ul.value()->lowest_addr(p.line());
+    if (!line_addr)
+    {
+        log(log_lvl::error, "[%d] unit lines: invalid line %" PRIu32, _tid, p.line());
+        return tracer_error(tracer_errcode::NO_SYMBOL, std::move(line_addr.error().message));
+    }
+
+    std::unique_ptr<position_line> posline = std::make_unique<position_line>(
+        ul.value()->name(), line_addr.value().first);
+    std::string pstr = to_string(*posline);
+
+    end_addr eaddr = entrypoint + line_addr.value().second;
+    tracer_expected<long> origw = insert_trap(_tid, _child, eaddr.val());
+    if (!origw)
+        return std::move(origw.error());
+    log(log_lvl::info, "[%d] inserted trap @ 0x%" PRIxPTR " (offset 0x%" PRIxPTR ")",
+        _tid, eaddr.val(), eaddr.val() - entrypoint);
+
+    auto insert_res = _traps.insert(eaddr, end_trap(origw.value(), std::move(posline), start));
+    if (!insert_res.second)
+    {
+        log(log_lvl::error, "[%d] trap @ 0x%" PRIxPTR " (offset 0x%" PRIxPTR ") already exists",
+            _tid, eaddr.val(), eaddr.val() - entrypoint);
+        return tracer_error(tracer_errcode::NO_TRAP,
+            cmmn::concat("Trap ", std::to_string(eaddr.val()), " already exists"));
+    }
+
+    log(log_lvl::debug, "[%d] line %s @ offset 0x%" PRIxPTR,
+        _tid, pstr.c_str(), line_addr.value().second);
     log(log_lvl::success, "[%d] inserted trap on line: %s", _tid, pstr.c_str());
     return tracer_error::success();
 }

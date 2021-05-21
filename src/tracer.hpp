@@ -21,10 +21,28 @@ namespace tep
 
     template<typename R>
     using tracer_expected = cmmn::expected<R, tracer_error>;
-    using gathered_results = std::unordered_map<uintptr_t, std::vector<sampler_expected>>;
 
     class tracer
     {
+    private:
+        struct pair_hash
+        {
+            std::size_t operator()(const std::pair<start_addr, end_addr>&) const;
+        };
+
+        struct pair_equal
+        {
+            bool operator()(const std::pair<start_addr, end_addr>&,
+                const std::pair<start_addr, end_addr>&) const;
+        };
+
+    public:
+        using gathered_results = std::unordered_map<
+            std::pair<start_addr, end_addr>,
+            std::vector<sampler_expected>,
+            pair_hash,
+            pair_equal>;
+
     private:
         static std::mutex TRAP_BARRIER;
 
@@ -35,7 +53,6 @@ namespace tep
         std::vector<std::unique_ptr<tracer>> _children;
         const tracer* _parent;
 
-        reader_container _readers;
         std::unique_ptr<async_sampler> _sampler;
         sampler_promise _promise;
 
@@ -45,15 +62,13 @@ namespace tep
         gathered_results _results;
 
     public:
-        tracer(const reader_container& readers,
-            const trap_set& traps,
+        tracer(const registered_traps& traps,
             pid_t tracee_pid,
             pid_t tracee_tid,
             uintptr_t ep,
             std::launch policy);
 
-        tracer(const reader_container& readers,
-            const trap_set& traps,
+        tracer(const registered_traps& traps,
             pid_t tracee_pid,
             pid_t tracee_tid,
             uintptr_t ep,
@@ -68,13 +83,13 @@ namespace tep
         tracer_expected<gathered_results> results();
 
     private:
-        void add_child(const trap_set& traps, pid_t new_child);
+        void add_child(const registered_traps& traps, pid_t new_child);
         tracer_error stop_tracees(const tracer& excl) const;
         tracer_error stop_self() const;
         tracer_error wait_for_tracee(int& wait_status) const;
         tracer_error handle_breakpoint(user_regs_struct& regs, uintptr_t ep, long origw) const;
 
-        tracer_error trace(const trap_set* traps);
+        tracer_error trace(const registered_traps* traps);
 
         void register_results(uintptr_t bp);
     };

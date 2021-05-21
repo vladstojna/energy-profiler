@@ -28,7 +28,7 @@ namespace tep
         dbg_info _dli;
         config_data _cd;
         reader_container _readers;
-        trap_set _traps;
+        registered_traps _traps;
         idle_results _idle;
 
         profiler(pid_t child, const flags& flags,
@@ -46,16 +46,25 @@ namespace tep
     public:
         const dbg_info& debug_line_info() const;
         const config_data& config() const;
-        const trap_set& traps() const;
+        const registered_traps& traps() const;
 
         cmmn::expected<profiling_results, tracer_error> run();
 
     private:
         tracer_error obtain_idle_results();
+
         tracer_error insert_traps_function(const config_data::section& s,
             const config_data::function& f, uintptr_t entrypoint);
-        tracer_error insert_traps_position(const config_data::section& s,
-            const config_data::position& p, uintptr_t entrypoint);
+
+        cmmn::expected<start_addr, tracer_error> insert_traps_position_start(
+            const config_data::section& s,
+            const config_data::position& p,
+            uintptr_t entrypoint);
+
+        tracer_error insert_traps_position_end(
+            const config_data::position& p,
+            uintptr_t entrypoint,
+            start_addr start);
     };
 
     template<typename D, typename C>
