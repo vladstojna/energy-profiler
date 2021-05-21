@@ -197,8 +197,14 @@ namespace tep
         long _origword;
         std::unique_ptr<const position_single> _at;
 
+    protected:
+        ~trap() = default;
+
     public:
         trap(long origword, std::unique_ptr<const position_single>&& at);
+
+        trap(trap&& other) = default;
+        trap& operator=(trap&& other) = default;
 
         long origword() const;
         const position_single& at() const&;
