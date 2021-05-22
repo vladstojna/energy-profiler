@@ -195,20 +195,21 @@ namespace tep
     {
     private:
         long _origword;
-        std::unique_ptr<const position_single> _at;
+        std::unique_ptr<position_single> _at;
 
     protected:
         ~trap() = default;
 
     public:
-        trap(long origword, std::unique_ptr<const position_single>&& at);
+        trap(long origword, std::unique_ptr<position_single>&& at);
 
         trap(trap&& other) = default;
         trap& operator=(trap&& other) = default;
 
         long origword() const;
+        position_single& at()&;
         const position_single& at() const&;
-        std::unique_ptr<const position_single> at()&&;
+        std::unique_ptr<position_single>&& at()&&;
 
         friend std::ostream& operator<<(std::ostream&, const trap&);
 
@@ -219,10 +220,10 @@ namespace tep
     class start_trap : public trap
     {
     private:
-        std::unique_ptr<const sampler_creator> _creator;
+        std::unique_ptr<sampler_creator> _creator;
 
     public:
-        start_trap(long origword, std::unique_ptr<const position_single>&& at,
+        start_trap(long origword, std::unique_ptr<position_single>&& at,
             std::unique_ptr<sampler_creator>&& creator);
 
         std::unique_ptr<async_sampler> create_sampler() const;
@@ -234,7 +235,7 @@ namespace tep
         start_addr _start;
 
     public:
-        end_trap(long origword, std::unique_ptr<const position_single>&& at, start_addr);
+        end_trap(long origword, std::unique_ptr<position_single>&& at, start_addr);
 
         start_addr associated_with() const;
 
@@ -257,12 +258,23 @@ namespace tep
         // finds the start_trap associated with start_addr
         // returns nullptr if not found
         const start_trap* find(start_addr) const;
+        start_trap* find(start_addr);
 
         // finds the end_trap associated with end_addr which is
         // the end address of section with start at start_addr
         // returns nullptr if not found
         // (i.e., does not exist or, if exists, is not associated with start_addr)
         const end_trap* find(end_addr, start_addr) const;
+        end_trap* find(end_addr, start_addr);
+
+    private:
+        template<typename T>
+        static auto find_impl(T& instance, start_addr addr)
+            -> decltype(instance.find(addr));
+
+        template<typename T>
+        static auto find_impl(T& instance, end_addr eaddr, start_addr saddr)
+            -> decltype(instance.find(eaddr, saddr));
     };
 
     // operator overloads

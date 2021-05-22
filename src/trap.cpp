@@ -258,7 +258,7 @@ std::ostream& tep::operator<<(std::ostream& os, const trap& t)
 }
 
 
-trap::trap(long origword, std::unique_ptr<const position_single>&& at) :
+trap::trap(long origword, std::unique_ptr<position_single>&& at) :
     _origword(origword),
     _at(std::move(at))
 {}
@@ -268,12 +268,17 @@ long trap::origword() const
     return _origword;
 }
 
+position_single& trap::at()&
+{
+    return *_at;
+}
+
 const position_single& trap::at() const&
 {
     return *_at;
 }
 
-std::unique_ptr<const position_single> trap::at()&&
+std::unique_ptr<position_single>&& trap::at()&&
 {
     return std::move(_at);
 }
@@ -288,7 +293,7 @@ std::ostream& trap::print(std::ostream& os) const
     return os;
 }
 
-start_trap::start_trap(long origword, std::unique_ptr<const position_single>&& at,
+start_trap::start_trap(long origword, std::unique_ptr<position_single>&& at,
     std::unique_ptr<sampler_creator>&& creator) :
     trap(origword, std::move(at)),
     _creator(std::move(creator))
@@ -301,7 +306,7 @@ std::unique_ptr<async_sampler> start_trap::create_sampler() const
 
 
 
-end_trap::end_trap(long origword, std::unique_ptr<const position_single>&& at, start_addr sa) :
+end_trap::end_trap(long origword, std::unique_ptr<position_single>&& at, start_addr sa) :
     trap(origword, std::move(at)),
     _start(sa)
 {}
@@ -332,20 +337,44 @@ std::pair<const end_trap*, bool> registered_traps::insert(end_addr a, end_trap&&
     return { &it->second, inserted };
 }
 
-const start_trap* registered_traps::find(start_addr a) const
+const start_trap* registered_traps::find(start_addr addr) const
 {
-    start_traps::const_iterator it = _start_traps.find(a);
-    if (it == _start_traps.end())
-        return nullptr;
-    return &it->second;
+    return find_impl(*this, addr);
 }
 
 const end_trap* registered_traps::find(end_addr ea, start_addr sa) const
 {
-    end_traps::const_iterator it = _end_traps.find(ea);
-    if (it == _end_traps.end())
+    return find_impl(*this, ea, sa);
+}
+
+start_trap* registered_traps::find(start_addr addr)
+{
+    return find_impl(*this, addr);
+}
+
+end_trap* registered_traps::find(end_addr ea, start_addr sa)
+{
+    return find_impl(*this, ea, sa);
+}
+
+template<typename T>
+auto registered_traps::find_impl(T& instance, start_addr addr)
+-> decltype(instance.find(addr))
+{
+    auto it = instance._start_traps.find(addr);
+    if (it == instance._start_traps.end())
         return nullptr;
-    if (it->second.associated_with() != sa)
+    return &it->second;
+}
+
+template<typename T>
+auto registered_traps::find_impl(T& instance, end_addr eaddr, start_addr saddr)
+-> decltype(instance.find(eaddr, saddr))
+{
+    auto it = instance._end_traps.find(eaddr);
+    if (it == instance._end_traps.end())
+        return nullptr;
+    if (it->second.associated_with() != saddr)
         return nullptr;
     return &it->second;
 }
