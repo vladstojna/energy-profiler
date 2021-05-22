@@ -191,6 +191,13 @@ namespace tep
         uintptr_t val() const;
     };
 
+    using addr_bounds = std::pair<start_addr, end_addr>;
+
+    struct addr_bounds_hash
+    {
+        std::size_t operator()(const addr_bounds& bounds) const;
+    };
+
     class trap
     {
     private:

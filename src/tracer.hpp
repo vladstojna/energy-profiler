@@ -24,24 +24,10 @@ namespace tep
 
     class tracer
     {
-    private:
-        struct pair_hash
-        {
-            std::size_t operator()(const std::pair<start_addr, end_addr>&) const;
-        };
-
-        struct pair_equal
-        {
-            bool operator()(const std::pair<start_addr, end_addr>&,
-                const std::pair<start_addr, end_addr>&) const;
-        };
-
     public:
-        using gathered_results = std::unordered_map<
-            std::pair<start_addr, end_addr>,
+        using gathered_results = std::unordered_map<addr_bounds,
             std::vector<sampler_expected>,
-            pair_hash,
-            pair_equal>;
+            addr_bounds_hash>;
 
     private:
         static std::mutex TRAP_BARRIER;
@@ -54,7 +40,6 @@ namespace tep
         const tracer* _parent;
 
         std::unique_ptr<async_sampler> _sampler;
-        sampler_promise _promise;
 
         pid_t _tracee_tgid;
         pid_t _tracee;

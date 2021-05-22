@@ -45,6 +45,12 @@ uintptr_t start_addr::val() const
     return _addr;
 }
 
+std::size_t addr_bounds_hash::operator()(const addr_bounds& bounds) const
+{
+    return (start_addr::hash{}(bounds.first) << 32) +
+        (end_addr::hash{}(bounds.second) & std::numeric_limits<uint32_t>::max());
+}
+
 std::ostream& tep::operator<<(std::ostream& os, start_addr addr)
 {
     return print_uintptr(os, addr.val());

@@ -50,18 +50,6 @@ void handle_error(pid_t tid, const char* comment, const nrgprf::error& e)
 
 // end helper functions
 
-std::size_t tracer::pair_hash::operator()(const std::pair<start_addr, end_addr>& pair) const
-{
-    return (start_addr::hash{}(pair.first) << 32) +
-        (end_addr::hash{}(pair.second) & std::numeric_limits<uint32_t>::max());
-}
-
-bool tracer::pair_equal::operator()(const std::pair<start_addr, end_addr>& lhs,
-    const std::pair<start_addr, end_addr>& rhs) const
-{
-    return lhs.first == rhs.first && lhs.second == rhs.second;
-}
-
 
 // definition of static variables
 
@@ -354,7 +342,7 @@ tracer_error tracer::trace(const registered_traps* traps)
             if (error)
                 return error;
             _sampler = strap->create_sampler();
-            _promise = _sampler->run();
+            sampler_promise _promise = _sampler->run();
 
             // it is during this time that the energy readings are done
             if (pw.ptrace(errnum, PTRACE_CONT, _tracee, 0, 0) == -1)
