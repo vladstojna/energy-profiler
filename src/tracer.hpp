@@ -69,14 +69,12 @@ namespace tep
 
     private:
         void add_child(const registered_traps& traps, pid_t new_child);
+
         tracer_error stop_tracees(const tracer& excl) const;
         tracer_error stop_self() const;
         tracer_error wait_for_tracee(int& wait_status) const;
         tracer_error handle_breakpoint(user_regs_struct& regs, uintptr_t ep, long origw) const;
-
         tracer_error trace(const registered_traps* traps);
-
-        void register_results(uintptr_t bp);
     };
 
 
