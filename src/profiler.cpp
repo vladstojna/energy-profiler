@@ -341,7 +341,7 @@ tracer_error profiler::obtain_idle_results()
     if (!cpu && !gpu)
         return tracer_error(tracer_errcode::UNKNOWN_ERROR, "no CPU or GPU sections found");
 
-    std::function<void()> sleep_func = []()
+    auto sleep_func = []()
     {
         log(log_lvl::info, "sleeping for %lu milliseconds", default_sleep.count());
         std::this_thread::sleep_for(default_sleep);
