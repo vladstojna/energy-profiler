@@ -72,16 +72,6 @@ sampler_expected sync_sampler::results()
 
 
 
-sync_sampler_fn::sync_sampler_fn(const nrgprf::reader* r, const std::function<void()>& f) :
-    sync_sampler(r),
-    _work(f)
-{}
-
-sync_sampler_fn::sync_sampler_fn(const nrgprf::reader* r, std::function<void()>&& f) :
-    sync_sampler(r),
-    _work(std::move(f))
-{}
-
 void sync_sampler_fn::work() const
 {
     _work();
@@ -136,17 +126,6 @@ sampler_expected null_async_sampler::results()
 }
 
 
-async_sampler_fn::async_sampler_fn(std::unique_ptr<async_sampler>&& s,
-    const std::function<void()>& f) :
-    _sampler(std::move(s)),
-    _work(f)
-{}
-
-async_sampler_fn::async_sampler_fn(std::unique_ptr<async_sampler>&& s,
-    std::function<void()>&& f) :
-    _sampler(std::move(s)),
-    _work(std::move(f))
-{}
 
 sampler_expected async_sampler_fn::results()
 {

@@ -111,8 +111,11 @@ namespace tep
         std::function<void()> _work;
 
     public:
-        sync_sampler_fn(const nrgprf::reader*, const std::function<void()>&);
-        sync_sampler_fn(const nrgprf::reader*, std::function<void()>&&);
+        template<typename Callable>
+        sync_sampler_fn(const nrgprf::reader* r, Callable&& work) :
+            sync_sampler(r),
+            _work(std::forward<Callable>(work))
+        {}
 
     private:
         void work() const override;
@@ -127,8 +130,11 @@ namespace tep
         std::function<void()> _work;
 
     public:
-        async_sampler_fn(std::unique_ptr<async_sampler>&&, const std::function<void()>&);
-        async_sampler_fn(std::unique_ptr<async_sampler>&&, std::function<void()>&&);
+        template<typename Callable>
+        async_sampler_fn(std::unique_ptr<async_sampler>&& as, Callable&& work) :
+            _sampler(std::move(as)),
+            _work(std::forward<Callable>(work))
+        {}
 
     private:
         sampler_expected results() override;
