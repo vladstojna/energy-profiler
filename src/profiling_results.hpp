@@ -12,22 +12,20 @@ namespace tep
 {
 
     class position_interface;
+    class position_interval;
 
     class pos_execs
     {
     private:
-        std::unique_ptr<position_interface> _start;
-        std::unique_ptr<position_interface> _end;
+        std::unique_ptr<position_interval> _xinterval;
         std::vector<timed_execution> _execs;
 
     public:
-        pos_execs(std::unique_ptr<position_interface>&& start,
-            std::unique_ptr<position_interface>&& end);
+        pos_execs(std::unique_ptr<position_interval>&&);
 
         void push_back(timed_execution&& exec);
 
-        const position_interface& start() const;
-        const position_interface& end() const;
+        const position_interval& interval() const;
         const std::vector<timed_execution>& execs() const;
     };
 

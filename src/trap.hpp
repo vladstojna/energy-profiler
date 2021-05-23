@@ -9,12 +9,6 @@
 #include <memory>
 #include <unordered_map>
 
-namespace nrgprf
-{
-    class reader_rapl;
-    class reader_gpu;
-};
-
 namespace tep
 {
 
@@ -32,7 +26,7 @@ namespace tep
         friend std::ostream& operator<<(std::ostream&, const position_interface&);
 
     private:
-        virtual std::ostream& print(std::ostream& os) const = 0;
+        virtual void print(std::ostream& os) const = 0;
     };
 
     class position_single : public position_interface
@@ -53,43 +47,55 @@ namespace tep
         uint32_t lineno() const;
 
     private:
-        std::ostream& print(std::ostream& os) const override;
+        void print(std::ostream& os) const override;
     };
 
     class position_func : public position_single
     {
     private:
         std::string _name;
+
+    public:
+        position_func(const std::string& name);
+        position_func(std::string&& name);
+
+        const std::string& name() const;
+
+    private:
+        void print(std::ostream& os) const override;
+    };
+
+    class position_func_full : public position_func
+    {
+    private:
         position_line _pos;
 
     public:
-        position_func(const std::string& name, const position_line& pl);
-        position_func(const std::string& name, position_line&& pl);
-        position_func(std::string&& name, const position_line& pl);
-        position_func(std::string&& name, position_line&& pl);
+        position_func_full(const std::string& name, const position_line& pl);
+        position_func_full(const std::string& name, position_line&& pl);
+        position_func_full(std::string&& name, const position_line& pl);
+        position_func_full(std::string&& name, position_line&& pl);
 
-        const std::string& name() const;
         const position_line& line() const;
 
     private:
-        std::ostream& print(std::ostream& os) const override;
+        void print(std::ostream& os) const override;
     };
 
-    class position_func_off : public position_single
+    class position_offset : public position_single
     {
     private:
-        position_func _func;
+        std::unique_ptr<position_single> _pos;
         uintptr_t _offset;
 
     public:
-        position_func_off(const position_func& func, uintptr_t offset);
-        position_func_off(position_func&& func, uintptr_t offset);
+        position_offset(std::unique_ptr<position_single>&& pos, uintptr_t offset);
 
-        const position_func& func() const;
+        const position_single& pos() const;
         uintptr_t offset() const;
 
     private:
-        std::ostream& print(std::ostream& os) const override;
+        void print(std::ostream& os) const override;
     };
 
     class position_addr : public position_single
@@ -103,26 +109,22 @@ namespace tep
         uintptr_t addr() const;
 
     private:
-        std::ostream& print(std::ostream& os) const override;
+        void print(std::ostream& os) const override;
     };
 
-    template<typename Pos>
     class position_interval : public position_interface
     {
-    public:
-        using pos_type = Pos;
-
     private:
-        std::array<pos_type, 2> _interval;
+        std::array<std::unique_ptr<position_single>, 2> _interval;
 
     public:
-        position_interval(pos_type&& p1, pos_type&& p2);
+        position_interval(std::unique_ptr<position_single>&& p1, std::unique_ptr<position_single>&& p2);
 
-        const pos_type& start() const;
-        const pos_type& end() const;
+        const position_single& start() const;
+        const position_single& end() const;
 
     private:
-        std::ostream& print(std::ostream& os) const override;
+        void print(std::ostream& os) const override;
     };
 
     // trap related classes
@@ -267,10 +269,5 @@ namespace tep
 
     std::ostream& operator<<(std::ostream&, const position_interface&);
     std::ostream& operator<<(std::ostream&, const trap&);
-
-    // types
-
-    using pos_interval_addr = position_interval<position_addr>;
-    using pos_interval_line = position_interval<position_line>;
 
 }

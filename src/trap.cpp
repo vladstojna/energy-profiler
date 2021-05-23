@@ -1,5 +1,6 @@
 // trap.cpp
 
+#include <cassert>
 #include <iostream>
 
 #include "trap.hpp"
@@ -108,32 +109,19 @@ uint32_t position_line::lineno() const
     return _line;
 }
 
-std::ostream& position_line::print(std::ostream& os) const
+void position_line::print(std::ostream& os) const
 {
     os << filename().string() << ":" << lineno();
-    return os;
 }
 
 
 
-position_func::position_func(const std::string& name, const position_line& pl) :
-    _name(name),
-    _pos(pl)
+position_func::position_func(const std::string& name) :
+    _name(name)
 {}
 
-position_func::position_func(const std::string& name, position_line&& pl) :
-    _name(name),
-    _pos(std::move(pl))
-{}
-
-position_func::position_func(std::string&& name, const position_line& pl) :
-    _name(std::move(name)),
-    _pos(pl)
-{}
-
-position_func::position_func(std::string&& name, position_line&& pl) :
-    _name(std::move(name)),
-    _pos(std::move(pl))
+position_func::position_func(std::string&& name) :
+    _name(std::move(name))
 {}
 
 const std::string& position_func::name() const
@@ -141,44 +129,65 @@ const std::string& position_func::name() const
     return _name;
 }
 
-const position_line& position_func::line() const
+void position_func::print(std::ostream& os) const
+{
+    os << name();
+}
+
+
+
+position_func_full::position_func_full(const std::string& name, const position_line& pl) :
+    position_func(name),
+    _pos(pl)
+{}
+
+position_func_full::position_func_full(const std::string& name, position_line&& pl) :
+    position_func(name),
+    _pos(std::move(pl))
+{}
+
+position_func_full::position_func_full(std::string&& name, const position_line& pl) :
+    position_func(std::move(name)),
+    _pos(pl)
+{}
+
+position_func_full::position_func_full(std::string&& name, position_line&& pl) :
+    position_func(std::move(name)),
+    _pos(std::move(pl))
+{}
+
+const position_line& position_func_full::line() const
 {
     return _pos;
 }
 
-std::ostream& position_func::print(std::ostream& os) const
+void position_func_full::print(std::ostream& os) const
 {
     os << line() << ":" << name();
-    return os;
 }
 
 
 
-position_func_off::position_func_off(const position_func& func, uintptr_t offset) :
-    _func(func),
+position_offset::position_offset(std::unique_ptr<position_single>&& pos, uintptr_t offset) :
+    _pos(std::move(pos)),
     _offset(offset)
 {}
 
-position_func_off::position_func_off(position_func&& func, uintptr_t offset) :
-    _func(std::move(func)),
-    _offset(offset)
-{}
-
-const position_func& position_func_off::func() const
+const position_single& position_offset::pos() const
 {
-    return _func;
+    assert(_pos);
+    return *_pos;
 }
 
-uintptr_t position_func_off::offset() const
+uintptr_t position_offset::offset() const
 {
     return _offset;
 }
 
-std::ostream& position_func_off::print(std::ostream& os) const
+void position_offset::print(std::ostream& os) const
 {
-    os << func() << "+";
-    print_uintptr(os, offset());;
-    return os;
+    os << pos() << "+";
+    print_uintptr(os, offset());
 }
 
 
@@ -192,40 +201,41 @@ uintptr_t position_addr::addr() const
     return _addr;
 }
 
-std::ostream& position_addr::print(std::ostream& os) const
+void position_addr::print(std::ostream& os) const
 {
-    return print_uintptr(os, addr());
+    print_uintptr(os, addr());
 }
 
 
-template<typename Pos>
-position_interval<Pos>::position_interval(pos_type&& p1, pos_type&& p2) :
-    _interval{ std::forward<pos_type>(p1), std::forward<pos_type>(p2) }
+
+position_interval::position_interval(
+    std::unique_ptr<position_single>&& p1,
+    std::unique_ptr<position_single>&& p2) :
+    _interval{ std::move(p1), std::move(p2) }
 {}
 
-template<typename Pos>
-const typename position_interval<Pos>::pos_type& position_interval<Pos>::start() const
+const position_single& position_interval::start() const
 {
-    return _interval[0];
+    assert(_interval[0]);
+    return *_interval[0];
 }
 
-template<typename Pos>
-const typename position_interval<Pos>::pos_type& position_interval<Pos>::end() const
+const position_single& position_interval::end() const
 {
-    return _interval[1];
+    assert(_interval[1]);
+    return *_interval[1];
 }
 
-template<typename Pos>
-std::ostream& position_interval<Pos>::print(std::ostream& os) const
+void position_interval::print(std::ostream& os) const
 {
-    os << "[" << start() << ", " << end() << "]";
-    return os;
+    os << start() << " - " << end();
 }
 
 
 std::ostream& tep::operator<<(std::ostream& os, const position_interface& pi)
 {
-    return pi.print(os);
+    pi.print(os);
+    return os;
 }
 
 std::ostream& tep::operator<<(std::ostream& os, const trap& t)
@@ -348,12 +358,3 @@ auto registered_traps::find_impl(T& instance, end_addr eaddr, start_addr saddr)
         return nullptr;
     return &it->second;
 }
-
-
-// explicit template instantiation
-
-template
-class position_interval<position_addr>;
-
-template
-class position_interval<position_line>;

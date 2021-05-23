@@ -3,6 +3,7 @@
 #include "profiling_results.hpp"
 #include "trap.hpp"
 
+#include <cassert>
 #include <cmath>
 #include <functional>
 #include <iostream>
@@ -211,9 +212,10 @@ std::ostream& operator<<(std::ostream& os, const rdr_task_pair<nrgprf::reader_gp
             const auto& exec = *it;
             std::chrono::duration<double> duration = get_duration(exec);
 
-            os << "start=" << pos_exec.start() << ", ";
-            os << "end=" << pos_exec.end() << " | ";
-            os << std::distance(pos_exec.execs().begin(), it) << " | " << duration;
+            os << "gpu | ";
+            os << std::setw(3) << std::distance(pos_exec.execs().begin(), it) << " | ";
+            os << pos_exec.interval() << " | ";
+            os << duration;
             for (uint32_t dev = 0; dev < nrgprf::max_devices; dev++)
             {
                 gpu_energy total_energy(rt.reader(), exec, dev, gpu_energy::board);
@@ -237,7 +239,6 @@ std::ostream& operator<<(std::ostream& os, const rdr_task_pair<nrgprf::reader_gp
 std::ostream& operator<<(std::ostream& os, const rdr_task_pair<nrgprf::reader_rapl>& rt)
 {
     using namespace nrgprf;
-
     for (const auto& pos_exec : rt.task())
     {
         for (auto it = pos_exec.execs().begin(); it != pos_exec.execs().end(); ++it)
@@ -245,9 +246,10 @@ std::ostream& operator<<(std::ostream& os, const rdr_task_pair<nrgprf::reader_ra
             const auto& exec = *it;
             std::chrono::duration<double> duration = get_duration(exec);
 
-            os << "start=" << pos_exec.start() << ", ";
-            os << "end=" << pos_exec.end() << " | ";
-            os << std::distance(pos_exec.execs().begin(), it) << " | " << duration;
+            os << "cpu | ";
+            os << std::setw(3) << std::distance(pos_exec.execs().begin(), it) << " | ";
+            os << pos_exec.interval() << " | ";
+            os << duration;
             for (uint32_t skt = 0; skt < max_sockets; skt++)
             {
                 cpu_energy pkg(rt.reader(), exec, skt, reader_rapl::package{});
@@ -298,11 +300,8 @@ std::ostream& operator<<(std::ostream& os, const rdr_task_pair<nrgprf::reader_ra
     return os;
 }
 
-
-pos_execs::pos_execs(std::unique_ptr<position_interface>&& start,
-    std::unique_ptr<position_interface>&& end) :
-    _start(std::move(start)),
-    _end(std::move(end))
+pos_execs::pos_execs(std::unique_ptr<position_interval>&& pi) :
+    _xinterval(std::move(pi))
 {}
 
 void pos_execs::push_back(timed_execution&& exec)
@@ -310,14 +309,10 @@ void pos_execs::push_back(timed_execution&& exec)
     _execs.push_back(std::move(exec));
 }
 
-const position_interface& pos_execs::start() const
+const position_interval& pos_execs::interval() const
 {
-    return *_start;
-}
-
-const position_interface& pos_execs::end() const
-{
-    return *_end;
+    assert(_xinterval);
+    return *_xinterval;
 }
 
 const std::vector<timed_execution>& pos_execs::execs() const

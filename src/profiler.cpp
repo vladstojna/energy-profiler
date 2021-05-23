@@ -304,7 +304,9 @@ tracer_expected<profiling_results> profiler::run()
             return tracer_error(tracer_errcode::NO_TRAP, "Address bounds not found");
         config_data::target tgt = it->second;
 
-        pos_execs pexecs(std::move(*strap).at(), std::move(*etrap).at());
+        pos_execs pexecs(std::make_unique<position_interval>(
+            std::move(*strap).at(), std::move(*etrap).at())
+        );
         for (auto& exec : execs)
         {
             if (exec)
@@ -395,8 +397,7 @@ tracer_error profiler::insert_traps_function(const config_data::section& sec,
     const function& func = *func_res.value();
     const function_bounds& fbnds = func.bounds();
 
-    position_line pl(std::filesystem::path(func.pos().cu()), func.pos().line());
-    std::unique_ptr<position_func> pf = std::make_unique<position_func>(func.name(), pl);
+    std::unique_ptr<position_func> pf = std::make_unique<position_func>(func.name());
     std::string pos_func_str = to_string(*pf);
 
     log(log_lvl::success, "[%d] found function: %s", _tid, pos_func_str.c_str());
@@ -427,8 +428,9 @@ tracer_error profiler::insert_traps_function(const config_data::section& sec,
     for (uintptr_t ret : fbnds.returns())
     {
         uintptr_t offset = ret - fbnds.start();
-        std::unique_ptr<position_func_off> pf_off
-            = std::make_unique<position_func_off>(position_func(func.name(), pl), offset);
+        std::unique_ptr<position_offset> pf_off = std::make_unique<position_offset>(
+            std::make_unique<position_func>(func.name()),
+            offset);
         pos_func_str = to_string(*pf_off);
 
         end_addr end = entrypoint + ret;
