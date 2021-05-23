@@ -1,19 +1,23 @@
 // profiling_results.cpp
 
 #include "profiling_results.hpp"
+#include "trap.hpp"
 
+#include <cassert>
 #include <cmath>
 #include <functional>
 #include <iostream>
 #include <iomanip>
 
+using namespace tep;
 
-static std::chrono::duration<double> get_duration(const tep::timed_execution& exec)
+
+static std::chrono::duration<double> get_duration(const timed_execution& exec)
 {
     return std::chrono::duration_cast<std::chrono::duration<double>>(exec.back() - exec.front());
 }
 
-std::ostream& operator<<(std::ostream& os, const nrgprf::joules<double>& energy)
+static std::ostream& operator<<(std::ostream& os, const nrgprf::joules<double>& energy)
 {
     std::ios::fmtflags os_flags(os.flags());
     std::streamsize prec = os.precision();
@@ -26,7 +30,7 @@ std::ostream& operator<<(std::ostream& os, const nrgprf::joules<double>& energy)
     return os;
 }
 
-std::ostream& operator<<(std::ostream& os, const std::chrono::duration<double>& d)
+static std::ostream& operator<<(std::ostream& os, const std::chrono::duration<double>& d)
 {
     std::ios::fmtflags os_flags(os.flags());
     std::streamsize prec = os.precision();
@@ -50,7 +54,7 @@ private:
     nrgprf::joules<double> _energy;
 
 public:
-    gpu_energy(const nrgprf::reader_gpu& rdr, const tep::timed_execution& exec,
+    gpu_energy(const nrgprf::reader_gpu& rdr, const timed_execution& exec,
         uint8_t dev, board_tag) :
         _valid(false),
         _energy{}
@@ -104,7 +108,7 @@ private:
 
 public:
     template<typename Tag>
-    cpu_energy(const nrgprf::reader_rapl& reader, const tep::timed_execution& exec,
+    cpu_energy(const nrgprf::reader_rapl& reader, const timed_execution& exec,
         uint8_t skt, Tag) :
         _energy(subtract(
             reader.get_energy<Tag>(exec.back().smp(), skt),
@@ -171,13 +175,13 @@ class rdr_task_pair
 {
 private:
     const T& _reader;
-    const std::vector<tep::timed_execution>& _task;
-    const tep::timed_execution& _idle;
+    const std::vector<pos_execs>& _task;
+    const timed_execution& _idle;
 
 public:
     rdr_task_pair(const T& reader,
-        const std::vector<tep::timed_execution>& task,
-        const tep::timed_execution& idle) :
+        const std::vector<pos_execs>& task,
+        const timed_execution& idle) :
         _reader(reader),
         _task(task),
         _idle(idle)
@@ -188,12 +192,12 @@ public:
         return _reader;
     }
 
-    const std::vector<tep::timed_execution>& task() const
+    const std::vector<pos_execs>& task() const
     {
         return _task;
     }
 
-    const tep::timed_execution& idle_values() const
+    const timed_execution& idle_values() const
     {
         return _idle;
     }
@@ -201,27 +205,33 @@ public:
 
 std::ostream& operator<<(std::ostream& os, const rdr_task_pair<nrgprf::reader_gpu>& rt)
 {
-    for (size_t ix = 0; ix < rt.task().size(); ix++)
+    for (const auto& pos_exec : rt.task())
     {
-        const tep::timed_execution& exec = rt.task()[ix];
-        std::chrono::duration<double> duration = get_duration(exec);
-
-        os << std::setw(3) << ix << " | " << duration;
-        for (uint8_t dev = 0; dev < nrgprf::max_sockets; dev++)
+        for (auto it = pos_exec.execs().begin(); it != pos_exec.execs().end(); ++it)
         {
-            gpu_energy total_energy(rt.reader(), exec, dev, gpu_energy::board);
-            if (!total_energy)
-                continue;
+            const auto& exec = *it;
+            std::chrono::duration<double> duration = get_duration(exec);
 
-            os << " | device=" << +dev << ", board=" << total_energy.get();
-            if (rt.idle_values().size() >= 2)
+            os << "gpu | ";
+            os << std::setw(3) << std::distance(pos_exec.execs().begin(), it) << " | ";
+            os << pos_exec.interval() << " | ";
+            os << duration;
+            for (uint32_t dev = 0; dev < nrgprf::max_devices; dev++)
             {
-                os << " " << idle_delta(total_energy, duration,
-                    gpu_energy(rt.reader(), rt.idle_values(), dev, gpu_energy::board),
-                    get_duration(rt.idle_values()));
+                gpu_energy total_energy(rt.reader(), exec, dev, gpu_energy::board);
+                if (!total_energy)
+                    continue;
+
+                os << " | device=" << dev << ", board=" << total_energy.get();
+                if (rt.idle_values().size() >= 2)
+                {
+                    os << " " << idle_delta(total_energy, duration,
+                        gpu_energy(rt.reader(), rt.idle_values(), dev, gpu_energy::board),
+                        get_duration(rt.idle_values()));
+                }
             }
+            os << "\n";
         }
-        os << "\n";
     }
     return os;
 }
@@ -229,119 +239,147 @@ std::ostream& operator<<(std::ostream& os, const rdr_task_pair<nrgprf::reader_gp
 std::ostream& operator<<(std::ostream& os, const rdr_task_pair<nrgprf::reader_rapl>& rt)
 {
     using namespace nrgprf;
-    for (auto it = rt.task().begin(); it != rt.task().end(); ++it)
+    for (const auto& pos_exec : rt.task())
     {
-        const auto& exec = *it;
-        std::chrono::duration<double> duration = get_duration(exec);
-
-        os << std::setw(3) << std::distance(rt.task().begin(), it) << " | " << duration;
-        for (uint8_t skt = 0; skt < max_sockets; skt++)
+        for (auto it = pos_exec.execs().begin(); it != pos_exec.execs().end(); ++it)
         {
-            cpu_energy pkg(rt.reader(), exec, skt, reader_rapl::package{});
-            cpu_energy pp0(rt.reader(), exec, skt, reader_rapl::cores{});
-            cpu_energy pp1(rt.reader(), exec, skt, reader_rapl::uncore{});
-            cpu_energy dram(rt.reader(), exec, skt, reader_rapl::dram{});
+            const auto& exec = *it;
+            std::chrono::duration<double> duration = get_duration(exec);
 
-            if (!pkg && !pp0 && !pp1 && !dram)
-                continue;
+            os << "cpu | ";
+            os << std::setw(3) << std::distance(pos_exec.execs().begin(), it) << " | ";
+            os << pos_exec.interval() << " | ";
+            os << duration;
+            for (uint32_t skt = 0; skt < max_sockets; skt++)
+            {
+                cpu_energy pkg(rt.reader(), exec, skt, reader_rapl::package{});
+                cpu_energy pp0(rt.reader(), exec, skt, reader_rapl::cores{});
+                cpu_energy pp1(rt.reader(), exec, skt, reader_rapl::uncore{});
+                cpu_energy dram(rt.reader(), exec, skt, reader_rapl::dram{});
 
-            os << " | socket=" << +skt;
-            if (pkg)
-            {
-                os << ", package=" << pkg.get();
-                if (rt.idle_values().size() >= 2)
-                    os << " " << idle_delta(pkg, duration,
-                        cpu_energy(rt.reader(), rt.idle_values(), skt, reader_rapl::package{}),
-                        get_duration(rt.idle_values()));
+                if (!pkg && !pp0 && !pp1 && !dram)
+                    continue;
+
+                os << " | socket=" << skt;
+                if (pkg)
+                {
+                    os << ", package=" << pkg.get();
+                    if (rt.idle_values().size() >= 2)
+                        os << " " << idle_delta(pkg, duration,
+                            cpu_energy(rt.reader(), rt.idle_values(), skt, reader_rapl::package{}),
+                            get_duration(rt.idle_values()));
+                }
+                if (pp0)
+                {
+                    os << ", cores=" << pp0.get();
+                    if (rt.idle_values().size() >= 2)
+                        os << " " << idle_delta(pp0, duration,
+                            cpu_energy(rt.reader(), rt.idle_values(), skt, reader_rapl::cores{}),
+                            get_duration(rt.idle_values()));
+                }
+                if (pp1)
+                {
+                    os << ", uncore=" << pp1.get();
+                    if (rt.idle_values().size() >= 2)
+                        os << " " << idle_delta(pp1, duration,
+                            cpu_energy(rt.reader(), rt.idle_values(), skt, reader_rapl::uncore{}),
+                            get_duration(rt.idle_values()));
+                }
+                if (dram)
+                {
+                    os << ", dram=" << dram.get();
+                    if (rt.idle_values().size() >= 2)
+                        os << " " << idle_delta(dram, duration,
+                            cpu_energy(rt.reader(), rt.idle_values(), skt, reader_rapl::dram{}),
+                            get_duration(rt.idle_values()));
+                }
             }
-            if (pp0)
-            {
-                os << ", cores=" << pp0.get();
-                if (rt.idle_values().size() >= 2)
-                    os << " " << idle_delta(pp0, duration,
-                        cpu_energy(rt.reader(), rt.idle_values(), skt, reader_rapl::cores{}),
-                        get_duration(rt.idle_values()));
-            }
-            if (pp1)
-            {
-                os << ", uncore=" << pp1.get();
-                if (rt.idle_values().size() >= 2)
-                    os << " " << idle_delta(pp1, duration,
-                        cpu_energy(rt.reader(), rt.idle_values(), skt, reader_rapl::uncore{}),
-                        get_duration(rt.idle_values()));
-            }
-            if (dram)
-            {
-                os << ", dram=" << dram.get();
-                if (rt.idle_values().size() >= 2)
-                    os << " " << idle_delta(dram, duration,
-                        cpu_energy(rt.reader(), rt.idle_values(), skt, reader_rapl::dram{}),
-                        get_duration(rt.idle_values()));
-            }
+            os << "\n";
         }
-        os << "\n";
     }
     return os;
 }
 
-
-tep::idle_results::idle_results() :
-    cpu_readings(),
-    gpu_readings()
+pos_execs::pos_execs(std::unique_ptr<position_interval>&& pi) :
+    _xinterval(std::move(pi))
 {}
 
-tep::idle_results::idle_results(timed_execution&& cpur, timed_execution&& gpur) :
-    cpu_readings(std::move(cpur)),
-    gpu_readings(std::move(gpur))
+void pos_execs::push_back(timed_execution&& exec)
+{
+    _execs.push_back(std::move(exec));
+}
+
+const position_interval& pos_execs::interval() const
+{
+    assert(_xinterval);
+    return *_xinterval;
+}
+
+const std::vector<timed_execution>& pos_execs::execs() const
+{
+    return _execs;
+}
+
+
+result_execs::result_execs(timed_execution&& idle) :
+    _idle(std::move(idle)),
+    _execs()
 {}
 
-tep::section_results::section_results(const config_data::section& sec) :
-    section(sec),
-    readings()
+void result_execs::push_back(pos_execs&& pe)
+{
+    _execs.push_back(std::move(pe));
+}
+
+const std::vector<pos_execs>& result_execs::positional_execs() const
+{
+    return _execs;
+}
+
+const timed_execution& result_execs::idle() const
+{
+    return _idle;
+}
+
+
+template
+class result_execs_dev<nrgprf::reader_rapl>;
+
+template
+class result_execs_dev<nrgprf::reader_gpu>;
+
+template<typename Reader>
+result_execs_dev<Reader>::result_execs_dev(const Reader& r, timed_execution&& idle) :
+    result_execs(std::move(idle)),
+    _reader(r)
 {}
 
-tep::profiling_results::profiling_results(reader_container&& rc, idle_results&& ir) :
-    readers(std::move(rc)),
-    results(),
-    idle_res(std::move(ir))
-{}
+template<>
+void result_execs_dev<nrgprf::reader_rapl>::print(std::ostream& os) const
+{
+    os << rdr_task_pair(_reader, positional_execs(), idle());
+}
 
+template<>
+void result_execs_dev<nrgprf::reader_gpu>::print(std::ostream& os) const
+{
+    os << rdr_task_pair(_reader, positional_execs(), idle());
+}
+
+void profiling_results::push_back(std::unique_ptr<results_interface>&& results)
+{
+    _results.push_back(std::move(results));
+}
 
 std::ostream& tep::operator<<(std::ostream& os, const profiling_results& pr)
 {
-    os << "# Results\n";
-    for (const auto& sr : pr.results)
-    {
-        os << "# Begin section\n";
-        os << sr.section << "\n";
-        os << "# Begin readings\n";
-        switch (sr.section.target())
-        {
-        case config_data::target::cpu:
-            os << rdr_task_pair(pr.readers.reader_rapl(), sr.readings, pr.idle_res.cpu_readings);
-            break;
-        case config_data::target::gpu:
-            os << rdr_task_pair(pr.readers.reader_gpu(), sr.readings, pr.idle_res.gpu_readings);
-            break;
-        }
-        os << "# End readings\n";
-        os << "# End section\n";
-    }
+    for (const auto& res : pr._results)
+        os << *res << "\n";
     return os;
 }
 
-
-bool tep::operator==(const section_results& lhs, const section_results& rhs)
+std::ostream& tep::operator<<(std::ostream& os, const results_interface& ri)
 {
-    return lhs.section == rhs.section;
-}
-
-bool tep::operator==(const section_results& lhs, const config_data::section& rhs)
-{
-    return lhs.section == rhs;
-}
-
-bool tep::operator==(const config_data::section& lhs, const section_results& rhs)
-{
-    return lhs == rhs.section;
+    ri.print(os);
+    return os;
 }

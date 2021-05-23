@@ -126,8 +126,18 @@ namespace tep
         void add_address(uint32_t lineno, uintptr_t lineaddr);
 
         const std::string& name()  const;
-        dbg_expected<uintptr_t> lowest_addr(uint32_t lineno) const;
-        dbg_expected<uintptr_t> highest_addr(uint32_t lineno) const;
+
+        // returns a pair whose first element is the effective line found,
+        // i.e. first line greater than or equal to lineno,
+        // and whose second element is the lowest address of said effective line
+        dbg_expected<std::pair<uint32_t, uintptr_t>>
+            lowest_addr(uint32_t lineno) const;
+
+        // returns a pair whose first element is the effective line found,
+        // i.e. first line greater than or equal to lineno,
+        // and whose second element is the highest address of said effective line
+        dbg_expected<std::pair<uint32_t, uintptr_t>>
+            highest_addr(uint32_t lineno) const;
 
         friend std::ostream& operator<<(std::ostream& os, const unit_lines& cu);
 
@@ -135,7 +145,9 @@ namespace tep
         using addr_getter =
             dbg_expected<uintptr_t>(unit_lines::*)(const decltype(_lines)::mapped_type&) const;
 
-        dbg_expected<uintptr_t> get_addr_impl(uint32_t lineno, addr_getter) const;
+        dbg_expected<std::pair<uint32_t, uintptr_t>>
+            get_addr_impl(uint32_t lineno, addr_getter) const;
+
         dbg_expected<uintptr_t> get_lowest_addr(const decltype(_lines)::mapped_type&) const;
         dbg_expected<uintptr_t> get_highest_addr(const decltype(_lines)::mapped_type&) const;
     };

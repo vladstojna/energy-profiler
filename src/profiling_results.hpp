@@ -2,8 +2,6 @@
 
 #pragma once
 
-#include "config.hpp"
-#include "reader_container.hpp"
 #include "sampler.hpp"
 
 #include <nrg/nrg.hpp>
@@ -13,38 +11,87 @@
 namespace tep
 {
 
+    class position_interface;
+    class position_interval;
+
+    class pos_execs
+    {
+    private:
+        std::unique_ptr<position_interval> _xinterval;
+        std::vector<timed_execution> _execs;
+
+    public:
+        pos_execs(std::unique_ptr<position_interval>&&);
+
+        void push_back(timed_execution&& exec);
+
+        const position_interval& interval() const;
+        const std::vector<timed_execution>& execs() const;
+    };
+
     struct idle_results
     {
         timed_execution cpu_readings;
         timed_execution gpu_readings;
-
-        idle_results();
-        idle_results(timed_execution&& cpur, timed_execution&& gpur);
     };
 
-    struct section_results
+
+    class results_interface
     {
-        config_data::section section;
-        std::vector<timed_execution> readings;
+    public:
+        virtual ~results_interface() = default;
 
-        section_results(const config_data::section& sec);
+        friend std::ostream& operator<<(std::ostream&, const results_interface&);
+
+    protected:
+        virtual void print(std::ostream&) const = 0;
     };
 
-    struct profiling_results
+    class result_execs : public results_interface
     {
-        reader_container readers;
-        std::vector<section_results> results;
-        idle_results idle_res;
+    private:
+        timed_execution _idle;
+        std::vector<pos_execs> _execs;
 
-        profiling_results(reader_container&& rc, idle_results&& ir);
-        void add_execution(const config_data::section& sec, timed_execution&& exec);
+    protected:
+        result_execs(timed_execution&& idle);
+
+    public:
+        void push_back(pos_execs&&);
+
+    protected:
+        const std::vector<pos_execs>& positional_execs() const;
+        const timed_execution& idle() const;
+    };
+
+    template<typename Reader>
+    class result_execs_dev : public result_execs
+    {
+    private:
+        Reader _reader;
+
+    public:
+        result_execs_dev(const Reader& r, timed_execution&& idle);
+
+    protected:
+        void print(std::ostream&) const override;
     };
 
 
-    std::ostream& operator<<(std::ostream& os, const profiling_results& pr);
+    class profiling_results
+    {
+    private:
+        std::vector<std::unique_ptr<results_interface>> _results;
 
-    bool operator==(const section_results& lhs, const section_results& rhs);
-    bool operator==(const section_results& lhs, const config_data::section& rhs);
-    bool operator==(const config_data::section& lhs, const section_results& rhs);
+    public:
+        profiling_results() = default;
+        void push_back(std::unique_ptr<results_interface>&& results);
+
+        friend std::ostream& operator<<(std::ostream&, const profiling_results&);
+    };
+
+
+    std::ostream& operator<<(std::ostream&, const profiling_results&);
+    std::ostream& operator<<(std::ostream&, const results_interface&);
 
 };

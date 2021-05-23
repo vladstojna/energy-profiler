@@ -410,26 +410,39 @@ const std::string& unit_lines::name() const
     return _name;
 }
 
-dbg_expected<uintptr_t> unit_lines::lowest_addr(uint32_t lineno) const
+dbg_expected<std::pair<uint32_t, uintptr_t>>
+unit_lines::lowest_addr(uint32_t lineno) const
 {
     return get_addr_impl(lineno, &unit_lines::get_lowest_addr);
 }
 
-dbg_expected<uintptr_t> unit_lines::highest_addr(uint32_t lineno) const
+dbg_expected<std::pair<uint32_t, uintptr_t>>
+unit_lines::highest_addr(uint32_t lineno) const
 {
     return get_addr_impl(lineno, &unit_lines::get_highest_addr);
 }
 
-dbg_expected<uintptr_t> unit_lines::get_addr_impl(uint32_t lineno, addr_getter fn) const
+dbg_expected<std::pair<uint32_t, uintptr_t>>
+unit_lines::get_addr_impl(uint32_t lineno, addr_getter fn) const
 {
     using it = decltype(_lines)::const_iterator;
     std::pair<it, it> eqrange = _lines.equal_range(lineno);
     // if there is an element not less than lineno
     if (eqrange.first != _lines.end())
-        return std::invoke(fn, *this, eqrange.first->second);
+    {
+        auto res = std::invoke(fn, *this, eqrange.first->second);
+        if (!res)
+            return std::move(res.error());
+        return { eqrange.first->first, res.value() };
+    }
     // otherwise, the first element greater than lineno
     if (eqrange.second != _lines.end())
-        return std::invoke(fn, *this, eqrange.second->second);
+    {
+        auto res = std::invoke(fn, *this, eqrange.second->second);
+        if (!res)
+            return std::move(res.error());
+        return { eqrange.second->first, res.value() };
+    }
     return dbg_error(dbg_error_code::INVALID_LINE, "Invalid line");
 }
 

@@ -10,7 +10,6 @@
 #include <nrg/nrg.hpp>
 
 #include "reader_container.hpp"
-#include "config.hpp"
 #include "error.hpp"
 #include "sampler.hpp"
 #include "trap.hpp"
@@ -22,10 +21,14 @@ namespace tep
 
     template<typename R>
     using tracer_expected = cmmn::expected<R, tracer_error>;
-    using gathered_results = std::unordered_map<uintptr_t, std::vector<sampler_expected>>;
 
     class tracer
     {
+    public:
+        using gathered_results = std::unordered_map<addr_bounds,
+            std::vector<sampler_expected>,
+            addr_bounds_hash>;
+
     private:
         static std::mutex TRAP_BARRIER;
 
@@ -36,9 +39,7 @@ namespace tep
         std::vector<std::unique_ptr<tracer>> _children;
         const tracer* _parent;
 
-        reader_container _readers;
         std::unique_ptr<async_sampler> _sampler;
-        sampler_promise _promise;
 
         pid_t _tracee_tgid;
         pid_t _tracee;
@@ -46,15 +47,13 @@ namespace tep
         gathered_results _results;
 
     public:
-        tracer(const reader_container& readers,
-            const trap_set& traps,
+        tracer(const registered_traps& traps,
             pid_t tracee_pid,
             pid_t tracee_tid,
             uintptr_t ep,
             std::launch policy);
 
-        tracer(const reader_container& readers,
-            const trap_set& traps,
+        tracer(const registered_traps& traps,
             pid_t tracee_pid,
             pid_t tracee_tid,
             uintptr_t ep,
@@ -69,16 +68,13 @@ namespace tep
         tracer_expected<gathered_results> results();
 
     private:
-        void add_child(const trap_set& traps, pid_t new_child);
+        void add_child(const registered_traps& traps, pid_t new_child);
+
         tracer_error stop_tracees(const tracer& excl) const;
         tracer_error stop_self() const;
         tracer_error wait_for_tracee(int& wait_status) const;
         tracer_error handle_breakpoint(user_regs_struct& regs, uintptr_t ep, long origw) const;
-
-        tracer_error trace(const trap_set* traps);
-
-        void launch_async_sampling(const config_data::section& sec);
-        void register_results(uintptr_t bp);
+        tracer_error trace(const registered_traps* traps);
     };
 
 

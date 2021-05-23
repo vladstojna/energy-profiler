@@ -31,6 +31,13 @@ inline int tgkill(pid_t tgid, pid_t tid, int signal)
 
 // begin helper functions
 
+template<typename T>
+static std::string to_string(const T& obj)
+{
+    std::stringstream ss;
+    ss << obj;
+    return ss.str();
+}
 
 void handle_error(pid_t tid, const char* comment, const nrgprf::error& e)
 {
@@ -38,18 +45,6 @@ void handle_error(pid_t tid, const char* comment, const nrgprf::error& e)
     sstream << e;
     log(log_lvl::error, "[%d] %s: error when reading counters: %s",
         tid, comment, sstream.str().c_str());
-}
-
-tracer_expected<trap_set::iterator> get_trap(const trap_set& traps, pid_t tid, uintptr_t addr, uintptr_t ep)
-{
-    trap_set::iterator it = traps.find(addr);
-    if (it == traps.end())
-    {
-        log(log_lvl::error, "[%d] reached trap which is not registered @ 0x%" PRIxPTR
-            " (offset = 0x%" PRIxPTR ")", tid, addr, addr - ep);
-        return tracer_error(tracer_errcode::NO_TRAP, "No such trap registered");
-    }
-    return it;
 }
 
 
@@ -64,17 +59,15 @@ std::mutex tracer::TRAP_BARRIER;
 // methods
 
 
-tracer::tracer(const reader_container& readers,
-    const trap_set& traps,
+tracer::tracer(const registered_traps& traps,
     pid_t tracee_pid,
     pid_t tracee_tid,
     uintptr_t ep,
     std::launch policy) :
-    tracer(readers, traps, tracee_pid, tracee_tid, ep, policy, nullptr)
+    tracer(traps, tracee_pid, tracee_tid, ep, policy, nullptr)
 {}
 
-tracer::tracer(const reader_container& readers,
-    const trap_set& traps,
+tracer::tracer(const registered_traps& traps,
     pid_t tracee_pid,
     pid_t tracee_tid,
     uintptr_t ep,
@@ -84,7 +77,6 @@ tracer::tracer(const reader_container& readers,
     _children_mx(),
     _children(),
     _parent(tracer),
-    _readers(readers),
     _tracee_tgid(tracee_pid),
     _tracee(tracee_tid),
     _ep(ep),
@@ -112,7 +104,7 @@ pid_t tracer::tracee_tgid() const
 }
 
 
-tracer_expected<gathered_results> tracer::results()
+tracer_expected<tracer::gathered_results> tracer::results()
 {
     tracer_error error = _tracer_ftr.get();
     if (error)
@@ -136,11 +128,11 @@ tracer_expected<gathered_results> tracer::results()
 }
 
 
-void tracer::add_child(const trap_set& traps, pid_t new_child)
+void tracer::add_child(const registered_traps& traps, pid_t new_child)
 {
     std::scoped_lock lock(_children_mx);
     _children.push_back(
-        std::make_unique<tracer>(_readers, traps, _tracee_tgid, new_child, _ep,
+        std::make_unique<tracer>(traps, _tracee_tgid, new_child, _ep,
             std::launch::async, this));
     log(log_lvl::info, "[%d] new child created with tid=%d", gettid(), new_child);
 }
@@ -266,60 +258,7 @@ tracer_error tracer::handle_breakpoint(user_regs_struct& regs, uintptr_t ep, lon
     return tracer_error::success();
 }
 
-void tracer::launch_async_sampling(const config_data::section& section)
-{
-    const nrgprf::reader* reader_gpu = &_readers.reader_gpu();
-    const nrgprf::reader* reader_cpu = &_readers.reader_rapl();
-    switch (section.target())
-    {
-    case config_data::target::cpu:
-        switch (section.method())
-        {
-        case config_data::profiling_method::energy_profile:
-            _sampler = std::make_unique<unbounded_ps>(reader_cpu, section.samples(),
-                section.interval());
-            break;
-        case config_data::profiling_method::energy_total:
-            _sampler = std::make_unique<bounded_ps>(reader_cpu, section.interval());
-            break;
-        default:
-            assert(false);
-        }
-        break;
-    case config_data::target::gpu:
-        switch (section.method())
-        {
-        case config_data::profiling_method::energy_profile:
-            _sampler = std::make_unique<unbounded_ps>(reader_gpu, section.samples(),
-                section.interval());
-            break;
-        case config_data::profiling_method::energy_total:
-            _sampler = std::make_unique<bounded_ps>(reader_gpu, section.interval());
-            break;
-        default:
-            assert(false);
-        }
-        break;
-    default:
-        assert(false);
-    }
-}
-
-void tracer::register_results(uintptr_t bp)
-{
-    pid_t tid = gettid();
-    auto sampling_results = _promise();
-    // if sampling thread generated an error, register execution as a failed one
-    // in the gathered results collection
-    if (!sampling_results)
-        log(log_lvl::error, "[%d] sampling thread exited with error", tid);
-    else
-        log(log_lvl::success, "[%d] sampling thread exited successfully with %zu samples",
-            tid, sampling_results.value().size());
-    _results[bp].emplace_back(std::move(sampling_results));
-}
-
-tracer_error tracer::trace(const trap_set* traps)
+tracer_error tracer::trace(const registered_traps* traps)
 {
     assert(traps != nullptr);
 
@@ -386,16 +325,24 @@ tracer_error tracer::trace(const trap_set* traps)
 
             // decrease the ip by 1 byte, since this is the size of the trap instruction
             set_ip(regs, get_ip(regs) - 1);
-            uintptr_t start_bp_addr = get_ip(regs);
-            tracer_expected<trap_set::iterator> trap =
-                get_trap(*traps, tid, start_bp_addr, entrypoint);
-            if (!trap)
-                return std::move(trap.error());
-            launch_async_sampling(trap.value()->section());
-            error = handle_breakpoint(regs, entrypoint, trap.value()->original_word());
+
+            start_addr start_bp_addr = get_ip(regs);
+            const start_trap* strap = traps->find(start_bp_addr);
+            if (!strap)
+            {
+                log(log_lvl::error, "[%d] reached start trap which is not registered as "
+                    "a start trap @ 0x%" PRIxPTR " (offset = 0x%" PRIxPTR ")",
+                    tid, start_bp_addr.val(), start_bp_addr.val() - entrypoint);
+                return tracer_error(tracer_errcode::NO_TRAP, "No such trap registered");
+            }
+            log(log_lvl::info, "[%d] reached starting trap located @ %s",
+                tid, to_string(strap->at()).c_str());
+
+            error = handle_breakpoint(regs, entrypoint, strap->origword());
             if (error)
                 return error;
-            _promise = _sampler->run();
+            _sampler = strap->create_sampler();
+            sampler_promise _promise = _sampler->run();
 
             // it is during this time that the energy readings are done
             if (pw.ptrace(errnum, PTRACE_CONT, _tracee, 0, 0) == -1)
@@ -408,20 +355,41 @@ tracer_error tracer::trace(const trap_set* traps)
             // reached end breakpoint
             if (is_breakpoint_trap(wait_status))
             {
-                register_results(start_bp_addr);
+                auto sampling_results = _promise();
 
                 if (pw.ptrace(errnum, PTRACE_GETREGS, _tracee, 0, &regs) == -1)
                     return get_syserror(errnum, tracer_errcode::PTRACE_ERROR, tid, "PTRACE_GETREGS");
                 log(log_lvl::info, "[%d] reached breakpoint @ 0x%" PRIxPTR " (0x%" PRIxPTR ")", tid,
                     get_ip(regs), get_ip(regs) - entrypoint);
 
+                // decrease the ip by 1 byte, since this is the size of the trap instruction
                 set_ip(regs, get_ip(regs) - 1);
-                uintptr_t end_bp_addr = get_ip(regs);
-                tracer_expected<trap_set::iterator> trap =
-                    get_trap(*traps, tid, end_bp_addr, entrypoint);
-                if (!trap)
-                    return std::move(trap.error());
-                error = handle_breakpoint(regs, entrypoint, trap.value()->original_word());
+
+                end_addr end_bp_addr = get_ip(regs);
+                const end_trap* etrap = traps->find(end_bp_addr, start_bp_addr);
+                if (!etrap)
+                {
+                    log(log_lvl::error, "[%d] reached end trap @ 0x%" PRIxPTR
+                        " (offset = 0x%" PRIxPTR ") which does not exist or is not registered as "
+                        "an end trap for starting trap @ 0x%" PRIxPTR " (offset = 0x%" PRIxPTR ")",
+                        tid, end_bp_addr.val(), end_bp_addr.val() - entrypoint,
+                        start_bp_addr.val(), start_bp_addr.val() - entrypoint);
+                    return tracer_error(tracer_errcode::NO_TRAP, "No such trap registered");
+                }
+                log(log_lvl::info, "[%d] reached ending trap located @ %s",
+                    tid, to_string(etrap->at()).c_str());
+
+                // if sampling thread generated an error, register execution as a failed one
+                // in the gathered results collection
+                if (!sampling_results)
+                    log(log_lvl::error, "[%d] sampling thread exited with error", tid);
+                else
+                    log(log_lvl::success, "[%d] sampling thread exited successfully with %zu samples",
+                        tid, sampling_results.value().size());
+
+                _results[{start_bp_addr, end_bp_addr}].emplace_back(std::move(sampling_results));
+
+                error = handle_breakpoint(regs, entrypoint, etrap->origword());
                 if (error)
                     return error;
             }
