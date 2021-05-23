@@ -83,36 +83,6 @@ bool tep::operator!=(start_addr lhs, start_addr rhs)
 
 
 
-template<typename R>
-unbounded_creator<R>::unbounded_creator(const R* reader,
-    const std::chrono::milliseconds& period,
-    size_t initial_size) :
-    _reader(reader),
-    _period(period),
-    _initsz(initial_size)
-{}
-
-template<typename R>
-std::unique_ptr<async_sampler> unbounded_creator<R>::create() const
-{
-    return std::make_unique<unbounded_ps>(_reader, _initsz, _period);
-}
-
-
-template<typename R>
-bounded_creator<R>::bounded_creator(const R* reader, const std::chrono::milliseconds& period) :
-    _reader(reader),
-    _period(period)
-{}
-
-template<typename R>
-std::unique_ptr<async_sampler> bounded_creator<R>::create() const
-{
-    return std::make_unique<bounded_ps>(_reader, _period);
-}
-
-
-
 position_line::position_line(const std::filesystem::path& f, uint32_t line) :
     _file(f),
     _line(line)
@@ -299,17 +269,11 @@ std::ostream& trap::print(std::ostream& os) const
     return os;
 }
 
-start_trap::start_trap(long origword, std::unique_ptr<position_single>&& at,
-    std::unique_ptr<sampler_creator>&& creator) :
-    trap(origword, std::move(at)),
-    _creator(std::move(creator))
-{}
 
 std::unique_ptr<async_sampler> start_trap::create_sampler() const
 {
-    return _creator->create();
+    return _creator();
 }
-
 
 
 end_trap::end_trap(long origword, std::unique_ptr<position_single>&& at, start_addr sa) :
@@ -387,18 +351,6 @@ auto registered_traps::find_impl(T& instance, end_addr eaddr, start_addr saddr)
 
 
 // explicit template instantiation
-
-template
-class unbounded_creator<nrgprf::reader_rapl>;
-
-template
-class unbounded_creator<nrgprf::reader_gpu>;
-
-template
-class bounded_creator<nrgprf::reader_rapl>;
-
-template
-class bounded_creator<nrgprf::reader_gpu>;
 
 template
 class position_interval<position_addr>;

@@ -63,22 +63,30 @@ tracer_expected<long> insert_trap(pid_t my_tid, pid_t pid, uintptr_t addr)
 }
 
 // instantiates a polymorphic sampler_creator from config section information
-std::unique_ptr<sampler_creator> creator_from_section(const reader_container& readers,
+sampler_creator creator_from_section(const reader_container& readers,
     const config_data::section& section)
 {
     const nrgprf::reader_gpu* reader_gpu = &readers.reader_gpu();
     const nrgprf::reader_rapl* reader_cpu = &readers.reader_rapl();
+    const std::chrono::milliseconds& interval = section.interval();
+    size_t samples = section.samples();
+
     switch (section.target())
     {
     case config_data::target::cpu:
         switch (section.method())
         {
         case config_data::profiling_method::energy_profile:
-            return std::make_unique<unbounded_rapl_smpcrt>(reader_cpu,
-                section.interval(), section.samples());
+            return [reader_cpu, interval, samples]()
+            {
+                return std::make_unique<unbounded_ps>(reader_cpu, samples, interval);
+            };
             break;
         case config_data::profiling_method::energy_total:
-            return std::make_unique<bounded_rapl_smpcrt>(reader_cpu, section.interval());
+            return [reader_cpu, interval]()
+            {
+                return std::make_unique<bounded_ps>(reader_cpu, interval);
+            };
             break;
         default:
             assert(false);
@@ -88,11 +96,16 @@ std::unique_ptr<sampler_creator> creator_from_section(const reader_container& re
         switch (section.method())
         {
         case config_data::profiling_method::energy_profile:
-            return std::make_unique<unbounded_gpu_smpcrt>(reader_gpu,
-                section.interval(), section.samples());
+            return [reader_gpu, interval, samples]()
+            {
+                return std::make_unique<unbounded_ps>(reader_gpu, samples, interval);
+            };
             break;
         case config_data::profiling_method::energy_total:
-            return std::make_unique<bounded_gpu_smpcrt>(reader_gpu, section.interval());
+            return [reader_gpu, interval]()
+            {
+                return std::make_unique<bounded_ps>(reader_gpu, interval);
+            };
             break;
         default:
             assert(false);
@@ -102,7 +115,7 @@ std::unique_ptr<sampler_creator> creator_from_section(const reader_container& re
         assert(false);
     }
     assert(false);
-    return {};
+    return []() { return std::make_unique<null_async_sampler>(); };
 }
 
 // instantiates a polymorphic results holder from config target information

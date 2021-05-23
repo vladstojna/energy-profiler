@@ -4,9 +4,9 @@
 
 #include <chrono>
 #include <cstdint>
-#include <memory>
-#include <set>
 #include <filesystem>
+#include <functional>
+#include <memory>
 #include <unordered_map>
 
 namespace nrgprf
@@ -18,41 +18,9 @@ namespace nrgprf
 namespace tep
 {
 
-    // sampler creator hierarchy
-
     class async_sampler;
 
-    class sampler_creator
-    {
-    public:
-        virtual ~sampler_creator() = default;
-        virtual std::unique_ptr<async_sampler> create() const = 0;
-    };
-
-    template<typename R>
-    class unbounded_creator : public sampler_creator
-    {
-    private:
-        const R* _reader;
-        std::chrono::milliseconds _period;
-        size_t _initsz;
-
-    public:
-        unbounded_creator(const R* reader, const std::chrono::milliseconds& period, size_t initial_size);
-        std::unique_ptr<async_sampler> create() const override;
-    };
-
-    template<typename R>
-    class bounded_creator : public sampler_creator
-    {
-    private:
-        const R* _reader;
-        std::chrono::milliseconds _period;
-
-    public:
-        bounded_creator(const R* reader, const std::chrono::milliseconds& period);
-        std::unique_ptr<async_sampler> create() const override;
-    };
+    using sampler_creator = std::function<std::unique_ptr<async_sampler>()>;
 
     // position related hierarchy
 
@@ -227,11 +195,14 @@ namespace tep
     class start_trap : public trap
     {
     private:
-        std::unique_ptr<sampler_creator> _creator;
+        sampler_creator _creator;
 
     public:
-        start_trap(long origword, std::unique_ptr<position_single>&& at,
-            std::unique_ptr<sampler_creator>&& creator);
+        template<typename Creator>
+        start_trap(long origword, std::unique_ptr<position_single>&& at, Creator&& callable) :
+            trap(origword, std::move(at)),
+            _creator(std::forward<Creator>(callable))
+        {}
 
         std::unique_ptr<async_sampler> create_sampler() const;
     };
@@ -298,11 +269,6 @@ namespace tep
     std::ostream& operator<<(std::ostream&, const trap&);
 
     // types
-
-    using unbounded_rapl_smpcrt = unbounded_creator<nrgprf::reader_rapl>;
-    using unbounded_gpu_smpcrt = unbounded_creator<nrgprf::reader_gpu>;
-    using bounded_rapl_smpcrt = bounded_creator<nrgprf::reader_rapl>;
-    using bounded_gpu_smpcrt = bounded_creator<nrgprf::reader_gpu>;
 
     using pos_interval_addr = position_interval<position_addr>;
     using pos_interval_line = position_interval<position_line>;
