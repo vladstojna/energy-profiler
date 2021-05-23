@@ -88,6 +88,21 @@ namespace tep
         virtual sampler_expected async_work() = 0;
     };
 
+    // null_async_sampler
+
+    class null_async_sampler : public async_sampler
+    {
+    public:
+        null_async_sampler();
+
+    protected:
+        sampler_expected async_work() override;
+
+    private:
+        sampler_expected results() override;
+
+    };
+
     // sync_sampler_fn
 
     class sync_sampler_fn final : public sync_sampler

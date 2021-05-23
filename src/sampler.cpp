@@ -121,6 +121,20 @@ void async_sampler::ftr(decltype(_future) && ftr)
 }
 
 
+null_async_sampler::null_async_sampler() :
+    async_sampler(nullptr)
+{}
+
+sampler_expected null_async_sampler::async_work()
+{
+    return nrgprf::error(nrgprf::error_code::NO_EVENT, "Async null sampler results");
+}
+
+sampler_expected null_async_sampler::results()
+{
+    return nrgprf::error(nrgprf::error_code::NO_EVENT, "Async null sampler results");
+}
+
 
 async_sampler_fn::async_sampler_fn(std::unique_ptr<async_sampler>&& s,
     const std::function<void()>& f) :
