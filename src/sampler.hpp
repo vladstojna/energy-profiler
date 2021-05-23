@@ -31,6 +31,15 @@ namespace tep
         virtual sampler_expected results() = 0;
     };
 
+    // null_sampler
+
+    class null_sampler : public sampler_interface
+    {
+    public:
+        null_sampler() = default;
+        sampler_expected results() override;
+    };
+
     // sampler
 
     class sampler : public sampler_interface

@@ -23,6 +23,13 @@ sampler_expected sampler_interface::run()&&
 
 
 
+sampler_expected null_sampler::results()
+{
+    return nrgprf::error(nrgprf::error_code::NO_EVENT, "Null sampler results");
+}
+
+
+
 sampler::sampler(const nrgprf::reader* r) :
     _reader(r)
 {
