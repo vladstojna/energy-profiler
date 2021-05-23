@@ -105,6 +105,25 @@ std::unique_ptr<sampler_creator> creator_from_section(const reader_container& re
     return {};
 }
 
+// instantiates a polymorphic results holder from config target information
+std::unique_ptr<result_execs> exec_holder_from_target(const reader_container& readers,
+    idle_results& idle,
+    config_data::target target)
+{
+    switch (target)
+    {
+    case config_data::target::cpu:
+        return std::make_unique<result_execs_dev<nrgprf::reader_rapl>>(
+            readers.reader_rapl(), std::move(idle.cpu_readings));
+    case config_data::target::gpu:
+        return std::make_unique<result_execs_dev<nrgprf::reader_gpu>>(
+            readers.reader_gpu(), std::move(idle.gpu_readings));
+    default:
+        assert(false);
+    }
+    return {};
+}
+
 // end helper functions
 
 
@@ -239,7 +258,7 @@ tracer_expected<profiling_results> profiler::run()
             if (!insert_start)
                 return std::move(insert_start.error());
 
-            tracer_error err = insert_traps_position_end(bounds.end(), entrypoint,
+            tracer_error err = insert_traps_position_end(sec, bounds.end(), entrypoint,
                 insert_start.value());
             if (err)
                 return err;
@@ -254,34 +273,44 @@ tracer_expected<profiling_results> profiler::run()
     if (!results)
         return std::move(results.error());
 
-    profiling_results retval(std::move(_readers), std::move(_idle));
-    // for (auto& [addr, execs] : results.value())
-    // {
-    //     trap_set::iterator trap = _traps.find(addr);
-    //     assert(trap != _traps.end());
+    profiling_results retval;
+    for (auto& [pair, execs] : results.value())
+    {
+        start_trap* strap = _traps.find(pair.first);
+        end_trap* etrap = _traps.find(pair.second, pair.first);
 
-    //     std::vector<section_results>::iterator srit =
-    //         std::find(retval.results.begin(), retval.results.end(), trap->section());
+        assert(strap && etrap);
+        if (!strap || !etrap)
+            return tracer_error(tracer_errcode::NO_TRAP, "Starting or ending traps are malformed");
+        std::string start_str = to_string(strap->at());
+        std::string end_str = to_string(etrap->at());
 
-    //     section_results& sr = srit == retval.results.end() ?
-    //         retval.results.emplace_back(trap->section()) :
-    //         *srit;
+        auto it = _targets.find(pair);
+        assert(it != _targets.end());
+        if (it == _targets.end())
+            return tracer_error(tracer_errcode::NO_TRAP, "Address bounds not found");
+        config_data::target tgt = it->second;
 
-    //     for (auto& exec : execs)
-    //     {
-    //         if (exec)
-    //         {
-    //             sr.readings.push_back(std::move(exec.value()));
-    //             log(log_lvl::success, "[%d] registered execution of section @ 0x%" PRIxPTR
-    //                 " (offset = 0x%" PRIxPTR ") as successful", _tid, addr, addr - entrypoint);
-    //         }
-    //         else
-    //         {
-    //             log(log_lvl::error, "[%d] failed to gather results for execution of section @ 0x%"
-    //                 PRIxPTR " (offset = 0x%" PRIxPTR ")", _tid, addr, addr - entrypoint);
-    //         }
-    //     }
-    // }
+        pos_execs pexecs(std::move(*strap).at(), std::move(*etrap).at());
+        for (auto& exec : execs)
+        {
+            if (exec)
+            {
+                log(log_lvl::success, "[%d] registered execution of section %s - %s as successful",
+                    _tid, start_str.c_str(), end_str.c_str());
+                pexecs.push_back(std::move(exec.value()));
+            }
+            else
+            {
+                log(log_lvl::error, "[%d] failed to gather results for section %s - %s: %s",
+                    _tid, start_str.c_str(), end_str.c_str(), exec.error().msg().c_str());
+            }
+        }
+
+        std::unique_ptr<result_execs> holder = exec_holder_from_target(_readers, _idle, tgt);
+        holder->push_back(std::move(pexecs));
+        retval.push_back(std::move(holder));
+    }
     return retval;
 }
 
@@ -404,6 +433,9 @@ tracer_error profiler::insert_traps_function(const config_data::section& sec,
             return tracer_error(tracer_errcode::NO_TRAP,
                 cmmn::concat("Trap ", std::to_string(end.val()), " already exists"));
         }
+        tracer_error err = insert_target({ start, end }, sec.target());
+        if (err)
+            return err;
     }
     return tracer_error::success();
 }
@@ -455,7 +487,9 @@ cmmn::expected<start_addr, tracer_error> profiler::insert_traps_position_start(
     return eaddr;
 }
 
-tracer_error profiler::insert_traps_position_end(const config_data::position& p,
+tracer_error profiler::insert_traps_position_end(
+    const config_data::section& sec,
+    const config_data::position& p,
     uintptr_t entrypoint,
     start_addr start)
 {
@@ -491,9 +525,20 @@ tracer_error profiler::insert_traps_position_end(const config_data::position& p,
         return tracer_error(tracer_errcode::NO_TRAP,
             cmmn::concat("Trap ", std::to_string(eaddr.val()), " already exists"));
     }
+    tracer_error err = insert_target({ start, eaddr }, sec.target());
+    if (err)
+        return err;
 
     log(log_lvl::debug, "[%d] line %s @ offset 0x%" PRIxPTR,
         _tid, pstr.c_str(), line_addr.value().second);
     log(log_lvl::success, "[%d] inserted trap on line: %s", _tid, pstr.c_str());
+    return tracer_error::success();
+}
+
+tracer_error profiler::insert_target(addr_bounds bounds, config_data::target tgt)
+{
+    auto [it, inserted] = _targets.insert({ bounds, tgt });
+    if (!inserted)
+        return tracer_error(tracer_errcode::NO_TRAP, "Trap address interval already exists");
     return tracer_error::success();
 }
