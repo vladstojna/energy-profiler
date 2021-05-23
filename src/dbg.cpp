@@ -57,14 +57,6 @@ static std::string remove_spaces(T&& txt)
     return ret;
 }
 
-static void remove_spaces(std::string& str)
-{
-    str.erase(std::remove_if(str.begin(), str.end(), [](unsigned char c)
-        {
-            return std::isspace(c);
-        }), str.end());
-}
-
 static dbg_error cu_ambiguous(const std::string& name, const unit_lines& first,
     const unit_lines& second)
 {
@@ -372,14 +364,17 @@ const function_bounds& function::bounds() const
 
 bool function::matches(const std::string& name, const std::string& cu) const
 {
-    std::string_view view(_name.data(), _name.size());
-    std::string_view start(name.data(), name.size());
-    return view.substr(0, start.size()) == start && _pos.contains(cu);
+    std::string nospaces = remove_spaces(_name);
+    std::string to_match = remove_spaces(name);
+    std::string_view view(nospaces);
+    std::string_view match_view(to_match);
+    // this function's name starts with the name to match
+    return view.substr(0, match_view.size()) == match_view && _pos.contains(cu);
 }
 
 bool function::equals(const std::string& name, const std::string& cu) const
 {
-    return _name == name && _pos.contains(cu);
+    return remove_spaces(_name) == remove_spaces(name) && _pos.contains(cu);
 }
 
 
@@ -591,12 +586,11 @@ dbg_expected<unit_lines*> dbg_info::find_lines(const char* name)
 dbg_expected<const function*> dbg_info::find_function(const std::string& name,
     const std::string& cu) const
 {
-    std::string nospaces = remove_spaces(name);
     std::vector<const function*> matches;
 
     // first, iterate all functions and find matched candidates
     for (const function& f : _funcs)
-        if (f.matches(nospaces, cu))
+        if (f.matches(name, cu))
             matches.push_back(&f);
     // no matches found means the function does not exist
     if (matches.empty())
@@ -607,7 +601,7 @@ dbg_expected<const function*> dbg_info::find_function(const std::string& name,
     const function* retval = nullptr;
     for (const function* fptr : matches)
     {
-        if (fptr->equals(nospaces, cu))
+        if (fptr->equals(name, cu))
         {
             // another equal function was previously located
             if (retval != nullptr)
@@ -748,7 +742,6 @@ dbg_error dbg_info::get_functions(const char* filename)
             if (ret > pf.addr && ret < pf.addr + pf.size)
                 effrets.push_back(ret);
         }
-        remove_spaces(pf.name);
         _funcs.emplace_back(std::move(pf.name), std::move(pf.pos),
             function_bounds(pf.addr, std::move(effrets)));
     }
