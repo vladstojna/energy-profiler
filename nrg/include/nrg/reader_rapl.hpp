@@ -2,13 +2,13 @@
 
 #pragma once
 
-#include "rapl_domains.hpp"
-#include "reader.hpp"
-#include "reader_units.hpp"
-#include "result.hpp"
+#include <nrg/constants.hpp>
+#include <nrg/reader.hpp>
+#include <nrg/types.hpp>
 
 #include <array>
 #include <vector>
+#include <type_traits>
 
 namespace nrgprf
 {
@@ -47,27 +47,43 @@ namespace nrgprf
 
     class reader_rapl : public reader
     {
+    public:
+        struct package : std::integral_constant<int32_t, 0> {};
+        struct cores : std::integral_constant<int32_t, 1> {};
+        struct uncore : std::integral_constant<int32_t, 2> {};
+        struct dram : std::integral_constant<int32_t, 3> {};
+
+        struct skt_energy
+        {
+            uint32_t skt;
+            units_energy energy;
+        };
+
     private:
-        int8_t _event_map[MAX_SOCKETS][MAX_RAPL_DOMAINS];
+        std::array<std::array<int32_t, rapl_domains>, max_sockets> _event_map;
         std::vector<detail::event_data> _active_events;
 
     public:
-        reader_rapl(error& ec);
-        reader_rapl(rapl_domain dmask, uint8_t skt_mask, error& ec);
+        reader_rapl(rapl_mask, socket_mask, error&);
+        reader_rapl(rapl_mask, error&);
+        reader_rapl(socket_mask, error&);
+        reader_rapl(error&);
 
         error read(sample& s) const override;
         error read(sample& s, uint8_t ev_idx) const override;
         size_t num_events() const override;
 
-        int8_t event_idx(rapl_domain domain, uint8_t skt) const;
+        template<typename Tag>
+        int32_t event_idx(uint8_t skt) const;
 
-        result<units_energy> get_pkg_energy(const sample& s, uint8_t skt) const;
-        result<units_energy> get_pp0_energy(const sample& s, uint8_t skt) const;
-        result<units_energy> get_pp1_energy(const sample& s, uint8_t skt) const;
-        result<units_energy> get_dram_energy(const sample& s, uint8_t skt) const;
+        template<typename Tag>
+        result<units_energy> get_energy(const sample& s, uint8_t skt) const;
+
+        template<typename Tag>
+        std::vector<skt_energy> get_energy(const sample& s) const;
 
     private:
-        error add_event(const char* base, rapl_domain dmask, uint8_t skt);
+        error add_event(const char* base, rapl_mask dmask, uint8_t skt);
     };
 
 }

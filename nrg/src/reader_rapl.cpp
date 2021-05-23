@@ -3,7 +3,9 @@
 #include <nrg/error.hpp>
 #include <nrg/reader_rapl.hpp>
 #include <nrg/sample.hpp>
+#include <util/concat.hpp>
 
+#include <algorithm>
 #include <cassert>
 #include <charconv>
 #include <cstdio>
@@ -14,35 +16,14 @@
 #include <unistd.h>
 #include <fcntl.h>
 
+#include "util.hpp"
+
 using namespace nrgprf;
 
 constexpr static const char EVENT_PKG_PREFIX[] = "package";
 constexpr static const char EVENT_PP0[] = "core";
 constexpr static const char EVENT_PP1[] = "uncore";
 constexpr static const char EVENT_DRAM[] = "dram";
-
-constexpr static const uint8_t EVENT_PKG_IDX = 0;
-constexpr static const uint8_t EVENT_PP0_IDX = 1;
-constexpr static const uint8_t EVENT_PP1_IDX = 2;
-constexpr static const uint8_t EVENT_DRAM_IDX = 3;
-
-// structs
-
-
-struct domain_index
-{
-    rapl_domain domain;
-    int8_t index;
-
-    domain_index(rapl_domain d, int8_t idx) :
-        domain(d), index(idx)
-    {}
-
-    operator bool() const
-    {
-        return domain != rapl_domain::NONE && index >= 0;
-    }
-};
 
 
 // begin helper functions
@@ -84,7 +65,7 @@ int read_uint64(int fd, uint64_t* res)
 result<uint8_t> count_sockets()
 {
     char filename[128];
-    bool pkg_found[MAX_SOCKETS]{ false };
+    bool pkg_found[max_sockets]{ false };
     uint8_t ret = 0;
     for (int i = 0; ; i++)
     {
@@ -98,7 +79,7 @@ result<uint8_t> count_sockets()
             return std::move(filed.error());
         if (read_uint64(filed.value().value, &pkg) < 0)
             return error(error_code::SYSTEM, system_error_str(filename));
-        if (pkg >= MAX_SOCKETS)
+        if (pkg >= max_sockets)
             return error(error_code::TOO_MANY_SOCKETS,
                 "Too many sockets (a maximum of 8 is supported)");
         if (!pkg_found[pkg])
@@ -113,32 +94,37 @@ result<uint8_t> count_sockets()
 }
 
 
-domain_index domain_index_from_name(const char* name)
+int32_t domain_index_from_name(const char* name)
 {
     if (!strncmp(EVENT_PKG_PREFIX, name, sizeof(EVENT_PKG_PREFIX) - 1))
-        return { rapl_domain::PKG, EVENT_PKG_IDX };
+        return reader_rapl::package::value;
     if (!strncmp(EVENT_PP0, name, sizeof(EVENT_PP0) - 1))
-        return { rapl_domain::PP0, EVENT_PP0_IDX };
+        return reader_rapl::cores::value;
     if (!strncmp(EVENT_PP1, name, sizeof(EVENT_PP1) - 1))
-        return { rapl_domain::PP1, EVENT_PP1_IDX };
+        return reader_rapl::uncore::value;
     if (!strncmp(EVENT_DRAM, name, sizeof(EVENT_DRAM) - 1))
-        return { rapl_domain::DRAM, EVENT_DRAM_IDX };
-    return { rapl_domain::NONE, -1 };
+        return reader_rapl::dram::value;
+    return -1;
 }
 
 
 result<units_energy> get_value(const sample& s,
-    const int8_t(&map)[MAX_SOCKETS][MAX_RAPL_DOMAINS], uint8_t skt, uint8_t idx)
+    const std::array<std::array<int32_t, rapl_domains>, max_sockets>& map,
+    uint8_t skt,
+    uint8_t idx)
 {
     if (map[skt][idx] < 0)
         return error(error_code::NO_EVENT);
-    return s.get(map[skt][idx]);
+    result<sample::value_type> result = s.at_cpu(idx);
+    if (!result)
+        return std::move(result.error());
+    return result.value();
 }
 
 
-result<domain_index> get_domain_idx(const char* base)
+result<int32_t> get_domain_idx(const char* base)
 {
-    // open the */name file, read the name and obtain the domain and index
+    // open the */name file, read the name and obtain the domain index
 
     char name[64];
     char filename[256];
@@ -148,10 +134,9 @@ result<domain_index> get_domain_idx(const char* base)
         return std::move(filed.error());
     if (read_buff(filed.value().value, name, sizeof(name)) < 0)
         return error(error_code::SYSTEM, system_error_str(filename));
-    domain_index didx = domain_index_from_name(name);
-    if (!didx)
-        return error(error_code::INVALID_DOMAIN_NAME,
-            std::string("invalid domain name - ").append(name));
+    int32_t didx = domain_index_from_name(name);
+    if (didx < 0)
+        return error(error_code::INVALID_DOMAIN_NAME, cmmn::concat("invalid domain name - ", name));
     return didx;
 }
 
@@ -254,13 +239,12 @@ detail::event_data::event_data(file_descriptor&& fd, uint64_t max) :
 
 // reader_rapl
 
-
-reader_rapl::reader_rapl(rapl_domain dmask, uint8_t skt_mask, error& ec) :
+reader_rapl::reader_rapl(rapl_mask dmask, socket_mask skt_mask, error& ec) :
     _event_map(),
     _active_events()
 {
-    for (uint8_t skt = 0; skt < MAX_SOCKETS; skt++)
-        for (uint8_t ev = 0; ev < MAX_RAPL_DOMAINS; ev++)
+    for (uint8_t skt = 0; skt < max_sockets; skt++)
+        for (uint8_t ev = 0; ev < rapl_domains; ev++)
             _event_map[skt][ev] = -1;
 
     result<uint8_t> num_skts = count_sockets();
@@ -269,12 +253,12 @@ reader_rapl::reader_rapl(rapl_domain dmask, uint8_t skt_mask, error& ec) :
         ec = std::move(num_skts.error());
         return;
     }
-    std::cout << "found " << +num_skts.value() << " sockets\n";
+    std::cout << fileline(cmmn::concat("found ", std::to_string(num_skts.value()), " sockets\n"));
     for (uint8_t skt = 0; skt < num_skts.value(); skt++)
     {
-        if (!(skt_mask & (1 << skt)))
+        if (!skt_mask[skt])
             continue;
-        std::cout << "socket " << +skt << " not masked\n";
+        std::cout << fileline(cmmn::concat("registered socket: ", std::to_string(skt), "\n"));
 
         char base[96];
         int written = snprintf(base, sizeof(base), "/sys/class/powercap/intel-rapl/intel-rapl:%u", skt);
@@ -285,7 +269,7 @@ reader_rapl::reader_rapl(rapl_domain dmask, uint8_t skt_mask, error& ec) :
             return;
         }
         // already found one domain above
-        for (uint8_t domain_count = 0; domain_count < MAX_RAPL_DOMAINS - 1; domain_count++)
+        for (uint8_t domain_count = 0; domain_count < rapl_domains - 1; domain_count++)
         {
             snprintf(base + written, sizeof(base) - written, "/intel-rapl:%u:%u", skt, domain_count);
             // only consider the domain if the file exists
@@ -302,22 +286,30 @@ reader_rapl::reader_rapl(rapl_domain dmask, uint8_t skt_mask, error& ec) :
     }
 }
 
-reader_rapl::reader_rapl(error& ec) :
-    reader_rapl(rapl_domain::PKG | rapl_domain::PP0 | rapl_domain::PP1 | rapl_domain::DRAM, 0xff, ec)
+reader_rapl::reader_rapl(rapl_mask dmask, error& ec) :
+    reader_rapl(dmask, socket_mask(~0x0), ec)
 {}
 
-error reader_rapl::add_event(const char* base, rapl_domain dmask, uint8_t skt)
+reader_rapl::reader_rapl(socket_mask skt_mask, error& ec) :
+    reader_rapl(rapl_mask(~0x0), skt_mask, ec)
+{}
+
+reader_rapl::reader_rapl(error& ec) :
+    reader_rapl(rapl_mask(~0x0), socket_mask(~0x0), ec)
+{}
+
+error reader_rapl::add_event(const char* base, rapl_mask dmask, uint8_t skt)
 {
-    result<domain_index> didx = get_domain_idx(base);
+    result<int32_t> didx = get_domain_idx(base);
     if (!didx)
         return std::move(didx.error());
-    if ((didx.value().domain & dmask) != rapl_domain::NONE)
+    if (dmask[didx.value()])
     {
         result<detail::event_data> event_data = get_event_data(base);
         if (!event_data)
             return std::move(event_data.error());
-        std::cout << "added event: " << base << "\n";
-        _event_map[skt][didx.value().index] = _active_events.size();
+        std::cout << fileline(cmmn::concat("added event: ", base, "\n"));
+        _event_map[skt][didx.value()] = _active_events.size();
         _active_events.push_back(std::move(event_data.value()));
     }
     return error::success();
@@ -341,29 +333,12 @@ error reader_rapl::read(sample& s, uint8_t idx) const
         return { error_code::SYSTEM, system_error_str("Error reading counters") };
     if (curr < _active_events[idx].prev)
     {
-        std::cout << "reader_rapl: detected wraparound\n";
+        std::cout << fileline("reader_rapl: detected wraparound\n");
         _active_events[idx].curr_max += _active_events[idx].max;
     }
     _active_events[idx].prev = curr;
-    s.set(idx, curr + _active_events[idx].curr_max);
+    s.at_cpu(idx) = curr + _active_events[idx].curr_max;
     return error::success();
-}
-
-int8_t reader_rapl::event_idx(rapl_domain domain, uint8_t skt) const
-{
-    switch (domain)
-    {
-    case rapl_domain::PKG:
-        return _event_map[skt][EVENT_PKG_IDX];
-    case rapl_domain::PP0:
-        return _event_map[skt][EVENT_PP0_IDX];
-    case rapl_domain::PP1:
-        return _event_map[skt][EVENT_PP1_IDX];
-    case rapl_domain::DRAM:
-        return _event_map[skt][EVENT_DRAM_IDX];
-    default:
-        return -1;
-    };
 }
 
 size_t reader_rapl::num_events() const
@@ -371,22 +346,77 @@ size_t reader_rapl::num_events() const
     return _active_events.size();
 }
 
-result<units_energy> reader_rapl::get_pkg_energy(const sample& s, uint8_t skt) const
+template<typename Tag>
+int32_t reader_rapl::event_idx(uint8_t skt) const
 {
-    return get_value(s, _event_map, skt, EVENT_PKG_IDX);
+    return _event_map[skt][Tag::value];
 }
 
-result<units_energy> reader_rapl::get_pp0_energy(const sample& s, uint8_t skt) const
+template<typename Tag>
+result<units_energy> reader_rapl::get_energy(const sample& s, uint8_t skt) const
 {
-    return get_value(s, _event_map, skt, EVENT_PP0_IDX);
+    return get_value(s, _event_map, skt, Tag::value);
 }
 
-result<units_energy> reader_rapl::get_pp1_energy(const sample& s, uint8_t skt) const
+template<typename Tag>
+std::vector<reader_rapl::skt_energy> reader_rapl::get_energy(const sample& s) const
 {
-    return get_value(s, _event_map, skt, EVENT_PP1_IDX);
+    std::vector<reader_rapl::skt_energy> retval;
+    for (uint32_t skt = 0; skt < max_sockets; skt++)
+    {
+        result<units_energy> nrg = get_energy<Tag>(s, skt);
+        if (nrg)
+            retval.push_back({ skt, std::move(nrg.value()) });
+    };
+    return retval;
 }
 
-result<units_energy> reader_rapl::get_dram_energy(const sample& s, uint8_t skt) const
-{
-    return get_value(s, _event_map, skt, EVENT_DRAM_IDX);
-}
+// explicit instantiation
+
+template
+int32_t
+reader_rapl::event_idx<reader_rapl::package>(uint8_t skt) const;
+
+template
+int32_t
+reader_rapl::event_idx<reader_rapl::cores>(uint8_t skt) const;
+
+template
+int32_t
+reader_rapl::event_idx<reader_rapl::uncore>(uint8_t skt) const;
+
+template
+int32_t
+reader_rapl::event_idx<reader_rapl::dram>(uint8_t skt) const;
+
+template
+result<units_energy>
+reader_rapl::get_energy<reader_rapl::package>(const sample& s, uint8_t skt) const;
+
+template
+result<units_energy>
+reader_rapl::get_energy<reader_rapl::cores>(const sample& s, uint8_t skt) const;
+
+template
+result<units_energy>
+reader_rapl::get_energy<reader_rapl::uncore>(const sample& s, uint8_t skt) const;
+
+template
+result<units_energy>
+reader_rapl::get_energy<reader_rapl::dram>(const sample& s, uint8_t skt) const;
+
+template
+std::vector<reader_rapl::skt_energy>
+reader_rapl::get_energy<reader_rapl::package>(const sample& s) const;
+
+template
+std::vector<reader_rapl::skt_energy>
+reader_rapl::get_energy<reader_rapl::cores>(const sample& s) const;
+
+template
+std::vector<reader_rapl::skt_energy>
+reader_rapl::get_energy<reader_rapl::uncore>(const sample& s) const;
+
+template
+std::vector<reader_rapl::skt_energy>
+reader_rapl::get_energy<reader_rapl::dram>(const sample& s) const;

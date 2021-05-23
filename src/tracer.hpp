@@ -12,7 +12,7 @@
 #include "reader_container.hpp"
 #include "config.hpp"
 #include "error.hpp"
-#include "periodic_sampler.hpp"
+#include "sampler.hpp"
 #include "trap.hpp"
 
 struct user_regs_struct;
@@ -22,10 +22,7 @@ namespace tep
 
     template<typename R>
     using tracer_expected = cmmn::expected<R, tracer_error>;
-
-    using fallible_execution = cmmn::expected<nrgprf::execution, nrgprf::error>;
-
-    using gathered_results = std::unordered_map<uintptr_t, std::vector<fallible_execution>>;
+    using gathered_results = std::unordered_map<uintptr_t, std::vector<sampler_expected>>;
 
     class tracer
     {
@@ -40,7 +37,8 @@ namespace tep
         const tracer* _parent;
 
         reader_container _readers;
-        std::unique_ptr<periodic_sampler> _sampler;
+        std::unique_ptr<async_sampler> _sampler;
+        sampler_promise _promise;
 
         pid_t _tracee_tgid;
         pid_t _tracee;
@@ -79,7 +77,6 @@ namespace tep
 
         tracer_error trace(const trap_set* traps);
 
-        nrgprf::execution prepare_new_exec(const config_data::section& section) const;
         void launch_async_sampling(const config_data::section& sec);
         void register_results(uintptr_t bp);
     };

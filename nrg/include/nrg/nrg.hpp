@@ -2,9 +2,11 @@
 
 #pragma once
 
-#include "execution.hpp"
-#include "reader_rapl.hpp"
-#include "reader_gpu.hpp"
-#include "result.hpp"
-#include "sample.hpp"
-#include "task.hpp"
+#include <nrg/constants.hpp>
+#include <nrg/error.hpp>
+#include <nrg/reader_gpu.hpp>
+#include <nrg/reader_rapl.hpp>
+#include <nrg/reader.hpp>
+#include <nrg/sample.hpp>
+#include <nrg/types.hpp>
+#include <nrg/units.hpp>

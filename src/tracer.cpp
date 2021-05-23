@@ -125,7 +125,7 @@ tracer_expected<gathered_results> tracer::results()
             return std::move(results.error());
         for (auto& [addr, entry] : results.value())
         {
-            std::vector<fallible_execution>& entries = _results[addr];
+            auto& entries = _results[addr];
             entries.insert(
                 entries.end(),
                 std::make_move_iterator(entry.begin()),
@@ -266,55 +266,49 @@ tracer_error tracer::handle_breakpoint(user_regs_struct& regs, uintptr_t ep, lon
     return tracer_error::success();
 }
 
-nrgprf::execution tracer::prepare_new_exec(const config_data::section& section) const
-{
-    pid_t tid = gettid();
-    nrgprf::execution exec(0);
-    switch (section.method())
-    {
-    case config_data::profiling_method::energy_total:
-    {
-        exec.add(nrgprf::timepoint_t());
-        exec.add(nrgprf::timepoint_t());
-        log(log_lvl::debug, "[%d] added first and last sample to execution", tid);
-    } break;
-    case config_data::profiling_method::energy_profile:
-    {
-        exec.reserve(section.samples());
-        log(log_lvl::debug, "[%d] reserved %zu samples for execution", tid, section.samples());
-    } break;
-    }
-    return exec;
-}
-
 void tracer::launch_async_sampling(const config_data::section& section)
 {
-    nrgprf::execution exec(prepare_new_exec(section));
+    const nrgprf::reader* reader_gpu = &_readers.reader_gpu();
+    const nrgprf::reader* reader_cpu = &_readers.reader_rapl();
     switch (section.target())
     {
     case config_data::target::cpu:
-    {
-        if (section.method() == config_data::profiling_method::energy_profile)
-            _sampler = std::make_unique<periodic_sampler>(&_readers.reader_rapl(), std::move(exec),
-                section.interval(), periodic_sampler::complete);
-        else if (section.method() == config_data::profiling_method::energy_total)
-            _sampler = std::make_unique<periodic_sampler>(&_readers.reader_rapl(), std::move(exec),
-                section.interval(), periodic_sampler::simple);
-        else
+        switch (section.method())
+        {
+        case config_data::profiling_method::energy_profile:
+            _sampler = std::make_unique<unbounded_ps>(reader_cpu, section.samples(),
+                section.interval());
+            break;
+        case config_data::profiling_method::energy_total:
+            _sampler = std::make_unique<bounded_ps>(reader_cpu, section.interval());
+            break;
+        default:
             assert(false);
-    } break;
+        }
+        break;
     case config_data::target::gpu:
-    {
-        _sampler = std::make_unique<periodic_sampler>(&_readers.reader_gpu(), std::move(exec),
-            section.interval(), periodic_sampler::complete);
-    } break;
+        switch (section.method())
+        {
+        case config_data::profiling_method::energy_profile:
+            _sampler = std::make_unique<unbounded_ps>(reader_gpu, section.samples(),
+                section.interval());
+            break;
+        case config_data::profiling_method::energy_total:
+            _sampler = std::make_unique<bounded_ps>(reader_gpu, section.interval());
+            break;
+        default:
+            assert(false);
+        }
+        break;
+    default:
+        assert(false);
     }
 }
 
 void tracer::register_results(uintptr_t bp)
 {
     pid_t tid = gettid();
-    cmmn::expected<nrgprf::execution, nrgprf::error> sampling_results = _sampler->get();
+    auto sampling_results = _promise();
     // if sampling thread generated an error, register execution as a failed one
     // in the gathered results collection
     if (!sampling_results)
@@ -401,7 +395,7 @@ tracer_error tracer::trace(const trap_set* traps)
             error = handle_breakpoint(regs, entrypoint, trap.value()->original_word());
             if (error)
                 return error;
-            _sampler->start();
+            _promise = _sampler->run();
 
             // it is during this time that the energy readings are done
             if (pw.ptrace(errnum, PTRACE_CONT, _tracee, 0, 0) == -1)
