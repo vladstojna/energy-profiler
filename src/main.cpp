@@ -36,9 +36,11 @@ int main(int argc, char* argv[])
         return 1;
     }
 
+#ifndef NDEBUG
     std::cout << args.value() << "\n";
     std::cout << dbg_info.value() << "\n";
     std::cout << config.value() << std::endl;
+#endif
 
     int errnum;
     pid_t child_pid = ptrace_wrapper::instance.fork(errnum, &run_target, &argv[idx]);
