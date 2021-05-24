@@ -1,7 +1,6 @@
 // hybrid_reader.cpp
 
 #include <nrg/hybrid_reader.hpp>
-#include <nrg/error.hpp>
 
 #include <cassert>
 
