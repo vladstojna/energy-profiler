@@ -4,6 +4,7 @@
 
 #include <chrono>
 #include <iosfwd>
+#include <set>
 #include <string>
 #include <vector>
 
@@ -204,10 +205,13 @@ namespace tep
 
         class section
         {
+        public:
+            using target_cont = std::set<config_data::target>;
+
         private:
             std::string _name;
             std::string _extra;
-            config_data::target _target;
+            target_cont _targets;
             config_data::profiling_method _method;
             config_data::bounds _bounds;
             std::chrono::milliseconds _interval;
@@ -215,12 +219,12 @@ namespace tep
             uint32_t _samples;
 
         public:
-            template<typename N, typename E, typename B, typename I>
-            section(N&& nm, E&& extr, config_data::target tgt, config_data::profiling_method mthd,
+            template<typename N, typename E, typename B, typename I, typename T>
+            section(N&& nm, E&& extr, T&& tgts, config_data::profiling_method mthd,
                 B&& bnd, I&& intrv, uint32_t execs, uint32_t smp) :
                 _name(std::forward<N>(nm)),
                 _extra(std::forward<E>(extr)),
-                _target(tgt),
+                _targets(std::forward<T>(tgts)),
                 _method(mthd),
                 _bounds(std::forward<B>(bnd)),
                 _interval(std::forward<I>(intrv)),
@@ -231,7 +235,7 @@ namespace tep
             const std::string& name() const;
             const std::string& extra() const;
 
-            config_data::target target() const;
+            const target_cont& targets() const;
             config_data::profiling_method method() const;
             const config_data::bounds& bounds() const;
 
@@ -266,6 +270,7 @@ namespace tep
 
     std::ostream& operator<<(std::ostream& os, const cfg_error& res);
     std::ostream& operator<<(std::ostream& os, const config_data::target& tgt);
+    std::ostream& operator<<(std::ostream& os, const config_data::section::target_cont& tgts);
     std::ostream& operator<<(std::ostream& os, const config_data::profiling_method& pm);
     std::ostream& operator<<(std::ostream& os, const config_data::params& p);
     std::ostream& operator<<(std::ostream& os, const config_data::position& p);

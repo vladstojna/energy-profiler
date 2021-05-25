@@ -22,7 +22,10 @@ namespace tep
             D&& dli, C&& cd);
 
     private:
-        using target_map = std::unordered_map<addr_bounds, config_data::target, addr_bounds_hash>;
+        using target_map = std::unordered_map<
+            addr_bounds,
+            config_data::section::target_cont,
+            addr_bounds_hash>;
 
         pid_t _tid;
         pid_t _child;
@@ -34,6 +37,7 @@ namespace tep
         idle_results _idle;
         target_map _targets;
 
+    public:
         profiler(pid_t child, const flags& flags,
             const dbg_info& dli, const config_data& cd, tracer_error& err);
 
@@ -46,7 +50,6 @@ namespace tep
         profiler(pid_t child, const flags& flags,
             dbg_info&& dli, config_data&& cd, tracer_error& err);
 
-    public:
         const dbg_info& debug_line_info() const;
         const config_data& config() const;
         const registered_traps& traps() const;
@@ -72,7 +75,7 @@ namespace tep
             uintptr_t entrypoint,
             start_addr start);
 
-        tracer_error insert_target(addr_bounds, config_data::target);
+        tracer_error insert_target(addr_bounds, const config_data::section::target_cont& tgts);
     };
 
     template<typename D, typename C>

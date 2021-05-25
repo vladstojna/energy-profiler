@@ -300,13 +300,22 @@ std::ostream& operator<<(std::ostream& os, const rdr_task_pair<nrgprf::reader_ra
     return os;
 }
 
-pos_execs::pos_execs(std::unique_ptr<position_interval>&& pi) :
+pos_execs::pos_execs(std::shared_ptr<position_interval>&& pi) :
     _xinterval(std::move(pi))
+{}
+
+pos_execs::pos_execs(const std::shared_ptr<position_interval>& pi) :
+    _xinterval(pi)
 {}
 
 void pos_execs::push_back(timed_execution&& exec)
 {
     _execs.push_back(std::move(exec));
+}
+
+void pos_execs::push_back(const timed_execution& exec)
+{
+    _execs.push_back(exec);
 }
 
 const position_interval& pos_execs::interval() const
@@ -326,9 +335,19 @@ result_execs::result_execs(timed_execution&& idle) :
     _execs()
 {}
 
+result_execs::result_execs(const timed_execution& idle) :
+    _idle(idle),
+    _execs()
+{}
+
 void result_execs::push_back(pos_execs&& pe)
 {
     _execs.push_back(std::move(pe));
+}
+
+void result_execs::push_back(const pos_execs& pe)
+{
+    _execs.push_back(pe);
 }
 
 const std::vector<pos_execs>& result_execs::positional_execs() const
@@ -351,6 +370,12 @@ class result_execs_dev<nrgprf::reader_gpu>;
 template<typename Reader>
 result_execs_dev<Reader>::result_execs_dev(const Reader& r, timed_execution&& idle) :
     result_execs(std::move(idle)),
+    _reader(r)
+{}
+
+template<typename Reader>
+result_execs_dev<Reader>::result_execs_dev(const Reader& r, const timed_execution& idle) :
+    result_execs(idle),
     _reader(r)
 {}
 
