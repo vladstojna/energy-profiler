@@ -1,6 +1,6 @@
-// profiling_results.cpp
+// output.cpp
 
-#include "profiling_results.hpp"
+#include "output.hpp"
 #include "trap.hpp"
 
 #include <cassert>

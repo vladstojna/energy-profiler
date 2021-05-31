@@ -7,12 +7,14 @@
 #include "config.hpp"
 #include "dbg.hpp"
 #include "flags.hpp"
-#include "profiling_results.hpp"
+#include "output.hpp"
 #include "reader_container.hpp"
 #include "trap.hpp"
 
 namespace tep
 {
+
+    class profiling_results;
 
     class profiler
     {

@@ -1,4 +1,4 @@
-// profiling_results.hpp
+// output.hpp
 
 #pragma once
 

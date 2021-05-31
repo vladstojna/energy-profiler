@@ -2,7 +2,6 @@
 
 #include "error.hpp"
 #include "profiler.hpp"
-#include "profiling_results.hpp"
 #include "ptrace_wrapper.hpp"
 #include "util.hpp"
 #include "tracer.hpp"
