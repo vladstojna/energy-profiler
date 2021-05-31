@@ -283,9 +283,6 @@ tracer_expected<profiling_results> profiler::run()
         assert(strap && etrap);
         if (!strap || !etrap)
             return tracer_error(tracer_errcode::NO_TRAP, "Starting or ending traps are malformed");
-        std::string start_str = to_string(strap->at());
-        std::string end_str = to_string(etrap->at());
-
         auto it = _targets.find(pair);
         assert(it != _targets.end());
         if (it == _targets.end())
@@ -296,16 +293,17 @@ tracer_expected<profiling_results> profiler::run()
             std::move(*strap).at(),
             std::move(*etrap).at())
         );
+        std::string interval_str = to_string(pexecs.interval());
         for (auto& exec : execs)
         {
             if (!exec)
             {
-                log(log_lvl::error, "[%d] failed to gather results for section %s - %s: %s",
-                    _tid, start_str.c_str(), end_str.c_str(), exec.error().msg().c_str());
+                log(log_lvl::error, "[%d] failed to gather results for section %s: %s",
+                    _tid, interval_str.c_str(), exec.error().msg().c_str());
                 continue;
             }
-            log(log_lvl::success, "[%d] registered execution of section %s - %s as successful",
-                _tid, start_str.c_str(), end_str.c_str());
+            log(log_lvl::success, "[%d] registered execution of section %s as successful",
+                _tid, interval_str.c_str());
             pexecs.push_back(std::move(exec.value()));
         }
         retval.push_back({ results_from_targets(_readers, _idle, targets), std::move(pexecs) });
