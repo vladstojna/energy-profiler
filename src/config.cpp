@@ -2,6 +2,7 @@
 
 #include "config.hpp"
 
+#include <algorithm>
 #include <cassert>
 #include <cstring>
 #include <iostream>
@@ -44,7 +45,7 @@ static const char* error_messages[] =
     "Section list <sections></sections> is empty",
     "section: Node <bounds></bounds> not found",
     "section: Node <freq></freq> not found",
-    "section: target must be 'cpu' or 'gpu'",
+    "section: all targets must be 'cpu' or 'gpu', separated by a comma",
     "section: name cannot be empty",
     "section: extra data cannot be empty",
     "section: frequency must be a positive decimal number",
@@ -76,18 +77,58 @@ static const char* error_messages[] =
 
 // begin helper functions
 
-cfg_expected<config_data::target> get_target(const pugi::xml_node& nsection)
+template<typename T>
+static std::string remove_spaces(T&& txt)
+{
+    std::string ret(std::forward<T>(txt));
+    ret.erase(std::remove_if(ret.begin(), ret.end(), [](unsigned char c)
+        {
+            return std::isspace(c);
+        }), ret.end());
+    return ret;
+}
+
+static std::vector<std::string_view> split_line(std::string_view line, std::string_view delim)
+{
+    std::vector<std::string_view> tokens;
+    std::string_view::size_type current = 0;
+    std::string_view::size_type next;
+    while ((next = line.find_first_of(delim, current)) != std::string_view::npos)
+    {
+        tokens.emplace_back(&line[current], next - current);
+        current = next + delim.length();
+    }
+    if (current < line.length())
+        tokens.emplace_back(&line[current], line.length() - current);
+    return tokens;
+}
+
+cfg_expected<config_data::section::target_cont> get_targets(const pugi::xml_node& nsection)
 {
     using namespace pugi;
+    config_data::section::target_cont retval;
     xml_attribute tgt_attr = nsection.attribute("target");
     if (!tgt_attr)
-        return defaults::target;
+    {
+        retval.insert(defaults::target);
+        return retval;
+    }
+
     const char_t* tgt_str = tgt_attr.value();
-    if (!strcmp(tgt_str, "cpu"))
-        return config_data::target::cpu;
-    if (!strcmp(tgt_str, "gpu"))
-        return config_data::target::gpu;
-    return cfg_error(cfg_error_code::SEC_INVALID_TARGET);
+    std::string nospaces = remove_spaces(tgt_str);
+    std::vector<std::string_view> tokens = split_line(nospaces, ",");
+    for (const auto& target : tokens)
+    {
+        if (target == "cpu")
+            retval.insert(config_data::target::cpu);
+        else if (target == "gpu")
+            retval.insert(config_data::target::gpu);
+        else
+            return cfg_error(cfg_error_code::SEC_INVALID_TARGET);
+    }
+    if (retval.empty())
+        return cfg_error(cfg_error_code::SEC_INVALID_TARGET);
+    return retval;
 }
 
 cfg_expected<config_data::params> get_params(const pugi::xml_node& nparams)
@@ -308,7 +349,7 @@ cfg_expected<config_data::bounds> get_bounds(const pugi::xml_node& bounds)
 }
 
 cfg_expected<config_data::profiling_method> get_method(const pugi::xml_node& nsection,
-    config_data::target tgt)
+    const config_data::section::target_cont& tgts)
 {
     using namespace pugi;
 
@@ -327,7 +368,7 @@ cfg_expected<config_data::profiling_method> get_method(const pugi::xml_node& nse
         else
             return cfg_error(cfg_error_code::SEC_INVALID_METHOD);
     }
-    if (tgt == config_data::target::gpu)
+    if (tgts.find(config_data::target::gpu) != tgts.end())
         method = config_data::profiling_method::energy_profile;
     return method;
 }
@@ -336,9 +377,9 @@ cfg_expected<config_data::section> get_section(const pugi::xml_node& nsection)
 {
     using namespace pugi;
     // attribute target
-    cfg_expected<config_data::target> target = get_target(nsection);
-    if (!target)
-        return std::move(target.error());
+    cfg_expected<config_data::section::target_cont> targets = get_targets(nsection);
+    if (!targets)
+        return std::move(targets.error());
 
     // <name></name> - optional, must not be empty
     xml_node nname = nsection.child("name");
@@ -349,7 +390,7 @@ cfg_expected<config_data::section> get_section(const pugi::xml_node& nsection)
     if (nxtra && !*nxtra.child_value())
         return cfg_error(cfg_error_code::SEC_INVALID_EXTRA);
 
-    cfg_expected<config_data::profiling_method> method = get_method(nsection, target.value());
+    cfg_expected<config_data::profiling_method> method = get_method(nsection, targets.value());
     if (!method)
         return std::move(method.error());
 
@@ -376,7 +417,7 @@ cfg_expected<config_data::section> get_section(const pugi::xml_node& nsection)
     return {
         nname.child_value(),
         nxtra.child_value(),
-        target.value(),
+        targets.value(),
         method.value(),
         std::move(bounds.value()),
         std::move(interval.value()),
@@ -682,9 +723,9 @@ const std::string& config_data::section::extra() const
     return _extra;
 }
 
-config_data::target config_data::section::target() const
+const config_data::section::target_cont& config_data::section::targets() const
 {
-    return _target;
+    return _targets;
 }
 
 config_data::profiling_method config_data::section::method() const
@@ -758,8 +799,9 @@ const std::vector<config_data::section>& config_data::sections() const
 bool config_data::has_section_with(config_data::target tgt) const
 {
     for (const auto& sec : _sections)
-        if (sec.target() == tgt)
-            return true;
+        for (auto t : sec.targets())
+            if (t == tgt)
+                return true;
     return false;
 }
 
@@ -927,7 +969,7 @@ std::ostream& tep::operator<<(std::ostream& os, const config_data::section& s)
 {
     os << "name: " << (s.has_name() ? s.name() : "-");
     os << "\nextra: " << (s.has_extra() ? s.extra() : "-");
-    os << "\ntarget: " << s.target();
+    os << "\ntarget: " << s.targets();
     os << "\ninterval: " << s.interval().count() << " ms";
     os << "\nmethod: " << s.method();
     os << "\nbounds: " << s.bounds();
@@ -943,6 +985,13 @@ std::ostream& tep::operator<<(std::ostream& os, const config_data& cd)
     os << "\nsections:";
     for (const auto& section : cd.sections())
         os << "\n----------\n" << section;
+    return os;
+}
+
+std::ostream& tep::operator<<(std::ostream& os, const config_data::section::target_cont& tgts)
+{
+    for (auto tgt : tgts)
+        os << tgt << " ";
     return os;
 }
 
@@ -972,7 +1021,7 @@ bool tep::operator==(const config_data::bounds& lhs, const config_data::bounds& 
 bool tep::operator==(const config_data::section& lhs, const config_data::section& rhs)
 {
     return lhs.name() == rhs.name() && lhs.extra() == rhs.extra() &&
-        lhs.target() == rhs.target() && lhs.method() == rhs.method() &&
+        lhs.targets() == rhs.targets() && lhs.method() == rhs.method() &&
         lhs.bounds() == rhs.bounds() && lhs.interval() == rhs.interval() &&
         lhs.executions() == rhs.executions() && lhs.samples() == lhs.samples();
 }

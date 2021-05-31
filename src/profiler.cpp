@@ -2,7 +2,6 @@
 
 #include "error.hpp"
 #include "profiler.hpp"
-#include "profiling_results.hpp"
 #include "ptrace_wrapper.hpp"
 #include "util.hpp"
 #include "tracer.hpp"
@@ -66,75 +65,63 @@ tracer_expected<long> insert_trap(pid_t my_tid, pid_t pid, uintptr_t addr)
 sampler_creator creator_from_section(const reader_container& readers,
     const config_data::section& section)
 {
-    const nrgprf::reader_gpu* reader_gpu = &readers.reader_gpu();
-    const nrgprf::reader_rapl* reader_cpu = &readers.reader_rapl();
+    const nrgprf::reader* reader = readers.find(section.targets());
     const std::chrono::milliseconds& interval = section.interval();
     size_t samples = section.samples();
 
-    switch (section.target())
+    assert(reader != nullptr);
+    switch (section.method())
     {
-    case config_data::target::cpu:
-        switch (section.method())
+    case config_data::profiling_method::energy_profile:
+    {
+        return [reader, interval, samples]()
         {
-        case config_data::profiling_method::energy_profile:
-            return [reader_cpu, interval, samples]()
-            {
-                return std::make_unique<unbounded_ps>(reader_cpu, samples, interval);
-            };
-            break;
-        case config_data::profiling_method::energy_total:
-            return [reader_cpu, interval]()
-            {
-                return std::make_unique<bounded_ps>(reader_cpu, interval);
-            };
-            break;
-        default:
-            assert(false);
-        }
-        break;
-    case config_data::target::gpu:
-        switch (section.method())
+            return std::make_unique<unbounded_ps>(reader, samples, interval);
+        };
+    } break;
+    case config_data::profiling_method::energy_total:
+    {
+        return [reader, interval]()
         {
-        case config_data::profiling_method::energy_profile:
-            return [reader_gpu, interval, samples]()
-            {
-                return std::make_unique<unbounded_ps>(reader_gpu, samples, interval);
-            };
-            break;
-        case config_data::profiling_method::energy_total:
-            return [reader_gpu, interval]()
-            {
-                return std::make_unique<bounded_ps>(reader_gpu, interval);
-            };
-            break;
-        default:
-            assert(false);
-        }
-        break;
+            return std::make_unique<bounded_ps>(reader, interval);
+        };
+    } break;
     default:
         assert(false);
     }
-    assert(false);
     return []() { return std::make_unique<null_async_sampler>(); };
 }
 
 // instantiates a polymorphic results holder from config target information
-std::unique_ptr<result_execs> exec_holder_from_target(const reader_container& readers,
-    idle_results& idle,
+std::unique_ptr<results_interface>
+results_from_target(const reader_container& readers,
+    const idle_results& idle_res,
     config_data::target target)
 {
     switch (target)
     {
     case config_data::target::cpu:
-        return std::make_unique<result_execs_dev<nrgprf::reader_rapl>>(
-            readers.reader_rapl(), std::move(idle.cpu_readings));
+        return std::make_unique<results_cpu>(readers.reader_rapl(), idle_res.cpu_readings);
     case config_data::target::gpu:
-        return std::make_unique<result_execs_dev<nrgprf::reader_gpu>>(
-            readers.reader_gpu(), std::move(idle.gpu_readings));
+        return std::make_unique<results_gpu>(readers.reader_gpu(), idle_res.gpu_readings);
     default:
         assert(false);
     }
     return {};
+}
+
+std::unique_ptr<results_interface>
+results_from_targets(const reader_container& readers,
+    const idle_results& idle_res,
+    const config_data::section::target_cont& targets)
+{
+    assert(!targets.empty());
+    if (targets.size() == 1)
+        return results_from_target(readers, idle_res, *targets.begin());
+    std::unique_ptr<results_holder> holder = std::make_unique<results_holder>();
+    for (auto tgt : targets)
+        holder->push_back(results_from_target(readers, idle_res, tgt));
+    return holder;
 }
 
 // end helper functions
@@ -147,7 +134,7 @@ profiler::profiler(pid_t child, const flags& flags,
     _flags(flags),
     _dli(dli),
     _cd(cd),
-    _readers(cd, err)
+    _readers(_cd, err)
 {}
 
 profiler::profiler(pid_t child, const flags& flags,
@@ -157,7 +144,7 @@ profiler::profiler(pid_t child, const flags& flags,
     _flags(flags),
     _dli(dli),
     _cd(std::move(cd)),
-    _readers(cd, err)
+    _readers(_cd, err)
 {}
 
 profiler::profiler(pid_t child, const flags& flags,
@@ -167,7 +154,7 @@ profiler::profiler(pid_t child, const flags& flags,
     _flags(flags),
     _dli(std::move(dli)),
     _cd(cd),
-    _readers(cd, err)
+    _readers(_cd, err)
 {}
 
 profiler::profiler(pid_t child, const flags& flags,
@@ -177,7 +164,7 @@ profiler::profiler(pid_t child, const flags& flags,
     _flags(flags),
     _dli(std::move(dli)),
     _cd(std::move(cd)),
-    _readers(cd, err)
+    _readers(_cd, err)
 {}
 
 const dbg_info& profiler::debug_line_info() const
@@ -295,36 +282,30 @@ tracer_expected<profiling_results> profiler::run()
         assert(strap && etrap);
         if (!strap || !etrap)
             return tracer_error(tracer_errcode::NO_TRAP, "Starting or ending traps are malformed");
-        std::string start_str = to_string(strap->at());
-        std::string end_str = to_string(etrap->at());
-
         auto it = _targets.find(pair);
         assert(it != _targets.end());
         if (it == _targets.end())
             return tracer_error(tracer_errcode::NO_TRAP, "Address bounds not found");
-        config_data::target tgt = it->second;
+        const config_data::section::target_cont& targets = it->second;
 
         pos_execs pexecs(std::make_unique<position_interval>(
-            std::move(*strap).at(), std::move(*etrap).at())
+            std::move(*strap).at(),
+            std::move(*etrap).at())
         );
+        std::string interval_str = to_string(pexecs.interval());
         for (auto& exec : execs)
         {
-            if (exec)
+            if (!exec)
             {
-                log(log_lvl::success, "[%d] registered execution of section %s - %s as successful",
-                    _tid, start_str.c_str(), end_str.c_str());
-                pexecs.push_back(std::move(exec.value()));
+                log(log_lvl::error, "[%d] failed to gather results for section %s: %s",
+                    _tid, interval_str.c_str(), exec.error().msg().c_str());
+                continue;
             }
-            else
-            {
-                log(log_lvl::error, "[%d] failed to gather results for section %s - %s: %s",
-                    _tid, start_str.c_str(), end_str.c_str(), exec.error().msg().c_str());
-            }
+            log(log_lvl::success, "[%d] registered execution of section %s as successful",
+                _tid, interval_str.c_str());
+            pexecs.push_back(std::move(exec.value()));
         }
-
-        std::unique_ptr<result_execs> holder = exec_holder_from_target(_readers, _idle, tgt);
-        holder->push_back(std::move(pexecs));
-        retval.push_back(std::move(holder));
+        retval.push_back({ results_from_targets(_readers, _idle, targets), std::move(pexecs) });
     }
     return retval;
 }
@@ -448,7 +429,7 @@ tracer_error profiler::insert_traps_function(const config_data::section& sec,
             return tracer_error(tracer_errcode::NO_TRAP,
                 cmmn::concat("Trap ", std::to_string(end.val()), " already exists"));
         }
-        tracer_error err = insert_target({ start, end }, sec.target());
+        tracer_error err = insert_target({ start, end }, sec.targets());
         if (err)
             return err;
     }
@@ -540,7 +521,7 @@ tracer_error profiler::insert_traps_position_end(
         return tracer_error(tracer_errcode::NO_TRAP,
             cmmn::concat("Trap ", std::to_string(eaddr.val()), " already exists"));
     }
-    tracer_error err = insert_target({ start, eaddr }, sec.target());
+    tracer_error err = insert_target({ start, eaddr }, sec.targets());
     if (err)
         return err;
 
@@ -550,9 +531,10 @@ tracer_error profiler::insert_traps_position_end(
     return tracer_error::success();
 }
 
-tracer_error profiler::insert_target(addr_bounds bounds, config_data::target tgt)
+tracer_error
+profiler::insert_target(addr_bounds bounds, const config_data::section::target_cont& tgts)
 {
-    auto [it, inserted] = _targets.insert({ bounds, tgt });
+    auto [it, inserted] = _targets.insert({ bounds, tgts });
     if (!inserted)
         return tracer_error(tracer_errcode::NO_TRAP, "Trap address interval already exists");
     return tracer_error::success();

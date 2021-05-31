@@ -7,7 +7,6 @@
 #include "dbg.hpp"
 #include "error.hpp"
 #include "profiler.hpp"
-#include "profiling_results.hpp"
 #include "ptrace_wrapper.hpp"
 #include "target.hpp"
 #include "util.hpp"
