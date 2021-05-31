@@ -94,22 +94,35 @@ sampler_creator creator_from_section(const reader_container& readers,
 }
 
 // instantiates a polymorphic results holder from config target information
-std::unique_ptr<result_execs> exec_holder_from_target(const reader_container& readers,
-    const idle_results& idle,
+std::unique_ptr<results_interface>
+results_from_target(const reader_container& readers,
+    const idle_results& idle_res,
     config_data::target target)
 {
     switch (target)
     {
     case config_data::target::cpu:
-        return std::make_unique<result_execs_dev<nrgprf::reader_rapl>>(
-            readers.reader_rapl(), idle.cpu_readings);
+        return std::make_unique<results_cpu>(readers.reader_rapl(), idle_res.cpu_readings);
     case config_data::target::gpu:
-        return std::make_unique<result_execs_dev<nrgprf::reader_gpu>>(
-            readers.reader_gpu(), idle.gpu_readings);
+        return std::make_unique<results_gpu>(readers.reader_gpu(), idle_res.gpu_readings);
     default:
         assert(false);
     }
     return {};
+}
+
+std::unique_ptr<results_interface>
+results_from_targets(const reader_container& readers,
+    const idle_results& idle_res,
+    const config_data::section::target_cont& targets)
+{
+    assert(!targets.empty());
+    if (targets.size() == 1)
+        return results_from_target(readers, idle_res, *targets.begin());
+    std::unique_ptr<results_holder> holder = std::make_unique<results_holder>();
+    for (auto tgt : targets)
+        holder->push_back(results_from_target(readers, idle_res, tgt));
+    return holder;
 }
 
 // end helper functions
@@ -279,8 +292,10 @@ tracer_expected<profiling_results> profiler::run()
             return tracer_error(tracer_errcode::NO_TRAP, "Address bounds not found");
         const config_data::section::target_cont& targets = it->second;
 
-        std::shared_ptr<position_interval> interval = std::make_shared<position_interval>(
-            std::move(*strap).at(), std::move(*etrap).at());
+        pos_execs pexecs(std::make_unique<position_interval>(
+            std::move(*strap).at(),
+            std::move(*etrap).at())
+        );
         for (auto& exec : execs)
         {
             if (!exec)
@@ -289,19 +304,11 @@ tracer_expected<profiling_results> profiler::run()
                     _tid, start_str.c_str(), end_str.c_str(), exec.error().msg().c_str());
                 continue;
             }
-
             log(log_lvl::success, "[%d] registered execution of section %s - %s as successful",
                 _tid, start_str.c_str(), end_str.c_str());
-
-            pos_execs pexecs(interval);
             pexecs.push_back(std::move(exec.value()));
-            for (auto tgt : targets)
-            {
-                std::unique_ptr<result_execs> holder = exec_holder_from_target(_readers, _idle, tgt);
-                holder->push_back(pexecs);
-                retval.push_back(std::move(holder));
-            }
         }
+        retval.push_back({ results_from_targets(_readers, _idle, targets), std::move(pexecs) });
     }
     return retval;
 }

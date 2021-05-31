@@ -12,37 +12,41 @@
 using namespace tep;
 
 
-static std::chrono::duration<double> get_duration(const timed_execution& exec)
+namespace tep
 {
-    return std::chrono::duration_cast<std::chrono::duration<double>>(exec.back() - exec.front());
-}
 
-static std::ostream& operator<<(std::ostream& os, const nrgprf::joules<double>& energy)
-{
-    std::ios::fmtflags os_flags(os.flags());
-    std::streamsize prec = os.precision();
-    os << std::fixed
-        << std::setprecision(std::log10(nrgprf::units_energy::ratio::den))
-        << energy.count()
-        << std::setprecision(prec)
-        << " J";
-    os.setf(os_flags);
-    return os;
-}
+    static std::chrono::duration<double> get_duration(const timed_execution& exec)
+    {
+        return std::chrono::duration_cast<std::chrono::duration<double>>(exec.back() - exec.front());
+    }
 
-static std::ostream& operator<<(std::ostream& os, const std::chrono::duration<double>& d)
-{
-    std::ios::fmtflags os_flags(os.flags());
-    std::streamsize prec = os.precision();
-    os << std::fixed
-        << std::setprecision(std::log10(nrgprf::timed_sample::duration::period::den))
-        << d.count()
-        << std::setprecision(prec)
-        << " s";
-    os.setf(os_flags);
-    return os;
-}
+    static std::ostream& operator<<(std::ostream& os, const nrgprf::joules<double>& energy)
+    {
+        std::ios::fmtflags os_flags(os.flags());
+        std::streamsize prec = os.precision();
+        os << std::fixed
+            << std::setprecision(std::log10(nrgprf::units_energy::ratio::den))
+            << energy.count()
+            << std::setprecision(prec)
+            << " J";
+        os.setf(os_flags);
+        return os;
+    }
 
+    static std::ostream& operator<<(std::ostream& os, const std::chrono::duration<double>& d)
+    {
+        std::ios::fmtflags os_flags(os.flags());
+        std::streamsize prec = os.precision();
+        os << std::fixed
+            << std::setprecision(std::log10(nrgprf::timed_sample::duration::period::den))
+            << d.count()
+            << std::setprecision(prec)
+            << " s";
+        os.setf(os_flags);
+        return os;
+    }
+
+}
 
 class gpu_energy
 {
@@ -170,142 +174,8 @@ std::ostream& operator<<(std::ostream& os, const idle_delta& id)
 }
 
 
-template<typename T>
-class rdr_task_pair
-{
-private:
-    const T& _reader;
-    const std::vector<pos_execs>& _task;
-    const timed_execution& _idle;
-
-public:
-    rdr_task_pair(const T& reader,
-        const std::vector<pos_execs>& task,
-        const timed_execution& idle) :
-        _reader(reader),
-        _task(task),
-        _idle(idle)
-    {}
-
-    const T& reader() const
-    {
-        return _reader;
-    }
-
-    const std::vector<pos_execs>& task() const
-    {
-        return _task;
-    }
-
-    const timed_execution& idle_values() const
-    {
-        return _idle;
-    }
-};
-
-std::ostream& operator<<(std::ostream& os, const rdr_task_pair<nrgprf::reader_gpu>& rt)
-{
-    for (const auto& pos_exec : rt.task())
-    {
-        for (auto it = pos_exec.execs().begin(); it != pos_exec.execs().end(); ++it)
-        {
-            const auto& exec = *it;
-            std::chrono::duration<double> duration = get_duration(exec);
-
-            os << "gpu | ";
-            os << std::setw(3) << std::distance(pos_exec.execs().begin(), it) << " | ";
-            os << pos_exec.interval() << " | ";
-            os << duration;
-            for (uint32_t dev = 0; dev < nrgprf::max_devices; dev++)
-            {
-                gpu_energy total_energy(rt.reader(), exec, dev, gpu_energy::board);
-                if (!total_energy)
-                    continue;
-
-                os << " | device=" << dev << ", board=" << total_energy.get();
-                if (rt.idle_values().size() >= 2)
-                {
-                    os << " " << idle_delta(total_energy, duration,
-                        gpu_energy(rt.reader(), rt.idle_values(), dev, gpu_energy::board),
-                        get_duration(rt.idle_values()));
-                }
-            }
-            os << "\n";
-        }
-    }
-    return os;
-}
-
-std::ostream& operator<<(std::ostream& os, const rdr_task_pair<nrgprf::reader_rapl>& rt)
-{
-    using namespace nrgprf;
-    for (const auto& pos_exec : rt.task())
-    {
-        for (auto it = pos_exec.execs().begin(); it != pos_exec.execs().end(); ++it)
-        {
-            const auto& exec = *it;
-            std::chrono::duration<double> duration = get_duration(exec);
-
-            os << "cpu | ";
-            os << std::setw(3) << std::distance(pos_exec.execs().begin(), it) << " | ";
-            os << pos_exec.interval() << " | ";
-            os << duration;
-            for (uint32_t skt = 0; skt < max_sockets; skt++)
-            {
-                cpu_energy pkg(rt.reader(), exec, skt, reader_rapl::package{});
-                cpu_energy pp0(rt.reader(), exec, skt, reader_rapl::cores{});
-                cpu_energy pp1(rt.reader(), exec, skt, reader_rapl::uncore{});
-                cpu_energy dram(rt.reader(), exec, skt, reader_rapl::dram{});
-
-                if (!pkg && !pp0 && !pp1 && !dram)
-                    continue;
-
-                os << " | socket=" << skt;
-                if (pkg)
-                {
-                    os << ", package=" << pkg.get();
-                    if (rt.idle_values().size() >= 2)
-                        os << " " << idle_delta(pkg, duration,
-                            cpu_energy(rt.reader(), rt.idle_values(), skt, reader_rapl::package{}),
-                            get_duration(rt.idle_values()));
-                }
-                if (pp0)
-                {
-                    os << ", cores=" << pp0.get();
-                    if (rt.idle_values().size() >= 2)
-                        os << " " << idle_delta(pp0, duration,
-                            cpu_energy(rt.reader(), rt.idle_values(), skt, reader_rapl::cores{}),
-                            get_duration(rt.idle_values()));
-                }
-                if (pp1)
-                {
-                    os << ", uncore=" << pp1.get();
-                    if (rt.idle_values().size() >= 2)
-                        os << " " << idle_delta(pp1, duration,
-                            cpu_energy(rt.reader(), rt.idle_values(), skt, reader_rapl::uncore{}),
-                            get_duration(rt.idle_values()));
-                }
-                if (dram)
-                {
-                    os << ", dram=" << dram.get();
-                    if (rt.idle_values().size() >= 2)
-                        os << " " << idle_delta(dram, duration,
-                            cpu_energy(rt.reader(), rt.idle_values(), skt, reader_rapl::dram{}),
-                            get_duration(rt.idle_values()));
-                }
-            }
-            os << "\n";
-        }
-    }
-    return os;
-}
-
-pos_execs::pos_execs(std::shared_ptr<position_interval>&& pi) :
+pos_execs::pos_execs(std::unique_ptr<position_interval>&& pi) :
     _xinterval(std::move(pi))
-{}
-
-pos_execs::pos_execs(const std::shared_ptr<position_interval>& pi) :
-    _xinterval(pi)
 {}
 
 void pos_execs::push_back(timed_execution&& exec)
@@ -330,81 +200,137 @@ const std::vector<timed_execution>& pos_execs::execs() const
 }
 
 
-result_execs::result_execs(timed_execution&& idle) :
-    _idle(std::move(idle)),
-    _execs()
-{}
-
-result_execs::result_execs(const timed_execution& idle) :
-    _idle(idle),
-    _execs()
-{}
-
-void result_execs::push_back(pos_execs&& pe)
+void results_holder::push_back(std::unique_ptr<results_interface>&& res)
 {
-    _execs.push_back(std::move(pe));
+    _results.push_back(std::move(res));
 }
 
-void result_execs::push_back(const pos_execs& pe)
+void results_holder::print(
+    std::ostream& os,
+    const position_interval& pos,
+    const timed_execution& exec) const
 {
-    _execs.push_back(pe);
+    for (const auto& ri : _results)
+    {
+        ri->print(os, pos, exec);
+        os << "\n";
+    }
 }
 
-const std::vector<pos_execs>& result_execs::positional_execs() const
-{
-    return _execs;
-}
 
-const timed_execution& result_execs::idle() const
-{
-    return _idle;
-}
 
 
 template
-class result_execs_dev<nrgprf::reader_rapl>;
+class results_dev<nrgprf::reader_rapl>;
 
 template
-class result_execs_dev<nrgprf::reader_gpu>;
+class results_dev<nrgprf::reader_gpu>;
 
 template<typename Reader>
-result_execs_dev<Reader>::result_execs_dev(const Reader& r, timed_execution&& idle) :
-    result_execs(std::move(idle)),
-    _reader(r)
+results_dev<Reader>::results_dev(const Reader& r, const timed_execution& idle) :
+    _reader(r),
+    _idle(idle)
 {}
 
 template<typename Reader>
-result_execs_dev<Reader>::result_execs_dev(const Reader& r, const timed_execution& idle) :
-    result_execs(idle),
-    _reader(r)
+results_dev<Reader>::results_dev(const Reader& r, timed_execution&& idle) :
+    _reader(r),
+    _idle(std::move(idle))
 {}
 
 template<>
-void result_execs_dev<nrgprf::reader_rapl>::print(std::ostream& os) const
+void results_dev<nrgprf::reader_rapl>::print(
+    std::ostream& os,
+    const position_interval& pos,
+    const timed_execution& exec) const
 {
-    os << rdr_task_pair(_reader, positional_execs(), idle());
+    std::chrono::duration<double> duration = get_duration(exec);
+    os << "cpu | ";
+    os << pos << " | ";
+    os << duration;
+    for (uint32_t skt = 0; skt < nrgprf::max_sockets; skt++)
+    {
+        cpu_energy pkg(_reader, exec, skt, nrgprf::reader_rapl::package{});
+        cpu_energy pp0(_reader, exec, skt, nrgprf::reader_rapl::cores{});
+        cpu_energy pp1(_reader, exec, skt, nrgprf::reader_rapl::uncore{});
+        cpu_energy dram(_reader, exec, skt, nrgprf::reader_rapl::dram{});
+
+        if (!pkg && !pp0 && !pp1 && !dram)
+            continue;
+
+        os << " | socket=" << skt;
+        if (pkg)
+        {
+            os << ", package=" << pkg.get();
+            if (_idle.size() >= 2)
+                os << " " << idle_delta(pkg, duration,
+                    cpu_energy(_reader, _idle, skt, nrgprf::reader_rapl::package{}),
+                    get_duration(_idle));
+        }
+        if (pp0)
+        {
+            os << ", cores=" << pp0.get();
+            if (_idle.size() >= 2)
+                os << " " << idle_delta(pp0, duration,
+                    cpu_energy(_reader, _idle, skt, nrgprf::reader_rapl::cores{}),
+                    get_duration(_idle));
+        }
+        if (pp1)
+        {
+            os << ", uncore=" << pp1.get();
+            if (_idle.size() >= 2)
+                os << " " << idle_delta(pp1, duration,
+                    cpu_energy(_reader, _idle, skt, nrgprf::reader_rapl::uncore{}),
+                    get_duration(_idle));
+        }
+        if (dram)
+        {
+            os << ", dram=" << dram.get();
+            if (_idle.size() >= 2)
+                os << " " << idle_delta(dram, duration,
+                    cpu_energy(_reader, _idle, skt, nrgprf::reader_rapl::dram{}),
+                    get_duration(_idle));
+        }
+    }
 }
 
 template<>
-void result_execs_dev<nrgprf::reader_gpu>::print(std::ostream& os) const
+void results_dev<nrgprf::reader_gpu>::print(std::ostream& os,
+    const position_interval& pos,
+    const timed_execution& exec) const
 {
-    os << rdr_task_pair(_reader, positional_execs(), idle());
+    std::chrono::duration<double> duration = get_duration(exec);
+    os << "gpu | ";
+    os << pos << " | ";
+    os << duration;
+    for (uint32_t dev = 0; dev < nrgprf::max_devices; dev++)
+    {
+        gpu_energy total_energy(_reader, exec, dev, gpu_energy::board);
+        if (!total_energy)
+            continue;
+
+        os << " | device=" << dev << ", board=" << total_energy.get();
+        if (_idle.size() >= 2)
+        {
+            os << " " << idle_delta(total_energy, duration,
+                gpu_energy(_reader, _idle, dev, gpu_energy::board),
+                get_duration(_idle));
+        }
+    }
 }
 
-void profiling_results::push_back(std::unique_ptr<results_interface>&& results)
+void profiling_results::push_back(profiling_results::results_pair&& results)
 {
     _results.push_back(std::move(results));
 }
 
 std::ostream& tep::operator<<(std::ostream& os, const profiling_results& pr)
 {
-    for (const auto& res : pr._results)
-        os << *res << "\n";
-    return os;
-}
-
-std::ostream& tep::operator<<(std::ostream& os, const results_interface& ri)
-{
-    ri.print(os);
+    for (const auto& [ri, pexecs] : pr._results)
+        for (const auto& exec : pexecs.execs())
+        {
+            ri->print(os, pexecs.interval(), exec);
+            os << "\n";
+        }
     return os;
 }

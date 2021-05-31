@@ -11,18 +11,16 @@
 namespace tep
 {
 
-    class position_interface;
     class position_interval;
 
     class pos_execs
     {
     private:
-        std::shared_ptr<position_interval> _xinterval;
+        std::unique_ptr<position_interval> _xinterval;
         std::vector<timed_execution> _execs;
 
     public:
-        pos_execs(std::shared_ptr<position_interval>&&);
-        pos_execs(const std::shared_ptr<position_interval>&);
+        pos_execs(std::unique_ptr<position_interval>&&);
 
         void push_back(timed_execution&& exec);
         void push_back(const timed_execution& exec);
@@ -43,60 +41,75 @@ namespace tep
     public:
         virtual ~results_interface() = default;
 
-        friend std::ostream& operator<<(std::ostream&, const results_interface&);
-
-    protected:
-        virtual void print(std::ostream&) const = 0;
+        virtual void print(
+            std::ostream& os,
+            const position_interval& pos,
+            const timed_execution& exec
+        ) const = 0;
     };
 
-    class result_execs : public results_interface
-    {
-    private:
-        timed_execution _idle;
-        std::vector<pos_execs> _execs;
-
-    protected:
-        result_execs(timed_execution&& idle);
-        result_execs(const timed_execution& idle);
-
-    public:
-        void push_back(pos_execs&&);
-        void push_back(const pos_execs&);
-
-    protected:
-        const std::vector<pos_execs>& positional_execs() const;
-        const timed_execution& idle() const;
-    };
-
-    template<typename Reader>
-    class result_execs_dev : public result_execs
-    {
-    private:
-        Reader _reader;
-
-    public:
-        result_execs_dev(const Reader& r, timed_execution&& idle);
-        result_execs_dev(const Reader& r, const timed_execution& idle);
-
-    protected:
-        void print(std::ostream&) const override;
-    };
-
-
-    class profiling_results
+    class results_holder : public results_interface
     {
     private:
         std::vector<std::unique_ptr<results_interface>> _results;
 
     public:
+        results_holder() = default;
+
+        void push_back(std::unique_ptr<results_interface>&& res);
+
+        void print(
+            std::ostream& os,
+            const position_interval& pos,
+            const timed_execution& exec
+        ) const override;
+    };
+
+    template<typename Reader>
+    class results_dev : public results_interface
+    {
+    private:
+        Reader _reader;
+        timed_execution _idle;
+
+    public:
+        results_dev(const Reader& r, const timed_execution& idle);
+        results_dev(const Reader& r, timed_execution&& idle);
+
+        void print(
+            std::ostream& os,
+            const position_interval& pos,
+            const timed_execution& exec
+        ) const override;
+    };
+
+    class profiling_results
+    {
+    public:
+        using results_pair = std::pair<std::unique_ptr<results_interface>, pos_execs>;
+
+    private:
+        std::vector<results_pair> _results;
+
+    public:
         profiling_results() = default;
-        void push_back(std::unique_ptr<results_interface>&& results);
+        void push_back(results_pair&& results);
 
         friend std::ostream& operator<<(std::ostream&, const profiling_results&);
     };
 
+    // operator overloads
 
     std::ostream& operator<<(std::ostream&, const profiling_results&);
-    std::ostream& operator<<(std::ostream&, const results_interface&);
+
+    // deduction guides
+
+    template<typename Reader>
+    results_dev(const Reader& r)->results_dev<Reader>;
+
+    // types
+
+    using results_cpu = results_dev<nrgprf::reader_rapl>;
+    using results_gpu = results_dev<nrgprf::reader_gpu>;
 
 };
