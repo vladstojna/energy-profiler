@@ -242,8 +242,9 @@ tracer_expected<profiling_results> profiler::run()
         return tracer_error(tracer_errcode::NO_SYMBOL, "No debugging information found");
     }
 
-    for (const auto& sec : _cd.sections())
+    for (auto sptr : _cd.flat_sections())
     {
+        const config_data::section& sec = *sptr;
         const config_data::bounds& bounds = sec.bounds();
 
         if (bounds.has_function())

@@ -30,13 +30,10 @@ namespace tep
         CONFIG_BAD_FORMAT,
         CONFIG_NO_CONFIG,
 
-        INVALID_THREAD_CNT,
-
-        SEC_LIST_EMPTY,
         SEC_NO_BOUNDS,
         SEC_NO_FREQ,
         SEC_INVALID_TARGET,
-        SEC_INVALID_NAME,
+        SEC_INVALID_LABEL,
         SEC_INVALID_EXTRA,
         SEC_INVALID_FREQ,
         SEC_INVALID_INTERVAL,
@@ -44,6 +41,11 @@ namespace tep
         SEC_INVALID_EXECS,
         SEC_INVALID_SAMPLES,
         SEC_INVALID_DURATION,
+        SEC_LABEL_ALREADY_EXISTS,
+
+        GROUP_EMPTY,
+        GROUP_INVALID_LABEL,
+        GROUP_LABEL_ALREADY_EXISTS,
 
         PARAM_INVALID_DOMAIN_MASK,
         PARAM_INVALID_SOCKET_MASK,
@@ -209,7 +211,7 @@ namespace tep
             using target_cont = std::set<config_data::target>;
 
         private:
-            std::string _name;
+            std::string _label;
             std::string _extra;
             target_cont _targets;
             config_data::profiling_method _method;
@@ -222,7 +224,7 @@ namespace tep
             template<typename N, typename E, typename B, typename I, typename T>
             section(N&& nm, E&& extr, T&& tgts, config_data::profiling_method mthd,
                 B&& bnd, I&& intrv, uint32_t execs, uint32_t smp) :
-                _name(std::forward<N>(nm)),
+                _label(std::forward<N>(nm)),
                 _extra(std::forward<E>(extr)),
                 _targets(std::forward<T>(tgts)),
                 _method(mthd),
@@ -232,7 +234,7 @@ namespace tep
                 _samples(smp)
             {}
 
-            const std::string& name() const;
+            const std::string& label() const;
             const std::string& extra() const;
 
             const target_cont& targets() const;
@@ -243,27 +245,57 @@ namespace tep
             uint32_t executions() const;
             uint32_t samples() const;
 
-            bool has_name() const;
+            bool has_label() const;
             bool has_extra() const;
         };
 
+        class section_group
+        {
+        private:
+            std::string _label;
+            std::vector<section> _sections;
+
+        public:
+            section_group(const std::string& label);
+            section_group(std::string&& label);
+
+            const std::string& label() const;
+            const std::vector<section>& sections() const;
+
+            bool has_label() const;
+
+            bool has_section_with(config_data::target) const;
+            bool has_section_with(config_data::profiling_method) const;
+
+            bool push_back(const section& sec);
+            bool push_back(section&& sec);
+
+        private:
+            template<typename Sec>
+            bool push_back_impl(Sec&& sec);
+        };
+
     private:
-        uint32_t _threads;
         config_data::params _parameters;
-        std::vector<section> _sections;
+        std::vector<section_group> _groups;
 
     public:
-        uint32_t threads() const;
-        void threads(uint32_t t);
+        config_data(const config_data::params& params);
 
-        void parameters(const config_data::params& p);
         const config_data::params& parameters() const;
+        const std::vector<section_group>& groups() const;
 
-        std::vector<section>& sections();
-        const std::vector<section>& sections() const;
+        std::vector<const section*> flat_sections() const&;
 
         bool has_section_with(config_data::target) const;
         bool has_section_with(config_data::profiling_method) const;
+
+        bool push_back(const section_group& grp);
+        bool push_back(section_group&& grp);
+
+    private:
+        template<typename Group>
+        bool push_back_impl(Group&& grp);
     };
 
     // operator overloads
@@ -277,6 +309,7 @@ namespace tep
     std::ostream& operator<<(std::ostream& os, const config_data::function& f);
     std::ostream& operator<<(std::ostream& os, const config_data::bounds& b);
     std::ostream& operator<<(std::ostream& os, const config_data::section& s);
+    std::ostream& operator<<(std::ostream& os, const config_data::section_group& g);
     std::ostream& operator<<(std::ostream& os, const config_data& cd);
 
     bool operator==(const config_data::params& lhs, const config_data::params& rhs);
@@ -284,6 +317,7 @@ namespace tep
     bool operator==(const config_data::function& lhs, const config_data::function& rhs);
     bool operator==(const config_data::bounds& lhs, const config_data::bounds& rhs);
     bool operator==(const config_data::section& lhs, const config_data::section& rhs);
+    bool operator==(const config_data::section_group& lhs, const config_data::section_group& rhs);
 
     // types
 
