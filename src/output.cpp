@@ -101,7 +101,7 @@ namespace tep
         else
             j["energy"]["delta"] = nullptr;
 
-        j["units"] = "joules";
+        j["energy"]["units"] = "joules";
     }
 
     static void to_json(nlohmann::json& j, const section_output& so)
@@ -278,64 +278,60 @@ void readings_output_dev<nrgprf::reader_rapl>::output(detail::output_impl& os,
             continue;
 
         json readings;
+        json& jpackage = readings["package"];
+        json& jcores = readings["cores"];
+        json& juncore = readings["uncore"];
+        json& jdram = readings["dram"];
+
         readings["target"] = "cpu";
         readings["socket"] = skt;
-
         if (pkg)
         {
             if (has_idle)
-                readings["package"] = energy_holder{ pkg.get(), get_idle_delta(
+                jpackage = energy_holder{ pkg.get(), get_idle_delta(
                     { pkg.get(), duration },
                     { cpu_energy(_reader, _idle, skt, reader_rapl::package{}).get(),
                         get_duration(_idle) }
                 ) };
             else
-                readings["package"] = energy_holder{ pkg.get(), {} };
+                jpackage = energy_holder{ pkg.get(), {} };
         }
-        else
-            readings["package"] = nullptr;
 
         if (pp0)
         {
             if (has_idle)
-                readings["cores"] = energy_holder{ pp0.get(), get_idle_delta(
+                jcores = energy_holder{ pp0.get(), get_idle_delta(
                     { pp0.get(), duration },
                     { cpu_energy(_reader, _idle, skt, reader_rapl::cores{}).get(),
                         get_duration(_idle) }
                 ) };
             else
-                readings["cores"] = energy_holder{ pp0.get(), {} };
+                jcores = energy_holder{ pp0.get(), {} };
         }
-        else
-            readings["cores"] = nullptr;
 
         if (pp1)
         {
             if (has_idle)
-                readings["uncore"] = energy_holder{ pp1.get(), get_idle_delta(
+                juncore = energy_holder{ pp1.get(), get_idle_delta(
                     { pp1.get(), duration },
                     { cpu_energy(_reader, _idle, skt, reader_rapl::uncore{}).get(),
                         get_duration(_idle) }
                 ) };
             else
-                readings["uncore"] = energy_holder{ pp1.get(), {} };
+                juncore = energy_holder{ pp1.get(), {} };
         }
-        else
-            readings["uncore"] = nullptr;
 
         if (dram)
         {
             if (has_idle)
-                readings["dram"] = energy_holder{ dram.get(), get_idle_delta(
+                jdram = energy_holder{ dram.get(), get_idle_delta(
                     { dram.get(), duration },
                     { cpu_energy(_reader, _idle, skt, reader_rapl::dram{}).get(),
                         get_duration(_idle) }
                 ) };
             else
-                readings["dram"] = energy_holder{ dram.get(), {} };
+                jdram = energy_holder{ dram.get(), {} };
         }
-        else
-            readings["dram"] = nullptr;
 
         os.json().push_back(std::move(readings));
     }
@@ -360,15 +356,17 @@ void readings_output_dev<nrgprf::reader_gpu>::output(detail::output_impl& os,
             continue;
 
         json readings;
+        json& jboard = readings["board"];
+
         readings["target"] = "gpu";
         readings["device"] = dev;
         if (has_idle)
-            readings["board"] = energy_holder{ total_energy.get(), get_idle_delta(
+            jboard = energy_holder{ total_energy.get(), get_idle_delta(
                 { total_energy.get(), duration },
                 { gpu_energy(_reader, _idle, dev, gpu_energy::board).get(), get_duration(_idle) }
             ) };
         else
-            readings["board"] = energy_holder{ total_energy.get(), {} };
+            jboard = energy_holder{ total_energy.get(), {} };
 
         os.json().push_back(std::move(readings));
     }
