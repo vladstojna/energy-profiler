@@ -7,6 +7,11 @@
 namespace tep
 {
 
+    namespace detail
+    {
+        class output_impl;
+    };
+
     class position_interval;
 
     struct position_exec
@@ -25,7 +30,7 @@ namespace tep
     {
     public:
         virtual ~readings_output() = default;
-        virtual void output(std::ostream& os, const timed_execution& exec) const = 0;
+        virtual void output(detail::output_impl& os, const timed_execution& exec) const = 0;
     };
 
     class readings_output_holder final : public readings_output
@@ -36,7 +41,7 @@ namespace tep
     public:
         readings_output_holder() = default;
         void push_back(std::unique_ptr<readings_output>&& outputs);
-        void output(std::ostream& os, const timed_execution& exec) const override;
+        void output(detail::output_impl& os, const timed_execution& exec) const override;
     };
 
     template<typename Reader>
@@ -49,7 +54,7 @@ namespace tep
     public:
         readings_output_dev(const Reader& reader, const timed_execution& idle);
 
-        void output(std::ostream& os, const timed_execution& exec) const override;
+        void output(detail::output_impl& os, const timed_execution& exec) const override;
     };
 
     class section_output
