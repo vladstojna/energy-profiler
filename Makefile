@@ -13,14 +13,15 @@ obj_dir := obj
 dep_dir := $(obj_dir)/.deps
 
 # external libs
-extlibs_tgt  := $(addprefix $(lib_dir)/, pugixml)
-extlibs_incl := $(addprefix $(lib_dir)/, pugixml/include)
+extlibs_tgt  := $(addprefix $(lib_dir)/, pugixml json)
+extlibs_incl := $(addprefix $(lib_dir)/, pugixml/include json/single_include)
 extlibs_dirs := $(addprefix $(lib_dir)/, pugixml/lib)
 
 export LD_RUN_PATH=nrg/lib
 
 # versions
 pugixml_ver := 1.11.4
+json_ver := 3.9.1
 
 # files
 src  := $(wildcard src/*.cpp)
@@ -84,6 +85,15 @@ lib/pugixml: | $(lib_dir)
 		$(CMAKE) -DCMAKE_INSTALL_PREFIX=$$installdir -DCMAKE_INSTALL_LIBDIR=lib \
 			-Wdev -Wdeprecated ..
 	$(MAKE) -j $(nprocs) -C $@/build install
+
+lib/json: | $(lib_dir)
+	@rm -rf $@
+	# download the release and extract the archive
+	# no need to build since it is header-only
+	cd $(lib_dir) && \
+		wget https://github.com/nlohmann/json/releases/download/v$(json_ver)/include.zip && \
+		unzip include.zip -d json && \
+		rm -f include.zip
 
 $(tgt): $(obj) | $(tgt_dir)
 	$(cc) $^ $(ldflags) -o $@
