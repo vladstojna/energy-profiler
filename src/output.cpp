@@ -11,6 +11,11 @@
 
 using namespace tep;
 
+static std::string group_indent;
+static std::string section_indent(4, ' ');
+static std::string exec_indent(8, ' ');
+static std::string readings_indent(12, ' ');
+
 
 namespace tep
 {
@@ -174,80 +179,43 @@ std::ostream& operator<<(std::ostream& os, const idle_delta& id)
 }
 
 
-pos_execs::pos_execs(std::unique_ptr<position_interval>&& pi) :
-    _xinterval(std::move(pi))
-{}
 
-void pos_execs::push_back(timed_execution&& exec)
+void readings_output_holder::push_back(std::unique_ptr<readings_output>&& outputs)
 {
-    _execs.push_back(std::move(exec));
+    _outputs.push_back(std::move(outputs));
 }
 
-void pos_execs::push_back(const timed_execution& exec)
+void readings_output_holder::output(std::ostream& os, const timed_execution& exec) const
 {
-    _execs.push_back(exec);
-}
-
-const position_interval& pos_execs::interval() const
-{
-    assert(_xinterval);
-    return *_xinterval;
-}
-
-const std::vector<timed_execution>& pos_execs::execs() const
-{
-    return _execs;
-}
-
-
-void results_holder::push_back(std::unique_ptr<results_interface>&& res)
-{
-    _results.push_back(std::move(res));
-}
-
-void results_holder::print(
-    std::ostream& os,
-    const position_interval& pos,
-    const timed_execution& exec) const
-{
-    for (const auto& ri : _results)
+    for (const auto& out : _outputs)
     {
-        ri->print(os, pos, exec);
+        out->output(os, exec);
         os << "\n";
     }
 }
 
 
 
+template
+class readings_output_dev<nrgprf::reader_rapl>;
 
 template
-class results_dev<nrgprf::reader_rapl>;
-
-template
-class results_dev<nrgprf::reader_gpu>;
+class readings_output_dev<nrgprf::reader_gpu>;
 
 template<typename Reader>
-results_dev<Reader>::results_dev(const Reader& r, const timed_execution& idle) :
+readings_output_dev<Reader>::readings_output_dev(const Reader& r, const timed_execution& idle) :
     _reader(r),
     _idle(idle)
 {}
 
-template<typename Reader>
-results_dev<Reader>::results_dev(const Reader& r, timed_execution&& idle) :
-    _reader(r),
-    _idle(std::move(idle))
-{}
 
 template<>
-void results_dev<nrgprf::reader_rapl>::print(
-    std::ostream& os,
-    const position_interval& pos,
+void readings_output_dev<nrgprf::reader_rapl>::output(std::ostream& os,
     const timed_execution& exec) const
 {
+    os << readings_indent;
+    os << "target=cpu";
     std::chrono::duration<double> duration = get_duration(exec);
-    os << "cpu | ";
-    os << pos << " | ";
-    os << duration;
     for (uint32_t skt = 0; skt < nrgprf::max_sockets; skt++)
     {
         cpu_energy pkg(_reader, exec, skt, nrgprf::reader_rapl::package{});
@@ -294,15 +262,14 @@ void results_dev<nrgprf::reader_rapl>::print(
     }
 }
 
+
 template<>
-void results_dev<nrgprf::reader_gpu>::print(std::ostream& os,
-    const position_interval& pos,
+void readings_output_dev<nrgprf::reader_gpu>::output(std::ostream& os,
     const timed_execution& exec) const
 {
+    os << readings_indent;
+    os << "target=gpu";
     std::chrono::duration<double> duration = get_duration(exec);
-    os << "gpu | ";
-    os << pos << " | ";
-    os << duration;
     for (uint32_t dev = 0; dev < nrgprf::max_devices; dev++)
     {
         gpu_energy total_energy(_reader, exec, dev, gpu_energy::board);
@@ -319,18 +286,119 @@ void results_dev<nrgprf::reader_gpu>::print(std::ostream& os,
     }
 }
 
-void profiling_results::push_back(profiling_results::results_pair&& results)
+
+
+section_output::section_output(std::unique_ptr<readings_output>&& rout,
+    std::string_view label, std::string_view extra) :
+    _rout(std::move(rout)),
+    _label(label),
+    _extra(extra)
+{}
+
+section_output::section_output(std::unique_ptr<readings_output>&& rout,
+    std::string_view label, std::string&& extra) :
+    _rout(std::move(rout)),
+    _label(label),
+    _extra(std::move(extra))
+{}
+
+section_output::section_output(std::unique_ptr<readings_output>&& rout,
+    std::string&& label, std::string_view extra) :
+    _rout(std::move(rout)),
+    _label(std::move(label)),
+    _extra(extra)
+{}
+
+section_output::section_output(std::unique_ptr<readings_output>&& rout,
+    std::string&& label, std::string&& extra) :
+    _rout(std::move(rout)),
+    _label(std::move(label)),
+    _extra(std::move(extra))
+{}
+
+position_exec& section_output::push_back(position_exec&& pe)
 {
-    _results.push_back(std::move(results));
+    return _executions.emplace_back(std::move(pe));
+}
+
+const std::vector<position_exec>& section_output::executions() const
+{
+    return _executions;
+}
+
+
+
+group_output::group_output(std::string_view label) :
+    _label(label)
+{}
+
+group_output::group_output(std::string&& label) :
+    _label(std::move(label))
+{}
+
+section_output& group_output::push_back(section_output&& so)
+{
+    return _sections.emplace_back(std::move(so));
+}
+
+const std::string& group_output::label() const
+{
+    return _label;
+}
+
+group_output::container& group_output::sections()
+{
+    return _sections;
+}
+
+const group_output::container& group_output::sections() const
+{
+    return _sections;
+}
+
+
+
+profiling_results::container& profiling_results::groups()
+{
+    return _results;
+}
+
+const profiling_results::container& profiling_results::groups() const
+{
+    return _results;
+}
+
+
+// operator overloads
+
+std::ostream& tep::operator<<(std::ostream& os, const section_output& so)
+{
+    os << section_indent << "label=" << so._label << "\n";
+    os << section_indent << "extra=" << so._extra << "\n";
+    os << section_indent << "executions:\n";
+    for (const auto& exec : so._executions)
+    {
+        os << exec_indent << *exec.interval << "\n";
+        os << exec_indent << get_duration(exec.exec) << "\n";
+        os << exec_indent << "readings:\n";
+        so._rout->output(os, exec.exec);
+        os << "\n";
+    }
+    return os;
+}
+
+std::ostream& tep::operator<<(std::ostream& os, const group_output& go)
+{
+    os << group_indent << "group=" << go.label() << "\n";
+    os << group_indent << "sections:\n";
+    for (const auto& sec : go.sections())
+        os << sec << "\n";
+    return os;
 }
 
 std::ostream& tep::operator<<(std::ostream& os, const profiling_results& pr)
 {
-    for (const auto& [ri, pexecs] : pr._results)
-        for (const auto& exec : pexecs.execs())
-        {
-            ri->print(os, pexecs.interval(), exec);
-            os << "\n";
-        }
+    for (const auto& g : pr.groups())
+        os << g << "\n";
     return os;
 }

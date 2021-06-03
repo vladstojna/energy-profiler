@@ -13,20 +13,10 @@ namespace tep
 
     class position_interval;
 
-    class pos_execs
+    struct position_exec
     {
-    private:
-        std::unique_ptr<position_interval> _xinterval;
-        std::vector<timed_execution> _execs;
-
-    public:
-        pos_execs(std::unique_ptr<position_interval>&&);
-
-        void push_back(timed_execution&& exec);
-        void push_back(const timed_execution& exec);
-
-        const position_interval& interval() const;
-        const std::vector<timed_execution>& execs() const;
+        std::shared_ptr<position_interval> interval;
+        timed_execution exec;
     };
 
     struct idle_results
@@ -35,81 +25,113 @@ namespace tep
         timed_execution gpu_readings;
     };
 
-
-    class results_interface
+    class readings_output
     {
     public:
-        virtual ~results_interface() = default;
-
-        virtual void print(
-            std::ostream& os,
-            const position_interval& pos,
-            const timed_execution& exec
-        ) const = 0;
+        virtual ~readings_output() = default;
+        virtual void output(std::ostream& os, const timed_execution& exec) const = 0;
     };
 
-    class results_holder : public results_interface
+    class readings_output_holder final : public readings_output
     {
     private:
-        std::vector<std::unique_ptr<results_interface>> _results;
+        std::vector<std::unique_ptr<readings_output>> _outputs;
 
     public:
-        results_holder() = default;
-
-        void push_back(std::unique_ptr<results_interface>&& res);
-
-        void print(
-            std::ostream& os,
-            const position_interval& pos,
-            const timed_execution& exec
-        ) const override;
+        readings_output_holder() = default;
+        void push_back(std::unique_ptr<readings_output>&& outputs);
+        void output(std::ostream& os, const timed_execution& exec) const override;
     };
 
     template<typename Reader>
-    class results_dev : public results_interface
+    class readings_output_dev : public readings_output
     {
     private:
         Reader _reader;
         timed_execution _idle;
 
     public:
-        results_dev(const Reader& r, const timed_execution& idle);
-        results_dev(const Reader& r, timed_execution&& idle);
+        readings_output_dev(const Reader& reader, const timed_execution& idle);
 
-        void print(
-            std::ostream& os,
-            const position_interval& pos,
-            const timed_execution& exec
-        ) const override;
+        void output(std::ostream& os, const timed_execution& exec) const override;
+    };
+
+    class section_output
+    {
+    private:
+        std::unique_ptr<readings_output> _rout;
+        std::string _label;
+        std::string _extra;
+        std::vector<position_exec> _executions;
+
+    public:
+        section_output(std::unique_ptr<readings_output>&& rout,
+            std::string_view label, std::string_view extra);
+
+        section_output(std::unique_ptr<readings_output>&& rout,
+            std::string_view label, std::string&& extra);
+
+        section_output(std::unique_ptr<readings_output>&& rout,
+            std::string&& label, std::string_view extra);
+
+        section_output(std::unique_ptr<readings_output>&& rout,
+            std::string&& label, std::string&& extra);
+
+        position_exec& push_back(position_exec&& pe);
+
+        const std::vector<position_exec>& executions() const;
+
+        friend std::ostream& operator<<(std::ostream& os, const section_output& go);
+    };
+
+    class group_output
+    {
+    public:
+        using container = std::vector<section_output>;
+
+    private:
+        std::string _label;
+        container _sections;
+
+    public:
+        group_output(std::string_view label);
+        group_output(std::string&& label);
+
+        section_output& push_back(section_output&& so);
+
+        const std::string& label() const;
+
+        container& sections();
+        const container& sections() const;
     };
 
     class profiling_results
     {
     public:
-        using results_pair = std::pair<std::unique_ptr<results_interface>, pos_execs>;
+        using container = std::vector<group_output>;
 
     private:
-        std::vector<results_pair> _results;
+        container _results;
 
     public:
         profiling_results() = default;
-        void push_back(results_pair&& results);
 
-        friend std::ostream& operator<<(std::ostream&, const profiling_results&);
+        container& groups();
+        const container& groups() const;
     };
 
     // operator overloads
 
-    std::ostream& operator<<(std::ostream&, const profiling_results&);
+    std::ostream& operator<<(std::ostream& os, const section_output& so);
+    std::ostream& operator<<(std::ostream& os, const group_output& go);
+    std::ostream& operator<<(std::ostream& os, const profiling_results& pr);
 
     // deduction guides
 
     template<typename Reader>
-    results_dev(const Reader& r)->results_dev<Reader>;
+    readings_output_dev(const Reader& r)->readings_output_dev<Reader>;
 
-    // types
-
-    using results_cpu = results_dev<nrgprf::reader_rapl>;
-    using results_gpu = results_dev<nrgprf::reader_gpu>;
+    using readings_output_cpu = readings_output_dev<nrgprf::reader_rapl>;
+    using readings_output_gpu = readings_output_dev<nrgprf::reader_gpu>;
 
 };
