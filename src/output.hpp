@@ -4,10 +4,6 @@
 
 #include "sampler.hpp"
 
-#include <nrg/nrg.hpp>
-
-#include <vector>
-
 namespace tep
 {
 
@@ -79,9 +75,10 @@ namespace tep
 
         position_exec& push_back(position_exec&& pe);
 
+        const readings_output& readings_out() const;
+        const std::string& label() const;
+        const std::string& extra() const;
         const std::vector<position_exec>& executions() const;
-
-        friend std::ostream& operator<<(std::ostream& os, const section_output& go);
     };
 
     class group_output
@@ -122,8 +119,6 @@ namespace tep
 
     // operator overloads
 
-    std::ostream& operator<<(std::ostream& os, const section_output& so);
-    std::ostream& operator<<(std::ostream& os, const group_output& go);
     std::ostream& operator<<(std::ostream& os, const profiling_results& pr);
 
     // deduction guides

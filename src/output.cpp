@@ -51,6 +51,31 @@ namespace tep
         return os;
     }
 
+    static std::ostream& operator<<(std::ostream& os, const section_output& so)
+    {
+        os << section_indent << "label=" << so.label() << "\n";
+        os << section_indent << "extra=" << so.extra() << "\n";
+        os << section_indent << "executions:\n";
+        for (const auto& exec : so.executions())
+        {
+            os << exec_indent << *exec.interval << "\n";
+            os << exec_indent << get_duration(exec.exec) << "\n";
+            os << exec_indent << "readings:\n";
+            so.readings_out().output(os, exec.exec);
+            os << "\n";
+        }
+        return os;
+    }
+
+    static std::ostream& operator<<(std::ostream& os, const group_output& go)
+    {
+        os << group_indent << "group=" << go.label() << "\n";
+        os << group_indent << "sections:\n";
+        for (const auto& sec : go.sections())
+            os << sec << "\n";
+        return os;
+    }
+
 }
 
 class gpu_energy
@@ -321,6 +346,22 @@ position_exec& section_output::push_back(position_exec&& pe)
     return _executions.emplace_back(std::move(pe));
 }
 
+const readings_output& section_output::readings_out() const
+{
+    assert(_rout);
+    return *_rout;
+}
+
+const std::string& section_output::label() const
+{
+    return _label;
+}
+
+const std::string& section_output::extra() const
+{
+    return _extra;
+}
+
 const std::vector<position_exec>& section_output::executions() const
 {
     return _executions;
@@ -370,31 +411,6 @@ const profiling_results::container& profiling_results::groups() const
 
 
 // operator overloads
-
-std::ostream& tep::operator<<(std::ostream& os, const section_output& so)
-{
-    os << section_indent << "label=" << so._label << "\n";
-    os << section_indent << "extra=" << so._extra << "\n";
-    os << section_indent << "executions:\n";
-    for (const auto& exec : so._executions)
-    {
-        os << exec_indent << *exec.interval << "\n";
-        os << exec_indent << get_duration(exec.exec) << "\n";
-        os << exec_indent << "readings:\n";
-        so._rout->output(os, exec.exec);
-        os << "\n";
-    }
-    return os;
-}
-
-std::ostream& tep::operator<<(std::ostream& os, const group_output& go)
-{
-    os << group_indent << "group=" << go.label() << "\n";
-    os << group_indent << "sections:\n";
-    for (const auto& sec : go.sections())
-        os << sec << "\n";
-    return os;
-}
 
 std::ostream& tep::operator<<(std::ostream& os, const profiling_results& pr)
 {
