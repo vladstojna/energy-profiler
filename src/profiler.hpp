@@ -46,11 +46,6 @@ namespace tep
             section_output* find(addr_bounds bounds);
         };
 
-        using target_map = std::unordered_map<
-            addr_bounds,
-            config_data::section::target_cont,
-            addr_bounds_hash>;
-
         pid_t _tid;
         pid_t _child;
         flags _flags;
