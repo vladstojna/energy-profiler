@@ -24,10 +24,27 @@ namespace tep
             D&& dli, C&& cd);
 
     private:
-        using target_map = std::unordered_map<
-            addr_bounds,
-            config_data::section::target_cont,
-            addr_bounds_hash>;
+        struct output_mapping
+        {
+            using distance_pair = std::pair<
+                std::iterator_traits<profiling_results::container::iterator>::difference_type,
+                std::iterator_traits<group_output::container::iterator>::difference_type
+            >;
+            using map_type = std::unordered_map<addr_bounds, distance_pair, addr_bounds_hash>;
+
+            map_type map;
+            profiling_results results;
+
+            output_mapping() = default;
+
+            bool insert(addr_bounds bounds,
+                const reader_container& readers,
+                const idle_results& idle,
+                const config_data::section_group& group,
+                const config_data::section& sec);
+
+            section_output* find(addr_bounds bounds);
+        };
 
         pid_t _tid;
         pid_t _child;
@@ -37,7 +54,7 @@ namespace tep
         reader_container _readers;
         registered_traps _traps;
         idle_results _idle;
-        target_map _targets;
+        output_mapping _output;
 
     public:
         profiler(pid_t child, const flags& flags,
@@ -62,22 +79,22 @@ namespace tep
         tracer_error obtain_idle_results();
 
         tracer_error insert_traps_function(
-            const config_data::section& s,
-            const config_data::function& f,
+            const config_data::section_group& group,
+            const config_data::section& sec,
+            const config_data::function& func,
             uintptr_t entrypoint);
 
         cmmn::expected<start_addr, tracer_error> insert_traps_position_start(
-            const config_data::section& s,
-            const config_data::position& p,
+            const config_data::section& sec,
+            const config_data::position& pos,
             uintptr_t entrypoint);
 
         tracer_error insert_traps_position_end(
-            const config_data::section& s,
-            const config_data::position& p,
+            const config_data::section_group& group,
+            const config_data::section& sec,
+            const config_data::position& pos,
             uintptr_t entrypoint,
             start_addr start);
-
-        tracer_error insert_target(addr_bounds, const config_data::section::target_cont& tgts);
     };
 
     template<typename D, typename C>

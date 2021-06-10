@@ -93,7 +93,7 @@ sampler_creator creator_from_section(const reader_container& readers,
 }
 
 // instantiates a polymorphic results holder from config target information
-std::unique_ptr<results_interface>
+std::unique_ptr<readings_output>
 results_from_target(const reader_container& readers,
     const idle_results& idle_res,
     config_data::target target)
@@ -101,16 +101,16 @@ results_from_target(const reader_container& readers,
     switch (target)
     {
     case config_data::target::cpu:
-        return std::make_unique<results_cpu>(readers.reader_rapl(), idle_res.cpu_readings);
+        return std::make_unique<readings_output_cpu>(readers.reader_rapl(), idle_res.cpu_readings);
     case config_data::target::gpu:
-        return std::make_unique<results_gpu>(readers.reader_gpu(), idle_res.gpu_readings);
+        return std::make_unique<readings_output_gpu>(readers.reader_gpu(), idle_res.gpu_readings);
     default:
         assert(false);
     }
     return {};
 }
 
-std::unique_ptr<results_interface>
+std::unique_ptr<readings_output>
 results_from_targets(const reader_container& readers,
     const idle_results& idle_res,
     const config_data::section::target_cont& targets)
@@ -118,13 +118,71 @@ results_from_targets(const reader_container& readers,
     assert(!targets.empty());
     if (targets.size() == 1)
         return results_from_target(readers, idle_res, *targets.begin());
-    std::unique_ptr<results_holder> holder = std::make_unique<results_holder>();
+    std::unique_ptr<readings_output_holder> holder = std::make_unique<readings_output_holder>();
     for (auto tgt : targets)
         holder->push_back(results_from_target(readers, idle_res, tgt));
     return holder;
 }
 
 // end helper functions
+
+
+bool profiler::output_mapping::insert(addr_bounds bounds,
+    const reader_container& readers,
+    const idle_results& idle,
+    const config_data::section_group& group,
+    const config_data::section& sec)
+{
+    distance_pair pair{};
+    const std::string& label = group.label();
+
+    auto grp_it = std::find_if(results.groups().begin(), results.groups().end(),
+        [&label](const group_output& go)
+        {
+            return label == go.label();
+        });
+
+    if (grp_it == results.groups().end())
+    {
+        results.groups().push_back({ group.label() });
+        grp_it = std::prev(results.groups().end());
+    }
+    assert(grp_it != results.groups().end());
+
+    grp_it->push_back({
+        results_from_targets(readers, idle, sec.targets()),
+        sec.label(),
+        sec.extra() });
+
+    auto grp_begin = results.groups().begin();
+    auto sec_begin = grp_it->sections().begin();
+    auto sec_it = std::prev(grp_it->sections().end());
+    pair = { std::distance(grp_begin, grp_it), std::distance(sec_begin, sec_it) };
+
+    auto [it, inserted] = map.insert({ bounds, pair });
+    return inserted;
+}
+
+section_output* profiler::output_mapping::find(addr_bounds bounds)
+{
+    auto it = map.find(bounds);
+    assert(it != map.end());
+    if (it == map.end())
+        return nullptr;
+
+    auto distance_group = it->second.first;
+    auto distance_sec = it->second.second;
+
+    auto grp_it = results.groups().begin();
+    assert(std::distance(grp_it, results.groups().end()) > distance_group);
+    std::advance(grp_it, distance_group);
+
+    auto sec_it = grp_it->sections().begin();
+    assert(std::distance(sec_it, grp_it->sections().end()) > distance_sec);
+    std::advance(sec_it, distance_sec);
+
+    return &*sec_it;
+}
 
 
 profiler::profiler(pid_t child, const flags& flags,
@@ -242,29 +300,33 @@ tracer_expected<profiling_results> profiler::run()
         return tracer_error(tracer_errcode::NO_SYMBOL, "No debugging information found");
     }
 
-    for (const auto& sec : _cd.sections())
+    for (const auto& group : _cd.groups())
     {
-        const config_data::bounds& bounds = sec.bounds();
-
-        if (bounds.has_function())
+        for (const auto& sec : group.sections())
         {
-            tracer_error err = insert_traps_function(sec, bounds.func(), entrypoint);
-            if (err)
-                return err;
-        }
-        else if (bounds.has_positions())
-        {
-            auto insert_start = insert_traps_position_start(sec, bounds.start(), entrypoint);
-            if (!insert_start)
-                return std::move(insert_start.error());
+            if (sec.bounds().has_function())
+            {
+                tracer_error err = insert_traps_function(group, sec,
+                    sec.bounds().func(), entrypoint);
+                if (err)
+                    return err;
+            }
+            else if (sec.bounds().has_positions())
+            {
+                auto insert_start = insert_traps_position_start(sec,
+                    sec.bounds().start(), entrypoint);
+                if (!insert_start)
+                    return std::move(insert_start.error());
 
-            tracer_error err = insert_traps_position_end(sec, bounds.end(), entrypoint,
-                insert_start.value());
-            if (err)
-                return err;
+                tracer_error err = insert_traps_position_end(group, sec,
+                    sec.bounds().end(), entrypoint,
+                    insert_start.value());
+                if (err)
+                    return err;
+            }
+            else
+                assert(false);
         }
-        else
-            assert(false);
     }
 
     // first tracer has the same tracee tgid and tid, since there is only one tracee at this point
@@ -273,7 +335,6 @@ tracer_expected<profiling_results> profiler::run()
     if (!results)
         return std::move(results.error());
 
-    profiling_results retval;
     for (auto& [pair, execs] : results.value())
     {
         start_trap* strap = _traps.find(pair.first);
@@ -282,17 +343,16 @@ tracer_expected<profiling_results> profiler::run()
         assert(strap && etrap);
         if (!strap || !etrap)
             return tracer_error(tracer_errcode::NO_TRAP, "Starting or ending traps are malformed");
-        auto it = _targets.find(pair);
-        assert(it != _targets.end());
-        if (it == _targets.end())
+        section_output* sec_out = _output.find(pair);
+        assert(sec_out != nullptr);
+        if (sec_out == nullptr)
             return tracer_error(tracer_errcode::NO_TRAP, "Address bounds not found");
-        const config_data::section::target_cont& targets = it->second;
 
-        pos_execs pexecs(std::make_unique<position_interval>(
-            std::move(*strap).at(),
-            std::move(*etrap).at())
-        );
-        std::string interval_str = to_string(pexecs.interval());
+        std::shared_ptr<position_interval> interval =
+            std::make_shared<position_interval>(
+                std::move(*strap).at(), std::move(*etrap).at());
+        std::string interval_str = to_string(*interval);
+
         for (auto& exec : execs)
         {
             if (!exec)
@@ -303,11 +363,10 @@ tracer_expected<profiling_results> profiler::run()
             }
             log(log_lvl::success, "[%d] registered execution of section %s as successful",
                 _tid, interval_str.c_str());
-            pexecs.push_back(std::move(exec.value()));
+            sec_out->push_back({ interval, std::move(exec.value()) });
         }
-        retval.push_back({ results_from_targets(_readers, _idle, targets), std::move(pexecs) });
     }
-    return retval;
+    return std::move(_output.results);
 }
 
 
@@ -366,8 +425,11 @@ tracer_error profiler::obtain_idle_results()
 }
 
 
-tracer_error profiler::insert_traps_function(const config_data::section& sec,
-    const config_data::function& cfunc, uintptr_t entrypoint)
+tracer_error profiler::insert_traps_function(
+    const config_data::section_group& group,
+    const config_data::section& sec,
+    const config_data::function& cfunc,
+    uintptr_t entrypoint)
 {
     dbg_expected<const function*> func_res = _dli.find_function(cfunc.name(), cfunc.cu());
     if (!func_res)
@@ -429,9 +491,8 @@ tracer_error profiler::insert_traps_function(const config_data::section& sec,
             return tracer_error(tracer_errcode::NO_TRAP,
                 cmmn::concat("Trap ", std::to_string(end.val()), " already exists"));
         }
-        tracer_error err = insert_target({ start, end }, sec.targets());
-        if (err)
-            return err;
+        if (!_output.insert({ start, end }, _readers, _idle, group, sec))
+            return tracer_error(tracer_errcode::NO_TRAP, "Trap address interval already exists");
     }
     return tracer_error::success();
 }
@@ -484,21 +545,22 @@ cmmn::expected<start_addr, tracer_error> profiler::insert_traps_position_start(
 }
 
 tracer_error profiler::insert_traps_position_end(
+    const config_data::section_group& group,
     const config_data::section& sec,
-    const config_data::position& p,
+    const config_data::position& pos,
     uintptr_t entrypoint,
     start_addr start)
 {
-    dbg_expected<unit_lines*> ul = _dli.find_lines(p.compilation_unit());
+    dbg_expected<unit_lines*> ul = _dli.find_lines(pos.compilation_unit());
     if (!ul)
     {
         log(log_lvl::error, "[%d] unit lines: %s", _tid, ul.error().message.c_str());
         return tracer_error(tracer_errcode::NO_SYMBOL, std::move(ul.error().message));
     }
-    dbg_expected<std::pair<uint32_t, uintptr_t>> line_addr = ul.value()->lowest_addr(p.line());
+    dbg_expected<std::pair<uint32_t, uintptr_t>> line_addr = ul.value()->lowest_addr(pos.line());
     if (!line_addr)
     {
-        log(log_lvl::error, "[%d] unit lines: invalid line %" PRIu32, _tid, p.line());
+        log(log_lvl::error, "[%d] unit lines: invalid line %" PRIu32, _tid, pos.line());
         return tracer_error(tracer_errcode::NO_SYMBOL, std::move(line_addr.error().message));
     }
 
@@ -521,21 +583,11 @@ tracer_error profiler::insert_traps_position_end(
         return tracer_error(tracer_errcode::NO_TRAP,
             cmmn::concat("Trap ", std::to_string(eaddr.val()), " already exists"));
     }
-    tracer_error err = insert_target({ start, eaddr }, sec.targets());
-    if (err)
-        return err;
+    if (!_output.insert({ start, eaddr }, _readers, _idle, group, sec))
+        return tracer_error(tracer_errcode::NO_TRAP, "Trap address interval already exists");
 
     log(log_lvl::debug, "[%d] line %s @ offset 0x%" PRIxPTR,
         _tid, pstr.c_str(), line_addr.value().second);
     log(log_lvl::success, "[%d] inserted trap on line: %s", _tid, pstr.c_str());
-    return tracer_error::success();
-}
-
-tracer_error
-profiler::insert_target(addr_bounds bounds, const config_data::section::target_cont& tgts)
-{
-    auto [it, inserted] = _targets.insert({ bounds, tgts });
-    if (!inserted)
-        return tracer_error(tracer_errcode::NO_TRAP, "Trap address interval already exists");
     return tracer_error::success();
 }

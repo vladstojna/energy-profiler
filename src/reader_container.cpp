@@ -54,8 +54,9 @@ reader_container::reader_container(const config_data& cd, tracer_error& err) :
     _rdr_gpu(create_gpu_reader(cd.parameters(), err))
 {
     // iterate all sections and insert hybrid readers
-    for (auto& sec : cd.sections())
+    for (auto sptr : cd.flat_sections())
     {
+        const config_data::section& sec = *sptr;
         assert(!sec.targets().empty());
         if (sec.targets().size() < 2)
             continue;

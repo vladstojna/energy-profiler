@@ -40,13 +40,10 @@ static const char* error_messages[] =
     "Config file is badly formatted",
     "Node <config></config> not found",
 
-    "Invalid thread count in <threads></threads>",
-
-    "Section list <sections></sections> is empty",
     "section: Node <bounds></bounds> not found",
     "section: Node <freq></freq> not found",
     "section: all targets must be 'cpu' or 'gpu', separated by a comma",
-    "section: name cannot be empty",
+    "section: label cannot be empty",
     "section: extra data cannot be empty",
     "section: frequency must be a positive decimal number",
     "section: interval must be a positive integer",
@@ -54,6 +51,11 @@ static const char* error_messages[] =
     "section: executions must be a positive integer",
     "section: samples must be a positive integer",
     "section: duration must be a positive integer",
+    "section: section label already exists",
+
+    "section group: <sections></sections> is empty",
+    "section group: label cannot be empty",
+    "section group: group label already exists",
 
     "params: parameter 'domain_mask' must be a valid integer",
     "params: parameter 'socket_mask' must be a valid integer",
@@ -103,7 +105,7 @@ static std::vector<std::string_view> split_line(std::string_view line, std::stri
     return tokens;
 }
 
-cfg_expected<config_data::section::target_cont> get_targets(const pugi::xml_node& nsection)
+static cfg_expected<config_data::section::target_cont> get_targets(const pugi::xml_node& nsection)
 {
     using namespace pugi;
     config_data::section::target_cont retval;
@@ -131,7 +133,7 @@ cfg_expected<config_data::section::target_cont> get_targets(const pugi::xml_node
     return retval;
 }
 
-cfg_expected<config_data::params> get_params(const pugi::xml_node& nparams)
+static cfg_expected<config_data::params> get_params(const pugi::xml_node& nparams)
 {
     using namespace pugi;
     // all domains, devices and sockets are considered by default
@@ -159,7 +161,7 @@ cfg_expected<config_data::params> get_params(const pugi::xml_node& nparams)
     return { dommask, sktmask, devmask };
 }
 
-cfg_expected<std::chrono::milliseconds> get_interval(const pugi::xml_node& nsection,
+static cfg_expected<std::chrono::milliseconds> get_interval(const pugi::xml_node& nsection,
     config_data::profiling_method method)
 {
     using namespace pugi;
@@ -191,7 +193,7 @@ cfg_expected<std::chrono::milliseconds> get_interval(const pugi::xml_node& nsect
     return eint;
 }
 
-cfg_expected<uint32_t> get_samples(const pugi::xml_node& nsection,
+static cfg_expected<uint32_t> get_samples(const pugi::xml_node& nsection,
     const std::chrono::milliseconds& interval)
 {
     using namespace pugi;
@@ -214,7 +216,7 @@ cfg_expected<uint32_t> get_samples(const pugi::xml_node& nsection,
     return defaults::samples;
 }
 
-cfg_expected<uint32_t> get_execs(const pugi::xml_node& nsection)
+static cfg_expected<uint32_t> get_execs(const pugi::xml_node& nsection)
 {
     using namespace pugi;
     // <execs></execs> - optional, must be a positive integer
@@ -226,7 +228,7 @@ cfg_expected<uint32_t> get_execs(const pugi::xml_node& nsection)
     return execs ? static_cast<uint32_t>(execs) : defaults::executions;
 }
 
-cfg_expected<std::string> get_cu(const pugi::xml_node& pos_node)
+static cfg_expected<std::string> get_cu(const pugi::xml_node& pos_node)
 {
     using namespace pugi;
     // attribute "cu" exists
@@ -249,7 +251,7 @@ cfg_expected<std::string> get_cu(const pugi::xml_node& pos_node)
     return cu.child_value();
 }
 
-cfg_expected<uint32_t> get_lineno(const pugi::xml_node& pos_node)
+static cfg_expected<uint32_t> get_lineno(const pugi::xml_node& pos_node)
 {
     using namespace pugi;
     // attribute "line" exists
@@ -276,7 +278,7 @@ cfg_expected<uint32_t> get_lineno(const pugi::xml_node& pos_node)
     return lineno;
 }
 
-cfg_expected<config_data::position> get_position(const pugi::xml_node& pos_node)
+static cfg_expected<config_data::position> get_position(const pugi::xml_node& pos_node)
 {
     using namespace pugi;
     cfg_expected<std::string> cu = get_cu(pos_node);
@@ -288,7 +290,7 @@ cfg_expected<config_data::position> get_position(const pugi::xml_node& pos_node)
     return { std::move(cu.value()), lineno.value() };
 }
 
-cfg_expected<config_data::function> get_function(const pugi::xml_node& func_node)
+static cfg_expected<config_data::function> get_function(const pugi::xml_node& func_node)
 {
     using namespace pugi;
     // attribute "cu" exists
@@ -309,7 +311,7 @@ cfg_expected<config_data::function> get_function(const pugi::xml_node& func_node
     return config_data::function(std::move(cu), name_attr.value());
 }
 
-cfg_expected<config_data::bounds> get_bounds(const pugi::xml_node& bounds)
+static cfg_expected<config_data::bounds> get_bounds(const pugi::xml_node& bounds)
 {
     using namespace pugi;
     // <start/>
@@ -348,7 +350,7 @@ cfg_expected<config_data::bounds> get_bounds(const pugi::xml_node& bounds)
     return cfg_error(cfg_error_code::BOUNDS_EMPTY);
 }
 
-cfg_expected<config_data::profiling_method> get_method(const pugi::xml_node& nsection,
+static cfg_expected<config_data::profiling_method> get_method(const pugi::xml_node& nsection,
     const config_data::section::target_cont& tgts)
 {
     using namespace pugi;
@@ -373,7 +375,7 @@ cfg_expected<config_data::profiling_method> get_method(const pugi::xml_node& nse
     return method;
 }
 
-cfg_expected<config_data::section> get_section(const pugi::xml_node& nsection)
+static cfg_expected<config_data::section> get_section(const pugi::xml_node& nsection)
 {
     using namespace pugi;
     // attribute target
@@ -381,10 +383,10 @@ cfg_expected<config_data::section> get_section(const pugi::xml_node& nsection)
     if (!targets)
         return std::move(targets.error());
 
-    // <name></name> - optional, must not be empty
-    xml_node nname = nsection.child("name");
-    if (nname && !*nname.child_value())
-        return cfg_error(cfg_error_code::SEC_INVALID_NAME);
+    // label attribute - optional, must not be empty
+    xml_attribute attr_label = nsection.attribute("label");
+    if (attr_label && !*attr_label.value())
+        return cfg_error(cfg_error_code::SEC_INVALID_LABEL);
     // <extra></extra> - optional, must not be empty
     xml_node nxtra = nsection.child("extra");
     if (nxtra && !*nxtra.child_value())
@@ -415,7 +417,7 @@ cfg_expected<config_data::section> get_section(const pugi::xml_node& nsection)
         return std::move(bounds.error());
 
     return {
-        nname.child_value(),
+        attr_label.value(),
         nxtra.child_value(),
         targets.value(),
         method.value(),
@@ -423,6 +425,31 @@ cfg_expected<config_data::section> get_section(const pugi::xml_node& nsection)
         std::move(interval.value()),
         execs.value(),
         samples.value() };
+}
+
+static cfg_expected<config_data::section_group> get_group(const pugi::xml_node& nsections)
+{
+    using namespace pugi;
+    // label attribute - optional, must not be empty
+    xml_attribute attr_label = nsections.attribute("label");
+    if (attr_label && !*attr_label.value())
+        return cfg_error(cfg_error_code::GROUP_INVALID_LABEL);
+    config_data::section_group group{ attr_label.value() };
+
+    // <section></section> - at least one required
+    for (xml_node nsection = nsections.child("section");
+        nsection;
+        nsection = nsection.next_sibling("section"))
+    {
+        cfg_expected<config_data::section> section = get_section(nsection);
+        if (!section)
+            return std::move(section.error());
+        if (!group.push_back(std::move(section.value())))
+            return cfg_error(cfg_error_code::SEC_LABEL_ALREADY_EXISTS);
+    }
+    if (group.sections().empty())
+        return cfg_error(cfg_error_code::GROUP_EMPTY);
+    return group;
 }
 
 // end helper functions
@@ -713,9 +740,9 @@ unsigned int config_data::params::device_mask() const
 
 // section
 
-const std::string& config_data::section::name() const
+const std::string& config_data::section::label() const
 {
-    return _name;
+    return _label;
 }
 
 const std::string& config_data::section::extra() const
@@ -753,9 +780,9 @@ uint32_t config_data::section::samples() const
     return _samples;
 }
 
-bool config_data::section::has_name() const
+bool config_data::section::has_label() const
 {
-    return !_name.empty();
+    return !_label.empty();
 }
 
 bool config_data::section::has_extra() const
@@ -764,39 +791,32 @@ bool config_data::section::has_extra() const
 }
 
 
-// config_data
+// section_group
 
-uint32_t config_data::threads() const
+config_data::section_group::section_group(const std::string& label) :
+    _label(label)
+{}
+
+config_data::section_group::section_group(std::string&& label) :
+    _label(std::move(label))
+{}
+
+const std::string& config_data::section_group::label() const
 {
-    return _threads;
+    return _label;
 }
 
-void config_data::threads(uint32_t t)
-{
-    _threads = t;
-}
-
-void config_data::parameters(const config_data::params& p)
-{
-    _parameters = p;
-}
-
-const config_data::params& config_data::parameters() const
-{
-    return _parameters;
-}
-
-std::vector<config_data::section>& config_data::sections()
+const std::vector<config_data::section>& config_data::section_group::sections() const
 {
     return _sections;
 }
 
-const std::vector<config_data::section>& config_data::sections() const
+bool config_data::section_group::has_label() const
 {
-    return _sections;
+    return !_label.empty();
 }
 
-bool config_data::has_section_with(config_data::target tgt) const
+bool config_data::section_group::has_section_with(config_data::target tgt) const
 {
     for (const auto& sec : _sections)
         for (auto t : sec.targets())
@@ -805,7 +825,7 @@ bool config_data::has_section_with(config_data::target tgt) const
     return false;
 }
 
-bool config_data::has_section_with(config_data::profiling_method method) const
+bool config_data::section_group::has_section_with(config_data::profiling_method method) const
 {
     for (const auto& sec : _sections)
         if (sec.method() == method)
@@ -813,15 +833,100 @@ bool config_data::has_section_with(config_data::profiling_method method) const
     return false;
 }
 
+bool config_data::section_group::push_back(const section& sec)
+{
+    return push_back_impl(sec);
+}
+
+bool config_data::section_group::push_back(section&& sec)
+{
+    return push_back_impl(sec);
+}
+
+template<typename Sec>
+bool config_data::section_group::push_back_impl(Sec&& sec)
+{
+    // check if section with same label exists
+    for (const auto& section : _sections)
+        if (section.label() == sec.label())
+            return false;
+    _sections.push_back(std::forward<Sec>(sec));
+    return true;
+}
+
+
+// config_data
+
+config_data::config_data(const config_data::params& params) :
+    _parameters(params)
+{}
+
+const config_data::params& config_data::parameters() const
+{
+    return _parameters;
+}
+
+const std::vector<config_data::section_group>& config_data::groups() const
+{
+    return _groups;
+}
+
+std::vector<const config_data::section*> config_data::flat_sections() const&
+{
+    std::vector<const config_data::section*> retval;
+    for (const auto& g : _groups)
+        for (const auto& s : g.sections())
+            retval.push_back(&s);
+    return retval;
+}
+
+bool config_data::has_section_with(config_data::target tgt) const
+{
+    for (const auto& g : _groups)
+        if (g.has_section_with(tgt))
+            return true;
+    return false;
+}
+
+bool config_data::has_section_with(config_data::profiling_method method) const
+{
+    for (const auto& g : _groups)
+        if (g.has_section_with(method))
+            return true;
+    return false;
+}
+
+bool config_data::push_back(const section_group& grp)
+{
+    return push_back_impl(grp);
+}
+
+bool config_data::push_back(section_group&& grp)
+{
+    return push_back_impl(grp);
+}
+
+template<typename Group>
+bool config_data::push_back_impl(Group&& grp)
+{
+    // check if group with same label already exists
+    for (const auto& g : _groups)
+        if (g.label() == grp.label())
+            return false;
+    _groups.push_back(std::forward<Group>(grp));
+    return true;
+}
+
 
 // load_config
 
 cfg_expected<config_data> tep::load_config(const char* file)
 {
+    assert(static_cast<size_t>(cfg_error_code::FUNC_INVALID_NAME) + 1 ==
+        sizeof(error_messages) / sizeof(error_messages[0]));
     assert(file != nullptr);
     using namespace pugi;
 
-    config_data cfgdata;
     xml_document doc;
     xml_parse_result parse_result = doc.load_file(file);
     if (!parse_result)
@@ -843,43 +948,30 @@ cfg_expected<config_data> tep::load_config(const char* file)
     if (!nconfig)
         return cfg_error(cfg_error_code::CONFIG_NO_CONFIG);
 
-    // <threads></threads> - optional, must be positive integer
-    // default value of 0
-    xml_node nthreads = nconfig.child("threads");
-    int threads = 0;
-    if (nthreads && (threads = nthreads.text().as_int(0)) <= 0)
-        return cfg_error(cfg_error_code::INVALID_THREAD_CNT);
-
     // <params></params> - optional, use default values if does not exist
+    config_data::params params;
     xml_node nparams = nconfig.child("params");
     if (nparams)
     {
         cfg_expected<config_data::params> custom_params = get_params(nparams);
         if (!custom_params)
             return std::move(custom_params.error());
-        cfgdata.parameters(custom_params.value());
+        params = std::move(custom_params.value());
     }
+    config_data cfgdata(params);
 
-    // iterate all sections
+    // iterate all section groups
     // <sections></sections> - optional
-    xml_node nsections = nconfig.child("sections");
-    if (nsections)
+    for (xml_node nsections = nconfig.child("sections");
+        nsections;
+        nsections = nsections.next_sibling("sections"))
     {
-        int sec_count = 0;
-        for (xml_node nsection = nsections.first_child(); nsection;
-            nsection = nsection.next_sibling(), sec_count++)
-        {
-            // <section></section>
-            cfg_expected<config_data::section> section = get_section(nsection);
-            if (!section)
-                return std::move(section.error());
-            cfgdata.sections().push_back(std::move(section.value()));
-        }
-        if (sec_count == 0)
-            return cfg_error(cfg_error_code::SEC_LIST_EMPTY);
+        cfg_expected<config_data::section_group> group = get_group(nsections);
+        if (!group)
+            return std::move(group.error());
+        if (!cfgdata.push_back(std::move(group.value())))
+            return cfg_error(cfg_error_code::GROUP_LABEL_ALREADY_EXISTS);
     }
-
-    cfgdata.threads(threads);
     return cfgdata;
 }
 
@@ -967,7 +1059,7 @@ std::ostream& tep::operator<<(std::ostream& os, const config_data::bounds& b)
 
 std::ostream& tep::operator<<(std::ostream& os, const config_data::section& s)
 {
-    os << "name: " << (s.has_name() ? s.name() : "-");
+    os << "label: " << (s.has_label() ? s.label() : "-");
     os << "\nextra: " << (s.has_extra() ? s.extra() : "-");
     os << "\ntarget: " << s.targets();
     os << "\ninterval: " << s.interval().count() << " ms";
@@ -980,11 +1072,10 @@ std::ostream& tep::operator<<(std::ostream& os, const config_data::section& s)
 
 std::ostream& tep::operator<<(std::ostream& os, const config_data& cd)
 {
-    os << "threads: " << cd.threads();
-    os << "\n" << cd.parameters();
-    os << "\nsections:";
-    for (const auto& section : cd.sections())
-        os << "\n----------\n" << section;
+    os << cd.parameters() << "\n";
+    os << "groups (" << cd.groups().size() << "):";
+    for (const auto& g : cd.groups())
+        os << "\n----------\n" << g;
     return os;
 }
 
@@ -992,6 +1083,15 @@ std::ostream& tep::operator<<(std::ostream& os, const config_data::section::targ
 {
     for (auto tgt : tgts)
         os << tgt << " ";
+    return os;
+}
+
+std::ostream& tep::operator<<(std::ostream& os, const config_data::section_group& g)
+{
+    os << "label: " << (g.has_label() ? g.label() : "-") << "\n";
+    os << "sections (" << g.sections().size() << "):";
+    for (const auto& section : g.sections())
+        os << "\n----------\n" << section;
     return os;
 }
 
@@ -1020,8 +1120,13 @@ bool tep::operator==(const config_data::bounds& lhs, const config_data::bounds& 
 
 bool tep::operator==(const config_data::section& lhs, const config_data::section& rhs)
 {
-    return lhs.name() == rhs.name() && lhs.extra() == rhs.extra() &&
+    return lhs.label() == rhs.label() && lhs.extra() == rhs.extra() &&
         lhs.targets() == rhs.targets() && lhs.method() == rhs.method() &&
         lhs.bounds() == rhs.bounds() && lhs.interval() == rhs.interval() &&
         lhs.executions() == rhs.executions() && lhs.samples() == lhs.samples();
+}
+
+bool operator==(const config_data::section_group& lhs, const config_data::section_group& rhs)
+{
+    return lhs.label() == rhs.label() && lhs.sections() == rhs.sections();
 }
