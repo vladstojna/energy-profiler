@@ -228,6 +228,24 @@ public:
 
 };
 
+template<typename Tag>
+void output_energy(nlohmann::json& j,
+    const nrgprf::reader_rapl& reader,
+    nrgprf::joules<double> energy_total,
+    const timed_execution& exec,
+    const timed_execution& idle,
+    uint32_t skt)
+{
+    bool has_idle = !idle.empty() && idle.size() > 1;
+    if (has_idle)
+        j = energy_holder{ energy_total,
+            get_idle_delta(
+                { energy_total, get_duration(exec) },
+                { cpu_energy(reader, idle, skt, Tag{}).get(), get_duration(idle) }) };
+    else
+        j = energy_holder{ energy_total, {} };
+}
+
 
 
 void readings_output_holder::push_back(std::unique_ptr<readings_output>&& outputs)
@@ -265,9 +283,6 @@ void readings_output_dev<nrgprf::reader_rapl>::output(detail::output_impl& os,
 
     assert(exec.size() > 1);
     assert(_idle.empty() || _idle.size() > 1);
-
-    bool has_idle = !_idle.empty() && _idle.size() > 1;
-    std::chrono::duration<double> duration = get_duration(exec);
     for (uint32_t skt = 0; skt < nrgprf::max_sockets; skt++)
     {
         cpu_energy pkg(_reader, exec, skt, reader_rapl::package{});
@@ -285,53 +300,15 @@ void readings_output_dev<nrgprf::reader_rapl>::output(detail::output_impl& os,
 
         readings["target"] = "cpu";
         readings["socket"] = skt;
+
         if (pkg)
-        {
-            if (has_idle)
-                jpackage = energy_holder{ pkg.get(), get_idle_delta(
-                    { pkg.get(), duration },
-                    { cpu_energy(_reader, _idle, skt, reader_rapl::package{}).get(),
-                        get_duration(_idle) }
-                ) };
-            else
-                jpackage = energy_holder{ pkg.get(), {} };
-        }
-
+            output_energy<reader_rapl::package>(jpackage, _reader, pkg.get(), exec, _idle, skt);
         if (pp0)
-        {
-            if (has_idle)
-                jcores = energy_holder{ pp0.get(), get_idle_delta(
-                    { pp0.get(), duration },
-                    { cpu_energy(_reader, _idle, skt, reader_rapl::cores{}).get(),
-                        get_duration(_idle) }
-                ) };
-            else
-                jcores = energy_holder{ pp0.get(), {} };
-        }
-
+            output_energy<reader_rapl::cores>(jcores, _reader, pp0.get(), exec, _idle, skt);
         if (pp1)
-        {
-            if (has_idle)
-                juncore = energy_holder{ pp1.get(), get_idle_delta(
-                    { pp1.get(), duration },
-                    { cpu_energy(_reader, _idle, skt, reader_rapl::uncore{}).get(),
-                        get_duration(_idle) }
-                ) };
-            else
-                juncore = energy_holder{ pp1.get(), {} };
-        }
-
+            output_energy<reader_rapl::uncore>(juncore, _reader, pp1.get(), exec, _idle, skt);
         if (dram)
-        {
-            if (has_idle)
-                jdram = energy_holder{ dram.get(), get_idle_delta(
-                    { dram.get(), duration },
-                    { cpu_energy(_reader, _idle, skt, reader_rapl::dram{}).get(),
-                        get_duration(_idle) }
-                ) };
-            else
-                jdram = energy_holder{ dram.get(), {} };
-        }
+            output_energy<reader_rapl::dram>(jdram, _reader, dram.get(), exec, _idle, skt);
 
         os.json().push_back(std::move(readings));
     }
