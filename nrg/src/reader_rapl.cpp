@@ -13,9 +13,11 @@
 #include <cstring>
 #include <iostream>
 
+#ifndef CPU_NONE
 #include <sys/stat.h>
 #include <unistd.h>
 #include <fcntl.h>
+#endif // CPU_NONE
 
 #include "util.hpp"
 
