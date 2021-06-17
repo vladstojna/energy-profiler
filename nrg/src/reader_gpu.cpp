@@ -440,40 +440,53 @@ result<units_power> reader_gpu::impl::get_board_power(const sample& s, uint8_t d
 
 
 reader_gpu::reader_gpu(device_mask dev_mask, error& ec) :
-    _impl(std::make_shared<reader_gpu::impl>(dev_mask, ec))
+    _impl(std::make_unique<reader_gpu::impl>(dev_mask, ec))
 {}
 
 reader_gpu::reader_gpu(error& ec) :
     reader_gpu(0xff, ec)
 {}
 
+reader_gpu::reader_gpu(const reader_gpu& other) :
+    _impl(std::make_unique<reader_gpu::impl>(*other.pimpl()))
+{}
 
-error reader_gpu::read(sample& s) const
+reader_gpu& reader_gpu::operator=(const reader_gpu& other)
 {
-    return _impl->read(s);
+    _impl = std::make_unique<reader_gpu::impl>(*other.pimpl());
+    return *this;
 }
 
-error reader_gpu::read(sample& s, uint8_t ev_idx) const
+reader_gpu::reader_gpu(reader_gpu&& other) = default;
+reader_gpu& reader_gpu::operator=(reader_gpu && other) = default;
+reader_gpu::~reader_gpu() = default;
+
+error reader_gpu::read(sample & s) const
 {
-    return _impl->read(s, ev_idx);
+    return pimpl()->read(s);
+}
+
+error reader_gpu::read(sample & s, uint8_t ev_idx) const
+{
+    return pimpl()->read(s, ev_idx);
 }
 
 int8_t reader_gpu::event_idx(uint8_t device) const
 {
-    return _impl->event_idx(device);
+    return pimpl()->event_idx(device);
 }
 
 size_t reader_gpu::num_events() const
 {
-    return _impl->num_events();
+    return pimpl()->num_events();
 }
 
-result<units_power> reader_gpu::get_board_power(const sample& s, uint8_t dev) const
+result<units_power> reader_gpu::get_board_power(const sample & s, uint8_t dev) const
 {
-    return _impl->get_board_power(s, dev);
+    return pimpl()->get_board_power(s, dev);
 }
 
-std::vector<reader_gpu::dev_pwr> reader_gpu::get_board_power(const sample& s) const
+std::vector<reader_gpu::dev_pwr> reader_gpu::get_board_power(const sample & s) const
 {
     std::vector<reader_gpu::dev_pwr> retval;
     for (uint32_t d = 0; d < max_devices; d++)
@@ -483,4 +496,16 @@ std::vector<reader_gpu::dev_pwr> reader_gpu::get_board_power(const sample& s) co
             retval.push_back({ d, std::move(pwr.value()) });
     }
     return retval;
+}
+
+const reader_gpu::impl* reader_gpu::pimpl() const
+{
+    assert(_impl);
+    return _impl.get();
+}
+
+reader_gpu::impl* reader_gpu::pimpl()
+{
+    assert(_impl);
+    return _impl.get();
 }

@@ -18,17 +18,25 @@ namespace nrgprf
     {
     private:
         struct impl;
-        std::shared_ptr<impl> _impl;
+        std::unique_ptr<impl> _impl;
 
+    public:
         struct dev_pwr
         {
             uint32_t dev;
             units_power power;
         };
 
-    public:
         reader_gpu(error&);
         reader_gpu(device_mask, error&);
+
+        reader_gpu(const reader_gpu& other);
+        reader_gpu& operator=(const reader_gpu& other);
+
+        reader_gpu(reader_gpu&& other);
+        reader_gpu& operator=(reader_gpu&& other);
+
+        ~reader_gpu();
 
         error read(sample& s) const override;
         error read(sample& s, uint8_t ev_idx) const override;
@@ -41,7 +49,8 @@ namespace nrgprf
         std::vector<dev_pwr> get_board_power(const sample& s) const;
 
     private:
-        reader_gpu(uint8_t dev_mask, size_t offset, error& ec);
+        const impl* pimpl() const;
+        impl* pimpl();
     };
 
 }
