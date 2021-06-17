@@ -444,7 +444,7 @@ reader_gpu::reader_gpu(device_mask dev_mask, error& ec) :
 {}
 
 reader_gpu::reader_gpu(error& ec) :
-    reader_gpu(0xff, ec)
+    reader_gpu(device_mask(0xff), ec)
 {}
 
 reader_gpu::reader_gpu(const reader_gpu& other) :
