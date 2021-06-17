@@ -27,6 +27,8 @@ constexpr static const char EVENT_PP1[] = "uncore";
 constexpr static const char EVENT_DRAM[] = "dram";
 
 
+#ifndef CPU_NONE
+
 namespace nrgprf
 {
     namespace detail
@@ -60,7 +62,6 @@ namespace nrgprf
 }
 
 // begin helper functions
-
 
 std::string system_error_str(const char* prefix)
 {
@@ -180,7 +181,6 @@ result<detail::event_data> get_event_data(const char* base)
     return { std::move(filed.value()), max_value };
 }
 
-
 // end helper functions
 
 // file_descriptor
@@ -252,13 +252,16 @@ detail::event_data::event_data(file_descriptor&& fd, uint64_t max) :
     curr_max(0)
 {}
 
+#endif // CPU_NONE
 
 // reader_rapl::impl
 
 class reader_rapl::impl
 {
+#ifndef CPU_NONE
     std::array<std::array<int32_t, rapl_domains>, max_sockets> _event_map;
     std::vector<detail::event_data> _active_events;
+#endif // CPU_NONE
 
 public:
     impl(rapl_mask dmask, socket_mask skt_mask, error& ec);
@@ -274,10 +277,46 @@ public:
     result<units_energy> get_energy(const sample& s, uint8_t skt) const;
 
 private:
+#ifndef CPU_NONE
     error add_event(const char* base, rapl_mask dmask, uint8_t skt);
-    result<units_energy> get_value(const sample& s, uint8_t skt, uint8_t idx);
+#endif // CPU_NONE
 };
 
+#ifdef CPU_NONE
+
+reader_rapl::impl::impl(rapl_mask, socket_mask, error&)
+{
+    std::cout << fileline("No-op CPU reader\n");
+}
+
+error reader_rapl::impl::read(sample&) const
+{
+    return error::success();
+}
+
+error reader_rapl::impl::read(sample&, uint8_t) const
+{
+    return error::success();
+}
+
+size_t reader_rapl::impl::num_events() const
+{
+    return 0;
+}
+
+template<typename Tag>
+int32_t reader_rapl::impl::event_idx(uint8_t) const
+{
+    return -1;
+}
+
+template<typename Tag>
+result<units_energy> reader_rapl::impl::get_energy(const sample&, uint8_t) const
+{
+    return error(error_code::NO_EVENT);
+}
+
+#else
 
 reader_rapl::impl::impl(rapl_mask dmask, socket_mask skt_mask, error& ec) :
     _event_map(),
@@ -390,6 +429,7 @@ error reader_rapl::impl::add_event(const char* base, rapl_mask dmask, uint8_t sk
     return error::success();
 }
 
+#endif // CPU_NONE
 
 // reader_rapl
 
