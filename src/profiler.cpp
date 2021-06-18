@@ -51,7 +51,7 @@ tracer_expected<long> insert_trap(pid_t my_tid, pid_t pid, uintptr_t addr)
         log(log_lvl::error, "[%d] error inserting trap @ 0x%" PRIxPTR, my_tid, addr);
         return get_syserror(error, tracer_errcode::PTRACE_ERROR, my_tid, "insert_trap: PTRACE_PEEKDATA");
     }
-    long new_word = (word & lsb_mask()) | trap_code();
+    long new_word = set_trap(word);
     if (pw.ptrace(error, PTRACE_POKEDATA, pid, addr, new_word) < 0)
     {
         log(log_lvl::error, "[%d] error inserting trap @ 0x%" PRIxPTR, my_tid, addr);
@@ -266,7 +266,7 @@ tracer_expected<profiling_results> profiler::run()
 
     int errnum;
     ptrace_wrapper& pw = ptrace_wrapper::instance;
-    user_regs_struct regs;
+    cpu_regs regs;
     if (pw.ptrace(errnum, PTRACE_GETREGS, waited_pid, 0, &regs) == -1)
         return get_syserror(errnum, tracer_errcode::PTRACE_ERROR, _tid, "PTRACE_GETREGS");
 

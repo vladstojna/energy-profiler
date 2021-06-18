@@ -189,7 +189,7 @@ tracer_error tracer::wait_for_tracee(int& wait_status) const
     return tracer_error::success();
 }
 
-tracer_error tracer::handle_breakpoint(user_regs_struct& regs, uintptr_t ep, long origw) const
+tracer_error tracer::handle_breakpoint(cpu_regs& regs, uintptr_t ep, long origw) const
 {
     ptrace_wrapper& pw = ptrace_wrapper::instance;
     int errnum;
@@ -230,7 +230,7 @@ tracer_error tracer::handle_breakpoint(user_regs_struct& regs, uintptr_t ep, lon
         tracer_error werror = wait_for_tracee(wait_status);
         if (werror)
             return werror;
-        user_regs_struct regs;
+        cpu_regs regs;
         if (pw.ptrace(errnum, PTRACE_GETREGS, _tracee, 0, &regs) == -1)
             return get_syserror(errnum, tracer_errcode::PTRACE_ERROR, tid, "PTRACE_GETREGS");
         log(log_lvl::warning, "[%d] SIGSTOP signal suppressed @ 0x%" PRIxPTR " (0x%" PRIxPTR ")", tid,
@@ -303,7 +303,7 @@ tracer_error tracer::trace(const registered_traps* traps)
         }
         else if (is_breakpoint_trap(wait_status))
         {
-            user_regs_struct regs;
+            cpu_regs regs;
             if (pw.ptrace(errnum, PTRACE_GETREGS, _tracee, 0, &regs) == -1)
                 return get_syserror(errnum, tracer_errcode::PTRACE_ERROR, tid, "PTRACE_GETREGS");
             log(log_lvl::info, "[%d] reached breakpoint @ 0x%" PRIxPTR " (0x%" PRIxPTR ")", tid,
@@ -323,8 +323,7 @@ tracer_error tracer::trace(const registered_traps* traps)
                 return std::move(toggler.error());
             log(log_lvl::info, "[%d] child tracing disabled", tid);
 
-            // decrease the ip by 1 byte, since this is the size of the trap instruction
-            set_ip(regs, get_ip(regs) - 1);
+            rewind_trap(regs);
 
             start_addr start_bp_addr = get_ip(regs);
             const start_trap* strap = traps->find(start_bp_addr);
@@ -362,8 +361,7 @@ tracer_error tracer::trace(const registered_traps* traps)
                 log(log_lvl::info, "[%d] reached breakpoint @ 0x%" PRIxPTR " (0x%" PRIxPTR ")", tid,
                     get_ip(regs), get_ip(regs) - entrypoint);
 
-                // decrease the ip by 1 byte, since this is the size of the trap instruction
-                set_ip(regs, get_ip(regs) - 1);
+                rewind_trap(regs);
 
                 end_addr end_bp_addr = get_ip(regs);
                 const end_trap* etrap = traps->find(end_bp_addr, start_bp_addr);
@@ -426,7 +424,7 @@ tracer_error tracer::trace(const registered_traps* traps)
         }
         else
         {
-            user_regs_struct regs;
+            cpu_regs regs;
             if (pw.ptrace(errnum, PTRACE_GETREGS, _tracee, 0, &regs) == -1)
                 return get_syserror(errnum, tracer_errcode::PTRACE_ERROR, tid, "PTRACE_GETREGS");
             log(log_lvl::debug, "[%d] tracee %d received a signal: %s @ 0x%" PRIxPTR, tid, _tracee,

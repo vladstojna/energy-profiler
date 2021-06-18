@@ -27,6 +27,21 @@ static constexpr const char et_dyn[] = "DYN";
 static constexpr const char et_exec[] = "EXEC";
 
 
+#if defined(__x86_64__) || defined(__i386__)
+
+static constexpr const char ret_match[] = "[[:space:]]*[0-9a-f]+:[[:space:]]+c3[[:space:]]+ret";
+
+#elif defined(__powerpc64__)
+
+static constexpr const char ret_match[] = "blr[[:space:]]*$"; // TODO: review
+
+#else
+
+static constexpr const char ret_match[] = "";
+
+#endif // __x86_64__ || __i386__
+
+
 // begin helper structs
 
 struct parsed_func
@@ -106,7 +121,7 @@ static dbg_expected<std::vector<uintptr_t>> get_return_addresses(const char* tar
         return dbg_error(dbg_error_code::PIPE_ERROR, std::move(fd.error().msg()));
 
     piped_commands cmd("objdump", "-d", target);
-    cmd.add("egrep", "[[:space:]]*[0-9a-f]+:[[:space:]]+c3[[:space:]]+ret")
+    cmd.add("egrep", ret_match)
         .add("awk", "{print $1}")
         .add("sed", "s/:$//");
 

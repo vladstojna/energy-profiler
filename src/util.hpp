@@ -8,6 +8,9 @@
 #include <sys/ptrace.h>
 #include <sys/wait.h>
 
+#if defined(__x86_64__) || defined(__i386__)
+#include <sys/user.h>
+#endif
 
 #if __GLIBC__ == 2 && __GLIBC_MINOR__ < 30
 #include <unistd.h>
@@ -21,9 +24,6 @@ inline pid_t gettid()
 
 #define log(lvl, fmt, ...) \
     log__(__FILE__, __LINE__, lvl, fmt, __VA_ARGS__)
-
-
-struct user_regs_struct;
 
 namespace tep
 {
@@ -42,11 +42,36 @@ namespace tep
 
     bool timestamp(char* buff, size_t sz);
 
+
+#if defined(__x86_64__) || defined(__i386__)
+
+    using cpu_regs = user_regs_struct;
+
+#elif defined(__powerpc64__)
+
+    using cpu_regs = pt_regs;
+
+#else
+
+    namespace detail
+    {
+        struct empty_regs_struct {};
+    }
+
+    using cpu_regs = detail::empty_regs_struct;
+
+#endif // __x86_64__ || __i386__
+
+
     int get_entrypoint_addr(pid_t pid, uintptr_t& addr);
 
-    uintptr_t get_ip(const user_regs_struct& regs);
+    uintptr_t get_ip(const cpu_regs& regs);
 
-    void set_ip(user_regs_struct& regs, uintptr_t addr);
+    void set_ip(cpu_regs& regs, uintptr_t addr);
+
+    void rewind_trap(cpu_regs& regs);
+
+    long set_trap(long word);
 
 
     constexpr bool is_clone_event(int wait_status)
@@ -81,16 +106,6 @@ namespace tep
         return WIFSTOPPED(wait_status) &&
             !(WSTOPSIG(wait_status) & 0x80) &&
             (WSTOPSIG(wait_status) == SIGTRAP);
-    }
-
-    constexpr unsigned long lsb_mask()
-    {
-        return ~0xff;
-    }
-
-    constexpr uint8_t trap_code()
-    {
-        return 0xcc;
     }
 
     const char* sig_str(int signal);

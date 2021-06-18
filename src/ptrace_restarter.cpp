@@ -58,7 +58,7 @@ tep::ptrace_restarter::ptrace_restarter(pid_t tid, pid_t tracee, ptrace_wrapper&
     }
     assert(waited_pid == tracee);
 
-    user_regs_struct regs;
+    cpu_regs regs;
     if (pw.ptrace(errnum, PTRACE_GETREGS, tracee, 0, &regs) == -1)
     {
         err = get_syserror(errnum, tracer_errcode::PTRACE_ERROR, tid, "PTRACE_GETREGS");

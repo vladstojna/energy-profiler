@@ -8,7 +8,6 @@
 #include <cstring>
 #include <mutex>
 #include <unistd.h>
-#include <sys/user.h>
 
 
 #define RED "\x1B[31m"
@@ -88,27 +87,101 @@ int tep::get_entrypoint_addr(pid_t pid, uintptr_t& addr)
     return 0;
 }
 
-uintptr_t tep::get_ip(const user_regs_struct& regs)
+
+#ifdef __x86_64__
+
+uintptr_t tep::get_ip(const cpu_regs& regs)
 {
-#if __x86_64__
     return regs.rip;
-#elif __i386__
-    return regs.eip;
-#else // only x86 for now
-    return 0;
-#endif
 }
 
-void tep::set_ip(user_regs_struct& regs, uintptr_t addr)
+void tep::set_ip(cpu_regs& regs, uintptr_t addr)
 {
-#if __x86_64__
     regs.rip = addr;
-#elif __i386__
-    regs.eip = addr;
-#else // only x86 for now
-    // empty
-#endif
 }
+
+#elif defined(__i386__)
+
+uintptr_t tep::get_ip(const cpu_regs& regs)
+{
+    return regs.eip;
+}
+
+void tep::set_ip(cpu_regs& regs, uintptr_t addr)
+{
+    regs.eip = addr;
+}
+
+#elif defined(__powerpc64__)
+
+uintptr_t tep::get_ip(const cpu_regs& regs)
+{
+    return regs.nip;
+}
+
+void tep::set_ip(cpu_regs& regs, uintptr_t addr)
+{
+    regs.nip = addr;
+}
+
+#else
+
+uintptr_t tep::get_ip(const cpu_regs&)
+{
+    return 0;
+}
+
+void tep::set_ip(cpu_regs&, uintptr_t) {}
+
+#endif // __x86_64__
+
+
+#if defined(__x86_64__) || defined(__i386__)
+
+void tep::rewind_trap(cpu_regs& regs)
+{
+    set_ip(regs, get_ip(regs) - 1);
+}
+
+#elif defined(__powerpc64__)
+
+void tep::rewind_trap(cpu_regs& regs)
+{
+    set_ip(regs, get_ip(regs) - 4);
+}
+
+#else
+
+void tep::rewind_trap(cpu_regs& regs) {}
+
+#endif // __x86_64__ || __i386__
+
+
+#if defined(__x86_64__) || defined(__i386__)
+
+long tep::set_trap(long word)
+{
+    // int3
+    return (word & ~0xff) | 0xcc;
+}
+
+#elif defined(__powerpc64__)
+
+long tep::set_trap(long word)
+{
+    // tw 31, 0, 0
+    return (word & 0xffffffff) | (0x7fe00008 << 32);
+}
+
+#else
+
+long tep::set_trap(long word)
+{
+    return word;
+}
+
+#endif // __x86_64__ || __i386__
+
 
 #if __GLIBC__ == 2 && __GLIBC_MINOR__ < 32
 
