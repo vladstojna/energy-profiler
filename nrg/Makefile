@@ -13,8 +13,12 @@ obj  := $(patsubst $(src_dir)/%.cpp, $(obj_dir)/%.o, $(src))
 deps := $(patsubst $(src_dir)/%.cpp, $(dep_dir)/%.d, $(src))
 tgt  := $(tgt_dir)/libnrg.so
 
-DEBUG ?=
+# debug build
+dbg ?=
+# GPU vendor or no-op
 gpu ?=
+# no-op CPU
+cpu ?=
 
 # linker flags
 ldflags := -shared
@@ -51,7 +55,7 @@ cflags := -Wall -Wextra -Wno-unknown-pragmas -fPIC -g
 cflags += $(addprefix -I, $(incl))
 cflags += -std=c++17
 
-ifdef DEBUG
+ifdef dbg
 cflags += -O0
 else
 cflags += -O3 -DNDEBUG
@@ -61,6 +65,9 @@ ifdef gpu
 cflags += $(addprefix -D, $(gpu))
 endif
 
+ifdef cpu
+cflags += $(addprefix -D, $(cpu))
+endif
 
 # rules -----------------------------------------------------------------------
 
