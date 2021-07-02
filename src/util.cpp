@@ -165,12 +165,20 @@ long tep::set_trap(long word)
     return (word & ~0xff) | 0xcc;
 }
 
-#elif defined(__powerpc64__)
+#elif defined(__powerpc64__) && __BYTE_ORDER__ == __ORDER_BIG_ENDIAN__
 
 long tep::set_trap(long word)
 {
     // tw 31, 0, 0
     return (word & 0xffffffff) | (0x7fe00008 << 32);
+}
+
+#elif defined(__powerpc64__) && __BYTE_ORDER__ == __ORDER_LITTLE_ENDIAN__
+
+long tep::set_trap(long word)
+{
+    // tw 31, 0, 0
+    return (word & ~0xffffffff) | 0x7fe00008;
 }
 
 #else
