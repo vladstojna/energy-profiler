@@ -8,6 +8,7 @@
 #include <cassert>
 #include <cstring>
 #include <sys/user.h>
+#include <sys/wait.h>
 
 #include <util/expected.hpp>
 
