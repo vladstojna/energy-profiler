@@ -216,9 +216,8 @@ tracer_error tracer::handle_breakpoint(cpu_gp_regs& regs, uintptr_t ep, long ori
     // single-step and reset the trap instruction
     if (pw.ptrace(errnum, PTRACE_SINGLESTEP, _tracee, 0, 0) == -1)
         return get_syserror(errnum, tracer_errcode::PTRACE_ERROR, tid, "PTRACE_SINGLESTEP");
-    tracer_error werror = wait_for_tracee(wait_status);
-    if (werror)
-        return werror;
+    if (auto error = wait_for_tracee(wait_status))
+        return error;
 
     // if a SIGSTOP was queued up when multiple threads concurrently entered a section
     // singlestep again to suppress it
@@ -228,9 +227,8 @@ tracer_error tracer::handle_breakpoint(cpu_gp_regs& regs, uintptr_t ep, long ori
             tid, _tracee);
         if (pw.ptrace(errnum, PTRACE_SINGLESTEP, _tracee, 0, 0) == -1)
             return get_syserror(errnum, tracer_errcode::PTRACE_ERROR, tid, "PTRACE_SINGLESTEP");
-        tracer_error werror = wait_for_tracee(wait_status);
-        if (werror)
-            return werror;
+        if (auto error = wait_for_tracee(wait_status))
+            return error;
         cpu_gp_regs regs(_tracee);
         if (auto error = regs.getregs())
             return error;
