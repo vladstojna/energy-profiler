@@ -181,8 +181,9 @@ long tep::set_trap(long word)
 
 long tep::set_trap(long word)
 {
+    constexpr static const long mask = 0xffffffff;
     // tw 31, 0, 0
-    return (word & ~0xffffffff) | 0x7fe00008;
+    return (word & ~mask) | 0x7fe00008;
 }
 
 #else
