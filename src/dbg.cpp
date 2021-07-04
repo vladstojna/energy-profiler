@@ -162,6 +162,52 @@ static std::vector<std::string_view> split_line(std::string_view line, std::stri
     return tokens;
 }
 
+#if defined(__x86_64__) || defined(__i386__)
+
+static dbg_expected<size_t>
+get_function_entry_offset(std::string_view, std::string_view)
+{
+    return 0;
+}
+
+#elif defined(__powerpc64__)
+
+// account for the local function entry offset defined in the OpenPOWER ABI
+static dbg_expected<size_t>
+get_function_entry_offset(std::string_view target, std::string_view func_name)
+{
+    std::string output = cmmn::concat(file_base, ".localentry");
+    cmmn::expected<file_descriptor, pipe_error> fd = file_descriptor::create(
+        output.c_str(), fd_flags::write, fd_mode::rdwr_all);
+    if (!fd)
+        return dbg_error(dbg_error_code::PIPE_ERROR, std::move(fd.error().msg()));
+
+    piped_commands cmd("readelf", "-s", std::string(target));
+    cmd.add("grep", std::string(func_name));
+    cmd.add("sed", "-nE", "s/.*\\[<localentry>: ([[:digit:]]+)\\].*/\\1/p");
+    if (pipe_error err = cmd.execute(file_descriptor::std_in, fd.value()))
+        return dbg_error(dbg_error_code::PIPE_ERROR, std::move(err.msg()));
+
+    std::ifstream ifs(output);
+    if (!ifs)
+        return dbg_error(dbg_error_code::SYSTEM_ERROR,
+            cmmn::concat("Could not open ", output, " for reading"));
+
+    size_t offset = 0;
+    std::string line;
+    std::getline(ifs, line);
+    if (!line.empty())
+    {
+        std::from_chars_result res = std::from_chars(line.data(), line.data() + line.size(),
+            offset, 16);
+        if (std::error_code code = make_error_code(res.ec))
+            return dbg_error(dbg_error_code::FORMAT_ERROR, get_system_error(code.value()));
+    }
+    return offset;
+}
+
+#endif
+
 static dbg_expected<std::vector<parsed_func>> get_functions(const char* target)
 {
     std::vector<parsed_func> funcs;
@@ -175,8 +221,7 @@ static dbg_expected<std::vector<parsed_func>> get_functions(const char* target)
     piped_commands cmd("nm", "-lSC", "--defined-only", "--format=posix", target);
     cmd.add("sed", "-nE", "s/(.+) T ([0-9a-f]+) ([0-9a-f]+)\\t(.+):([1-9]+)/\\1|\\2|\\3|\\4|\\5/p");
 
-    pipe_error err = cmd.execute(file_descriptor::std_in, fd.value());
-    if (err)
+    if (pipe_error err = cmd.execute(file_descriptor::std_in, fd.value()))
         return dbg_error(dbg_error_code::PIPE_ERROR, std::move(err.msg()));
     fd.value().flush();
 
@@ -192,21 +237,24 @@ static dbg_expected<std::vector<parsed_func>> get_functions(const char* target)
 
         uintptr_t addr;
         std::from_chars_result res = std::from_chars(views[1].begin(), views[1].end(), addr, 16);
-        std::error_code code = make_error_code(res.ec);
-        if (code)
+        if (std::error_code code = make_error_code(res.ec))
             return dbg_error(dbg_error_code::FORMAT_ERROR, get_system_error(code.value()));
 
         size_t size;
         res = std::from_chars(views[2].begin(), views[2].end(), size, 16);
-        code = make_error_code(res.ec);
-        if (code)
+        if (std::error_code code = make_error_code(res.ec))
             return dbg_error(dbg_error_code::FORMAT_ERROR, get_system_error(code.value()));
 
         uint32_t lineno;
         res = std::from_chars(views[4].begin(), views[4].end(), lineno, 10);
-        code = make_error_code(res.ec);
-        if (code)
+        if (std::error_code code = make_error_code(res.ec))
             return dbg_error(dbg_error_code::FORMAT_ERROR, get_system_error(code.value()));
+
+        dbg_expected<size_t> localentry_offset = get_function_entry_offset(target, views[0]);
+        if (!localentry_offset)
+            return localentry_offset.error();
+        addr += localentry_offset.value();
+        size -= localentry_offset.value();
 
         funcs.push_back(
             { std::string(views[0]), addr, size, position(std::string(views[3]), lineno) }
@@ -747,7 +795,7 @@ dbg_error dbg_info::get_functions(const char* filename)
         return std::move(returns.error());
     dbg_expected<std::vector<parsed_func>> funcs = ::get_functions(filename);
     if (!funcs)
-        return std::move(returns.error());
+        return std::move(funcs.error());
 
     for (auto& pf : funcs.value())
     {
