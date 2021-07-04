@@ -5,8 +5,6 @@
 #include <cstdint>
 #include <cinttypes>
 #include <cstddef>
-
-#include <sys/user.h>
 #include <sys/types.h>
 
 #if __GLIBC__ == 2 && __GLIBC_MINOR__ < 30
@@ -17,7 +15,6 @@ inline pid_t gettid()
     return syscall(SYS_gettid);
 }
 #endif
-
 
 #define log(lvl, fmt, ...) \
     log__(__FILE__, __LINE__, lvl, fmt, __VA_ARGS__)
@@ -36,35 +33,10 @@ namespace tep
 
 
     void log__(const char* file, int line, log_lvl lvl, const char* fmt, ...);
-
     bool timestamp(char* buff, size_t sz);
-
-
-#if defined(__x86_64__) || defined(__i386__)
-
-    using cpu_regs = user_regs_struct;
-
-#elif defined(__powerpc64__)
-
-    using cpu_regs = pt_regs;
-
-#else
-
-    namespace detail
-    {
-        struct empty_regs_struct {};
-    }
-
-    using cpu_regs = detail::empty_regs_struct;
-
-#endif // __x86_64__ || __i386__
-
 
     int get_entrypoint_addr(pid_t pid, uintptr_t& addr);
 
-    uintptr_t get_ip(const cpu_regs& regs);
-    void set_ip(cpu_regs& regs, uintptr_t addr);
-    void rewind_trap(cpu_regs& regs);
     long set_trap(long word);
 
     bool is_clone_event(int wait_status);
