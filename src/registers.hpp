@@ -1,9 +1,9 @@
 // registers.hpp
 
+#pragma once
+
 #include <cstddef>
 #include <cstdint>
-
-#include <elf.h>
 #include <sys/user.h>
 
 namespace tep

@@ -4,6 +4,8 @@
 #include "ptrace_wrapper.hpp"
 #include "registers.hpp"
 
+#include <elf.h>
+
 using namespace tep;
 
 
