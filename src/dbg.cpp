@@ -172,19 +172,47 @@ get_function_entry_offset(std::string_view, std::string_view)
 
 #elif defined(__powerpc64__)
 
+// obtains the offset between the function's global and local entry points, in bytes
+static ssize_t local_entry_point_offset(uint8_t st_other)
+{
+    constexpr static const size_t ins_size = 4;
+    // get the three most significant bits
+    st_other = st_other >> 5;
+    switch (st_other)
+    {
+    case 0:
+    case 1:
+        return 0;
+    case 2:
+        return ins_size;
+    case 3:
+        return 2 * ins_size;
+    case 4:
+        return 4 * ins_size;
+    case 5:
+        return 8 * ins_size;
+    case 6:
+        return 16 * ins_size;
+    default:
+        break;
+    }
+    assert(false);
+    return -1;
+}
+
 // account for the local function entry offset defined in the OpenPOWER ABI
 static dbg_expected<size_t>
 get_function_entry_offset(std::string_view target, std::string_view func_name)
 {
-    std::string output = cmmn::concat(file_base, ".localentry");
+    std::string output = cmmn::concat(file_base, ".st_other");
     cmmn::expected<file_descriptor, pipe_error> fd = file_descriptor::create(
         output.c_str(), fd_flags::write, fd_mode::rdwr_all);
     if (!fd)
         return dbg_error(dbg_error_code::PIPE_ERROR, std::move(fd.error().msg()));
 
-    piped_commands cmd("readelf", "-s", std::string(target));
-    cmd.add("grep", std::string(func_name));
-    cmd.add("sed", "-nE", "s/.*\\[<localentry>: ([[:digit:]]+)\\].*/\\1/p");
+    piped_commands cmd("objdump", "-tCw", std::string(target));
+    cmd.add("grep", "-F", std::string(func_name));
+    cmd.add("sed", "-nE", "s/.*0x([0-9a-f][0-9a-f]).*/\\1/p");
     if (pipe_error err = cmd.execute(file_descriptor::std_in, fd.value()))
         return dbg_error(dbg_error_code::PIPE_ERROR, std::move(err.msg()));
 
@@ -193,16 +221,21 @@ get_function_entry_offset(std::string_view target, std::string_view func_name)
         return dbg_error(dbg_error_code::SYSTEM_ERROR,
             cmmn::concat("Could not open ", output, " for reading"));
 
-    size_t offset = 0;
+    ssize_t offset = 0;
     std::string line;
     std::getline(ifs, line);
-    if (!line.empty())
-    {
-        std::from_chars_result res = std::from_chars(line.data(), line.data() + line.size(),
-            offset, 16);
-        if (std::error_code code = make_error_code(res.ec))
-            return dbg_error(dbg_error_code::FORMAT_ERROR, get_system_error(code.value()));
-    }
+    if (line.empty())
+        return offset;
+
+    uint8_t st_other = 0;
+    std::from_chars_result res = std::from_chars(line.data(), line.data() + line.size(),
+        st_other, 16);
+    if (std::error_code code = make_error_code(res.ec))
+        return dbg_error(dbg_error_code::FORMAT_ERROR, get_system_error(code.value()));
+    offset = local_entry_point_offset(st_other);
+    if (offset < 0)
+        return dbg_error(dbg_error_code::FORMAT_ERROR,
+            "Incorrect value of symbol's st_other field");
     return offset;
 }
 
