@@ -92,7 +92,9 @@ void cpu_gp_regs::rewind_trap() noexcept
 
 void cpu_gp_regs::rewind_trap() noexcept
 {
-    set_ip(get_ip() - 4);
+    // unlike x86_64 the IP does not advance when a breakpoint
+    // has been reched, therefore no need to rewind 1 instruction
+    // set_ip(get_ip() - 4);
 }
 
 #else
