@@ -1,6 +1,8 @@
 // dbg.cpp
 
+#ifdef TEP_USE_LIBDWARF
 #include <libdwarf/libdwarf.h>
+#endif
 
 #include "dbg.hpp"
 #include "pipe.hpp"
@@ -785,6 +787,8 @@ auto dbg_info::find_lines_impl(T& instance, const char* name)
 }
 
 // TODO: need to rewrite this using newer functions
+#ifdef TEP_USE_LIBDWARF
+
 dbg_error dbg_info::get_line_info(int fd)
 {
     int rv;
@@ -857,6 +861,15 @@ dbg_error dbg_info::get_line_info(int fd)
         return { dbg_error_code::DWARF_ERROR, dwarf_errmsg(dw_err) };
     return dbg_error::success();
 }
+
+#else
+
+dbg_error dbg_info::get_line_info(int)
+{
+    return dbg_error::success();
+}
+
+#endif // TEP_USE_LIBDWARF
 
 dbg_error dbg_info::get_functions(const char* filename)
 {
