@@ -219,11 +219,12 @@ namespace tep
             std::chrono::milliseconds _interval;
             uint32_t _executions;
             uint32_t _samples;
+            bool _concurrency;
 
         public:
             template<typename N, typename E, typename B, typename I, typename T>
             section(N&& nm, E&& extr, T&& tgts, config_data::profiling_method mthd,
-                B&& bnd, I&& intrv, uint32_t execs, uint32_t smp) :
+                B&& bnd, I&& intrv, uint32_t execs, uint32_t smp, bool concurrency) :
                 _label(std::forward<N>(nm)),
                 _extra(std::forward<E>(extr)),
                 _targets(std::forward<T>(tgts)),
@@ -231,7 +232,8 @@ namespace tep
                 _bounds(std::forward<B>(bnd)),
                 _interval(std::forward<I>(intrv)),
                 _executions(execs),
-                _samples(smp)
+                _samples(smp),
+                _concurrency(concurrency)
             {}
 
             const std::string& label() const;
@@ -247,6 +249,8 @@ namespace tep
 
             bool has_label() const;
             bool has_extra() const;
+
+            bool allow_concurrency() const;
         };
 
         class section_group
