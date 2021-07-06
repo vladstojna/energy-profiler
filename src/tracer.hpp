@@ -13,11 +13,13 @@
 #include "error.hpp"
 #include "sampler.hpp"
 #include "trap.hpp"
+#include "util.hpp"
 
-struct user_regs_struct;
 
 namespace tep
 {
+
+    class cpu_gp_regs;
 
     template<typename R>
     using tracer_expected = cmmn::expected<R, tracer_error>;
@@ -73,7 +75,7 @@ namespace tep
         tracer_error stop_tracees(const tracer& excl) const;
         tracer_error stop_self() const;
         tracer_error wait_for_tracee(int& wait_status) const;
-        tracer_error handle_breakpoint(user_regs_struct& regs, uintptr_t ep, long origw) const;
+        tracer_error handle_breakpoint(cpu_gp_regs& regs, uintptr_t ep, long origw) const;
         tracer_error trace(const registered_traps* traps);
     };
 

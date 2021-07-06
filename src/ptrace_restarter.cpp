@@ -4,10 +4,12 @@
 #include "ptrace_wrapper.hpp"
 #include "error.hpp"
 #include "util.hpp"
+#include "registers.hpp"
 
 #include <cassert>
 #include <cstring>
 #include <sys/user.h>
+#include <sys/wait.h>
 
 #include <util/expected.hpp>
 
@@ -58,16 +60,14 @@ tep::ptrace_restarter::ptrace_restarter(pid_t tid, pid_t tracee, ptrace_wrapper&
     }
     assert(waited_pid == tracee);
 
-    user_regs_struct regs;
-    if (pw.ptrace(errnum, PTRACE_GETREGS, tracee, 0, &regs) == -1)
-    {
-        err = get_syserror(errnum, tracer_errcode::PTRACE_ERROR, tid, "PTRACE_GETREGS");
+    cpu_gp_regs regs(tracee);
+    err = regs.getregs();
+    if (err)
         return;
-    }
 
     log(log_lvl::warning, "[%d] waited for tracee %d with signal: %s (status 0x%x),"
         " rip @ 0x%" PRIxPTR, tid, tracee,
-        sig_str(WSTOPSIG(wait_status)), wait_status, get_ip(regs));
+        sig_str(WSTOPSIG(wait_status)), wait_status, regs.get_ip());
 
     if (pw.ptrace(errnum, PTRACE_CONT, tracee, 0, 0) == -1)
     {

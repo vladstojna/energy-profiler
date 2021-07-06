@@ -5,6 +5,7 @@
 #include "ptrace_wrapper.hpp"
 #include "util.hpp"
 #include "tracer.hpp"
+#include "registers.hpp"
 
 #include <algorithm>
 #include <cassert>
@@ -51,7 +52,7 @@ tracer_expected<long> insert_trap(pid_t my_tid, pid_t pid, uintptr_t addr)
         log(log_lvl::error, "[%d] error inserting trap @ 0x%" PRIxPTR, my_tid, addr);
         return get_syserror(error, tracer_errcode::PTRACE_ERROR, my_tid, "insert_trap: PTRACE_PEEKDATA");
     }
-    long new_word = (word & lsb_mask()) | trap_code();
+    long new_word = set_trap(word);
     if (pw.ptrace(error, PTRACE_POKEDATA, pid, addr, new_word) < 0)
     {
         log(log_lvl::error, "[%d] error inserting trap @ 0x%" PRIxPTR, my_tid, addr);
@@ -264,11 +265,9 @@ tracer_expected<profiling_results> profiler::run()
             "Tracee not stopped despite being attached with ptrace");
     }
 
-    int errnum;
-    ptrace_wrapper& pw = ptrace_wrapper::instance;
-    user_regs_struct regs;
-    if (pw.ptrace(errnum, PTRACE_GETREGS, waited_pid, 0, &regs) == -1)
-        return get_syserror(errnum, tracer_errcode::PTRACE_ERROR, _tid, "PTRACE_GETREGS");
+    cpu_gp_regs regs(waited_pid);
+    if (tracer_error err = regs.getregs())
+        return err;
 
     uintptr_t entrypoint;
     switch (_dli.header().exec_type())
@@ -287,10 +286,14 @@ tracer_expected<profiling_results> profiler::run()
     }
 
     log(log_lvl::info, "[%d] tracee %d rip @ 0x%" PRIxPTR ", entrypoint @ 0x%" PRIxPTR,
-        _tid, waited_pid, get_ip(regs), entrypoint);
+        _tid, waited_pid, regs.get_ip(), entrypoint);
 
-    if (pw.ptrace(errnum, PTRACE_SETOPTIONS, waited_pid, 0, get_ptrace_opts(true)) == -1)
+    int errnum;
+    if (ptrace_wrapper::instance
+        .ptrace(errnum, PTRACE_SETOPTIONS, waited_pid, 0, get_ptrace_opts(true)) == -1)
+    {
         return get_syserror(errnum, tracer_errcode::PTRACE_ERROR, _tid, "PTRACE_SETOPTIONS");
+    }
     log(log_lvl::debug, "[%d] ptrace options successfully set", _tid);
 
     // iterate the sections defined in the config and insert their respective breakpoints
