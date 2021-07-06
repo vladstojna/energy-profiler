@@ -33,14 +33,14 @@ DEBUG ?=
 
 # compiler flags
 cc := g++
-cppstd := c++17
-override cppdef +=
+std := c++17
+override cpp +=
 
 cflags := -Wall -Wextra -Wno-unknown-pragmas -fPIE -g
 cflags += $(addprefix -I, $(extlibs_incl))
 cflags += $(addprefix -I, include nrg/include)
-cflags += -std=$(cppstd)
-cflags += $(addprefix -D, $(cppdef))
+cflags += -std=$(std)
+cflags += $(addprefix -D, $(cpp))
 
 ifdef DEBUG
 cflags += -O0
@@ -52,7 +52,7 @@ endif
 ldflags := -pthread -lpugixml -lnrg -lstdc++fs
 ldflags += $(addprefix -L, $(extlibs_dirs) nrg/lib)
 
-ifneq (,$(findstring TEP_USE_LIBDWARF, $(cppdef)))
+ifneq (,$(findstring TEP_USE_LIBDWARF, $(cpp)))
 ldflags += -lbfd -ldwarf
 endif
 
