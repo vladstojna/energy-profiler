@@ -297,12 +297,6 @@ tracer_expected<profiling_results> profiler::run()
     log(log_lvl::debug, "[%d] ptrace options successfully set", _tid);
 
     // iterate the sections defined in the config and insert their respective breakpoints
-    if (!_dli.has_dbg_symbols())
-    {
-        log(log_lvl::error, "[%d] no debugging information found", _tid);
-        return tracer_error(tracer_errcode::NO_SYMBOL, "No debugging information found");
-    }
-
     for (const auto& group : _cd.groups())
     {
         for (const auto& sec : group.sections())
@@ -316,6 +310,12 @@ tracer_expected<profiling_results> profiler::run()
             }
             else if (sec.bounds().has_positions())
             {
+                if (!_dli.has_line_info())
+                {
+                    log(log_lvl::error, "[%d] no line information found", _tid);
+                    return tracer_error(tracer_errcode::NO_SYMBOL, "No line information found");
+                }
+
                 auto insert_start = insert_traps_position_start(sec,
                     sec.bounds().start(), entrypoint);
                 if (!insert_start)

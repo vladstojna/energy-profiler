@@ -187,7 +187,7 @@ namespace tep
         dbg_info(const char* filename, dbg_error& err);
 
     public:
-        bool has_dbg_symbols() const;
+        bool has_line_info() const;
         const header_info& header() const;
 
         dbg_expected<const unit_lines*> find_lines(const std::string& name) const;

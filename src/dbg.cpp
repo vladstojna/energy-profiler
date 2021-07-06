@@ -1,6 +1,8 @@
 // dbg.cpp
 
+#ifdef TEP_USE_LIBDWARF
 #include <libdwarf/libdwarf.h>
+#endif
 
 #include "dbg.hpp"
 #include "pipe.hpp"
@@ -296,6 +298,31 @@ static dbg_expected<std::vector<parsed_func>> get_functions(const char* target)
     return funcs;
 }
 
+static dbg_expected<bool> has_debug_info(const char* target)
+{
+    assert(target);
+    std::string output = cmmn::concat(file_base, ".dbg");
+    cmmn::expected<file_descriptor, pipe_error> fd = file_descriptor::create(
+        output.c_str(), fd_flags::write, fd_mode::rdwr_all);
+    if (!fd)
+        return dbg_error(dbg_error_code::PIPE_ERROR, std::move(fd.error().msg()));
+
+    piped_commands cmd("objdump", "-h", target);
+    cmd.add("sed", "-nE", "s/.*(debug_info).*/\\1/p");
+
+    if (pipe_error err = cmd.execute(file_descriptor::std_in, fd.value()))
+        return dbg_error(dbg_error_code::PIPE_ERROR, std::move(err.msg()));
+    fd.value().flush();
+
+    std::ifstream ifs(output);
+    if (!ifs)
+        return dbg_error(dbg_error_code::SYSTEM_ERROR,
+            cmmn::concat("Could not open ", output, " for reading"));
+
+    std::string line;
+    std::getline(ifs, line);
+    return !line.empty();
+}
 
 // end helper functions
 
@@ -628,6 +655,18 @@ dbg_info::dbg_info(const char* filename, dbg_error& err) :
     if (err)
         return;
 
+    auto di = has_debug_info(filename);
+    if (!di)
+    {
+        err = std::move(di.error());
+        return;
+    }
+    if (!di.value())
+    {
+        err = { dbg_error_code::DEBUG_SYMBOLS_NOT_FOUND, "No debugging information found" };
+        return;
+    }
+
     FILE* img = fopen(filename, "r");
     if (img == NULL)
     {
@@ -649,7 +688,7 @@ dbg_info::dbg_info(const char* filename, dbg_error& err) :
         err = std::move(error);
 }
 
-bool dbg_info::has_dbg_symbols() const
+bool dbg_info::has_line_info() const
 {
     return !_lines.empty();
 }
@@ -748,6 +787,8 @@ auto dbg_info::find_lines_impl(T& instance, const char* name)
 }
 
 // TODO: need to rewrite this using newer functions
+#ifdef TEP_USE_LIBDWARF
+
 dbg_error dbg_info::get_line_info(int fd)
 {
     int rv;
@@ -820,6 +861,15 @@ dbg_error dbg_info::get_line_info(int fd)
         return { dbg_error_code::DWARF_ERROR, dwarf_errmsg(dw_err) };
     return dbg_error::success();
 }
+
+#else
+
+dbg_error dbg_info::get_line_info(int)
+{
+    return dbg_error::success();
+}
+
+#endif // TEP_USE_LIBDWARF
 
 dbg_error dbg_info::get_functions(const char* filename)
 {
