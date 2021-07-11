@@ -17,8 +17,6 @@ extlibs_tgt  := $(addprefix $(lib_dir)/, pugixml json)
 extlibs_incl := $(addprefix $(lib_dir)/, pugixml/include json/single_include)
 extlibs_dirs := $(addprefix $(lib_dir)/, pugixml/lib)
 
-export LD_RUN_PATH=nrg/lib
-
 # versions
 pugixml_ver := 1.11.4
 json_ver := 3.9.1
@@ -36,7 +34,7 @@ cc := g++
 std := c++17
 override cpp +=
 
-cflags := -Wall -Wextra -Wno-unknown-pragmas -fPIE -g
+cflags := -Wall -Wextra -Wno-unknown-pragmas -Wpedantic -fPIE -g
 cflags += $(addprefix -I, $(extlibs_incl))
 cflags += $(addprefix -I, include nrg/include)
 cflags += -std=$(std)
@@ -55,6 +53,9 @@ ldflags += $(addprefix -L, $(extlibs_dirs) nrg/lib)
 ifneq (,$(findstring TEP_USE_LIBDWARF, $(cpp)))
 ldflags += -lbfd -ldwarf
 endif
+
+# rpath
+ldflags += -Wl,-rpath='$$ORIGIN/../nrg/lib'
 
 # cmake
 CMAKE := cmake

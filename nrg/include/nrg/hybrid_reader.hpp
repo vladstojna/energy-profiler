@@ -14,7 +14,7 @@ namespace nrgprf
         template<typename... Ts>
         using all_reader_ptrs = typename std::enable_if<
             std::conjunction<std::is_convertible<Ts*, reader*>...>::value, bool>::type;
-    };
+    }
 
     // owning hybrid reader
 

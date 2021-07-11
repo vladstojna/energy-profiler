@@ -51,7 +51,7 @@ endif
 
 # compiler flags
 cc := g++
-cflags := -Wall -Wextra -Wno-unknown-pragmas -fPIC -g
+cflags := -Wall -Wextra -Wno-unknown-pragmas -Wpedantic -fPIC -g
 cflags += $(addprefix -I, $(incl))
 cflags += -std=c++17
 
@@ -71,6 +71,8 @@ endif
 
 # rules -----------------------------------------------------------------------
 
+.PHONY: default remake clean
+
 default: $(tgt)
 
 $(tgt_dir):
@@ -89,6 +91,8 @@ $(obj_dir)/%.o: $(src_dir)/%.cpp $(dep_dir)/%.d | $(obj_dir) $(dep_dir)
 $(deps):
 
 include $(wildcard $(deps))
+
+remake: clean default
 
 clean:
 	rm -rf $(tgt_dir) $(obj_dir)
