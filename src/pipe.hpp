@@ -14,7 +14,7 @@ namespace cmmn
 {
     template<typename R, typename E>
     class expected;
-};
+}
 
 namespace tep
 {
@@ -221,4 +221,4 @@ namespace tep
     file_descriptor& operator<<(file_descriptor& fd, const char* str);
     file_descriptor& operator<<(file_descriptor& fd, const std::string& str);
     file_descriptor& operator<<(file_descriptor& fd, file_descriptor::endl_t e);
-};
+}

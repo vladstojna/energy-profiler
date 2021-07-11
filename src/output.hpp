@@ -10,7 +10,7 @@ namespace tep
     namespace detail
     {
         class output_impl;
-    };
+    }
 
     class position_interval;
 
@@ -134,4 +134,4 @@ namespace tep
     using readings_output_cpu = readings_output_dev<nrgprf::reader_rapl>;
     using readings_output_gpu = readings_output_dev<nrgprf::reader_gpu>;
 
-};
+}

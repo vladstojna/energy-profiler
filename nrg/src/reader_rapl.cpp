@@ -244,7 +244,7 @@ detail::event_data::event_data(const file_descriptor& fd, uint64_t max) :
     max(max),
     prev(0),
     curr_max(0)
-{};
+{}
 
 
 detail::event_data::event_data(file_descriptor&& fd, uint64_t max) :

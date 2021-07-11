@@ -64,4 +64,4 @@ namespace tep
 #define get_syserror(errnum, code, tid, comment) \
     get_syserror__(__FILE__, __LINE__, errnum, code, tid, comment)
 
-};
+}

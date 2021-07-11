@@ -76,7 +76,9 @@ namespace tep
         return exec.back() - exec.front();
     }
 
-    static nrgprf::joules<double> get_idle_delta(energy_duration_pair normal, energy_duration_pair idle)
+    static nrgprf::joules<double> get_idle_delta(
+        const energy_duration_pair& normal,
+        const energy_duration_pair& idle)
     {
         nrgprf::joules<double> norm = idle.first * (normal.second / idle.second);
         if (normal.first <= norm)
@@ -87,7 +89,7 @@ namespace tep
     static void to_json(nlohmann::json& j, const position_interval& interval)
     {
         j = { { "start", to_string(interval.start()) }, { "end", to_string(interval.end()) } };
-    };
+    }
 
     static void to_json(nlohmann::json& j, const energy_holder& energy)
     {
@@ -262,10 +264,10 @@ void readings_output_holder::output(detail::output_impl& os, const timed_executi
 
 
 template
-class readings_output_dev<nrgprf::reader_rapl>;
+class tep::readings_output_dev<nrgprf::reader_rapl>;
 
 template
-class readings_output_dev<nrgprf::reader_gpu>;
+class tep::readings_output_dev<nrgprf::reader_gpu>;
 
 template<typename Reader>
 readings_output_dev<Reader>::readings_output_dev(const Reader& r, const timed_execution& idle) :
