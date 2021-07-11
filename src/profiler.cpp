@@ -461,7 +461,8 @@ tracer_error profiler::insert_traps_function(
         _tid, pos_func_str.c_str(), start.val(), start.val() - entrypoint);
 
     auto insert_res = _traps.insert(start,
-        start_trap(origw.value(), std::move(pf), creator_from_section(_readers, sec)));
+        start_trap(origw.value(), std::move(pf), sec.allow_concurrency(),
+            creator_from_section(_readers, sec)));
 
     if (!insert_res.second)
     {
@@ -502,20 +503,20 @@ tracer_error profiler::insert_traps_function(
 
 
 cmmn::expected<start_addr, tracer_error> profiler::insert_traps_position_start(
-    const config_data::section& s,
-    const config_data::position& p,
+    const config_data::section& sec,
+    const config_data::position& pos,
     uintptr_t entrypoint)
 {
-    dbg_expected<unit_lines*> ul = _dli.find_lines(p.compilation_unit());
+    dbg_expected<unit_lines*> ul = _dli.find_lines(pos.compilation_unit());
     if (!ul)
     {
         log(log_lvl::error, "[%d] unit lines: %s", _tid, ul.error().message.c_str());
         return tracer_error(tracer_errcode::NO_SYMBOL, std::move(ul.error().message));
     }
-    dbg_expected<std::pair<uint32_t, uintptr_t>> line_addr = ul.value()->lowest_addr(p.line());
+    dbg_expected<std::pair<uint32_t, uintptr_t>> line_addr = ul.value()->lowest_addr(pos.line());
     if (!line_addr)
     {
-        log(log_lvl::error, "[%d] unit lines: invalid line %" PRIu32, _tid, p.line());
+        log(log_lvl::error, "[%d] unit lines: invalid line %" PRIu32, _tid, pos.line());
         return tracer_error(tracer_errcode::NO_SYMBOL, std::move(line_addr.error().message));
     }
 
@@ -531,8 +532,8 @@ cmmn::expected<start_addr, tracer_error> profiler::insert_traps_position_start(
         _tid, eaddr.val(), eaddr.val() - entrypoint);
 
     auto insert_res = _traps.insert(eaddr,
-        start_trap(origw.value(), std::move(posline), creator_from_section(_readers, s))
-    );
+        start_trap(origw.value(), std::move(posline), sec.allow_concurrency(),
+            creator_from_section(_readers, sec)));
     if (!insert_res.second)
     {
         log(log_lvl::error, "[%d] trap @ 0x%" PRIxPTR " (offset 0x%" PRIxPTR ") already exists",

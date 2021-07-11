@@ -416,6 +416,9 @@ static cfg_expected<config_data::section> get_section(const pugi::xml_node& nsec
     if (!bounds)
         return std::move(bounds.error());
 
+    // <allow_concurrency/> - true if node exists, false otherwise
+    bool allow_concurrency = bool(nsection.child("allow_concurrency"));
+
     return {
         attr_label.value(),
         nxtra.child_value(),
@@ -424,7 +427,9 @@ static cfg_expected<config_data::section> get_section(const pugi::xml_node& nsec
         std::move(bounds.value()),
         std::move(interval.value()),
         execs.value(),
-        samples.value() };
+        samples.value(),
+        allow_concurrency
+    };
 }
 
 static cfg_expected<config_data::section_group> get_group(const pugi::xml_node& nsections)
@@ -790,6 +795,11 @@ bool config_data::section::has_extra() const
     return !_extra.empty();
 }
 
+bool config_data::section::allow_concurrency() const
+{
+    return _concurrency;
+}
+
 
 // section_group
 
@@ -1067,6 +1077,7 @@ std::ostream& tep::operator<<(std::ostream& os, const config_data::section& s)
     os << "\nbounds: " << s.bounds();
     os << "\nexecutions: " << s.executions();
     os << "\nsamples: " << s.samples();
+    os << "\nallow concurrency: " << (s.allow_concurrency() ? "true" : "false");
     return os;
 }
 

@@ -310,9 +310,6 @@ tracer_error tracer::trace(const registered_traps* traps)
             std::scoped_lock lock(TRAP_BARRIER);
             log(log_lvl::debug, "[%d] entered global tracer barrier", tid);
 
-            if (auto error = stop_tracees(*this))
-                return error;
-
             // disable tracing of children during execution of section
             cmmn::expected<ptrace_child_toggler, tracer_error> toggler =
                 ptrace_child_toggler::create(pw, tid, _tracee, false);
@@ -333,6 +330,15 @@ tracer_error tracer::trace(const registered_traps* traps)
             }
             log(log_lvl::info, "[%d] reached starting trap located @ %s",
                 tid, to_string(strap->at()).c_str());
+
+            if (!strap->allow_concurrency())
+            {
+                log(log_lvl::info, "[%d] concurrency not allowed; stopping tracees", tid);
+                if (auto error = stop_tracees(*this))
+                    return error;
+            }
+            else
+                log(log_lvl::info, "[%d] concurrency allowed; not stopping tracees", tid);
 
             if (auto error = handle_breakpoint(regs, entrypoint, strap->origword()))
                 return error;

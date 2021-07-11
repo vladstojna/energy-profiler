@@ -197,15 +197,19 @@ namespace tep
     class start_trap : public trap
     {
     private:
+        bool _allow_concurrency;
         sampler_creator _creator;
 
     public:
         template<typename Creator>
-        start_trap(long origword, std::unique_ptr<position_single>&& at, Creator&& callable) :
+        start_trap(long origword, std::unique_ptr<position_single>&& at,
+            bool allow_concurrency, Creator&& callable) :
             trap(origword, std::move(at)),
+            _allow_concurrency(allow_concurrency),
             _creator(std::forward<Creator>(callable))
         {}
 
+        bool allow_concurrency() const;
         std::unique_ptr<async_sampler> create_sampler() const;
     };
 
