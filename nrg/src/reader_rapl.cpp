@@ -1,35 +1,79 @@
 // reader_rapl.cpp
 
-#include <nrg/error.hpp>
+#include <nrg/arch.hpp>
 #include <nrg/reader_rapl.hpp>
+
+#include <cassert>
+#include <iostream>
+
+#ifndef CPU_NONE
+
+#include <nrg/error.hpp>
 #include <nrg/sample.hpp>
 #include <util/concat.hpp>
 
 #include <algorithm>
 #include <array>
-#include <cassert>
 #include <charconv>
 #include <cstdio>
 #include <cstring>
-#include <iostream>
 
-#ifndef CPU_NONE
+#ifdef NRG_X86_64
 #include <sys/stat.h>
 #include <unistd.h>
 #include <fcntl.h>
+#endif // NRG_X86_64
+
 #endif // CPU_NONE
 
 #include "util.hpp"
 
 using namespace nrgprf;
 
+#ifndef CPU_NONE
+
+#if defined(NRG_X86_64)
+
 constexpr static const char EVENT_PKG_PREFIX[] = "package";
 constexpr static const char EVENT_PP0[] = "core";
 constexpr static const char EVENT_PP1[] = "uncore";
 constexpr static const char EVENT_DRAM[] = "dram";
 
+#endif // defined(NRG_X86_64)
+
+#if defined(NRG_X86_64)
+
+namespace nrgprf::loc
+{
+    struct sys {};
+    struct pkg : std::integral_constant<int, 0> {};
+    struct cores : std::integral_constant<int, 1> {};
+    struct uncore : std::integral_constant<int, 2> {};
+    struct nest {};
+    struct mem : std::integral_constant<int, 3> {};
+    struct gpu {};
+}
+
+#elif defined(NRG_PPC64)
+
+namespace nrgprf::loc
+{
+    struct sys : std::integral_constant<int, 0> {};
+    struct pkg : std::integral_constant<int, 1> {};
+    struct cores : std::integral_constant<int, 2> {};
+    struct uncore {};
+    struct nest : std::integral_constant<int, 3> {};
+    struct mem : std::integral_constant<int, 4> {};
+    struct gpu : std::integral_constant<int, 5> {};
+}
+
+#endif // defined(NRG_X86_64)
+
+#endif // CPU_NONE
 
 #ifndef CPU_NONE
+
+#ifdef NRG_X86_64
 
 namespace nrgprf
 {
@@ -133,13 +177,13 @@ result<uint8_t> count_sockets()
 int32_t domain_index_from_name(const char* name)
 {
     if (!strncmp(EVENT_PKG_PREFIX, name, sizeof(EVENT_PKG_PREFIX) - 1))
-        return reader_rapl::package::value;
+        return loc::pkg::value;
     if (!strncmp(EVENT_PP0, name, sizeof(EVENT_PP0) - 1))
-        return reader_rapl::cores::value;
+        return loc::cores::value;
     if (!strncmp(EVENT_PP1, name, sizeof(EVENT_PP1) - 1))
-        return reader_rapl::uncore::value;
+        return loc::uncore::value;
     if (!strncmp(EVENT_DRAM, name, sizeof(EVENT_DRAM) - 1))
-        return reader_rapl::dram::value;
+        return loc::mem::value;
     return -1;
 }
 
@@ -254,39 +298,59 @@ detail::event_data::event_data(file_descriptor&& fd, uint64_t max) :
     curr_max(0)
 {}
 
+#endif // NRG_X86_64
+
 #endif // CPU_NONE
 
 // reader_rapl::impl
 
+#if defined(CPU_NONE) || defined(NRG_PPC64)
+
 class reader_rapl::impl
 {
-#ifndef CPU_NONE
-    std::array<std::array<int32_t, rapl_domains>, max_sockets> _event_map;
-    std::vector<detail::event_data> _active_events;
-#endif // CPU_NONE
-
 public:
-    impl(rapl_mask dmask, socket_mask skt_mask, error& ec);
+    impl(location_mask, socket_mask, error&);
 
-    error read(sample& s) const;
-    error read(sample& s, uint8_t ev_idx) const;
+    error read(sample&) const;
+    error read(sample&, uint8_t) const;
     size_t num_events() const;
 
     template<typename Tag>
-    int32_t event_idx(uint8_t skt) const;
+    int32_t event_idx(uint8_t) const;
 
-    template<typename Tag>
-    result<units_energy> get_energy(const sample& s, uint8_t skt) const;
-
-private:
-#ifndef CPU_NONE
-    error add_event(const char* base, rapl_mask dmask, uint8_t skt);
-#endif // CPU_NONE
+    template<typename Location, typename Type>
+    result<Type> value(const sample& s, uint8_t) const;
 };
 
-#ifdef CPU_NONE
+#elif defined(NRG_X86_64)
 
-reader_rapl::impl::impl(rapl_mask, socket_mask, error&)
+class reader_rapl::impl
+{
+    std::array<std::array<int32_t, rapl_domains>, max_sockets> _event_map;
+    std::vector<detail::event_data> _active_events;
+
+public:
+    impl(location_mask, socket_mask, error&);
+
+    error read(sample&) const;
+    error read(sample&, uint8_t) const;
+    size_t num_events() const;
+
+    template<typename Tag>
+    int32_t event_idx(uint8_t) const;
+
+    template<typename Location, typename Type>
+    result<Type> value(const sample& s, uint8_t) const;
+
+private:
+    error add_event(const char* base, location_mask dmask, uint8_t skt);
+};
+
+#endif
+
+#if defined(CPU_NONE) || defined(NRG_PPC64)
+
+reader_rapl::impl::impl(location_mask, socket_mask, error&)
 {
     std::cout << fileline("No-op CPU reader\n");
 }
@@ -312,15 +376,15 @@ int32_t reader_rapl::impl::event_idx(uint8_t) const
     return -1;
 }
 
-template<typename Tag>
-result<units_energy> reader_rapl::impl::get_energy(const sample&, uint8_t) const
+template<typename Location, typename Type>
+result<Type> reader_rapl::impl::value(const sample&, uint8_t) const
 {
     return error(error_code::NO_EVENT);
 }
 
-#else
+#elif defined(NRG_X86_64)
 
-reader_rapl::impl::impl(rapl_mask dmask, socket_mask skt_mask, error& ec) :
+reader_rapl::impl::impl(location_mask dmask, socket_mask skt_mask, error& ec) :
     _event_map(),
     _active_events()
 {
@@ -388,7 +452,7 @@ error reader_rapl::impl::read(sample& s, uint8_t ev_idx) const
         _active_events[ev_idx].curr_max += _active_events[ev_idx].max;
     }
     _active_events[ev_idx].prev = curr;
-    s.at_cpu(ev_idx) = curr + _active_events[ev_idx].curr_max;
+    s.cpu[ev_idx] = curr + _active_events[ev_idx].curr_max;
     return error::success();
 }
 
@@ -397,24 +461,24 @@ size_t reader_rapl::impl::num_events() const
     return _active_events.size();
 }
 
-template<typename Tag>
+template<typename Location>
 int32_t reader_rapl::impl::event_idx(uint8_t skt) const
 {
-    return _event_map[skt][Tag::value];
+    return _event_map[skt][Location::value];
 }
 
-template<typename Tag>
-result<units_energy> reader_rapl::impl::get_energy(const sample& s, uint8_t skt) const
+template<typename Location, typename Type>
+result<Type> reader_rapl::impl::value(const sample& s, uint8_t skt) const
 {
-    if (event_idx<Tag>(skt) < 0)
+    if (event_idx<Location>(skt) < 0)
         return error(error_code::NO_EVENT);
-    result<sample::value_type> result = s.at_cpu(event_idx<Tag>(skt));
+    auto result = s.cpu[event_idx<Location>(skt)];
     if (!result)
-        return std::move(result.error());
-    return result.value();
+        return error(error_code::NO_EVENT);
+    return result;
 }
 
-error reader_rapl::impl::add_event(const char* base, rapl_mask dmask, uint8_t skt)
+error reader_rapl::impl::add_event(const char* base, location_mask dmask, uint8_t skt)
 {
     result<int32_t> didx = get_domain_idx(base);
     if (!didx)
@@ -435,20 +499,20 @@ error reader_rapl::impl::add_event(const char* base, rapl_mask dmask, uint8_t sk
 
 // reader_rapl
 
-reader_rapl::reader_rapl(rapl_mask dmask, socket_mask skt_mask, error& ec) :
+reader_rapl::reader_rapl(location_mask dmask, socket_mask skt_mask, error& ec) :
     _impl(std::make_unique<reader_rapl::impl>(dmask, skt_mask, ec))
 {}
 
-reader_rapl::reader_rapl(rapl_mask dmask, error& ec) :
+reader_rapl::reader_rapl(location_mask dmask, error& ec) :
     reader_rapl(dmask, socket_mask(~0x0), ec)
 {}
 
 reader_rapl::reader_rapl(socket_mask skt_mask, error& ec) :
-    reader_rapl(rapl_mask(~0x0), skt_mask, ec)
+    reader_rapl(location_mask(~0x0), skt_mask, ec)
 {}
 
 reader_rapl::reader_rapl(error& ec) :
-    reader_rapl(rapl_mask(~0x0), socket_mask(~0x0), ec)
+    reader_rapl(location_mask(~0x0), socket_mask(~0x0), ec)
 {}
 
 reader_rapl::reader_rapl(const reader_rapl& other) :
@@ -464,7 +528,6 @@ reader_rapl& reader_rapl::operator=(const reader_rapl& other)
 reader_rapl::reader_rapl(reader_rapl&& other) = default;
 reader_rapl& reader_rapl::operator=(reader_rapl && other) = default;
 reader_rapl::~reader_rapl() = default;
-
 
 error reader_rapl::read(sample & s) const
 {
@@ -487,21 +550,21 @@ int32_t reader_rapl::event_idx(uint8_t skt) const
     return pimpl()->event_idx<Tag>(skt);
 }
 
-template<typename Tag>
-result<units_energy> reader_rapl::get_energy(const sample & s, uint8_t skt) const
+template<typename Location, typename Type>
+result<Type> reader_rapl::value(const sample & s, uint8_t skt) const
 {
-    return pimpl()->get_energy<Tag>(s, skt);
+    return pimpl()->value<Location, Type>(s, skt);
 }
 
-template<typename Tag>
-std::vector<reader_rapl::skt_energy> reader_rapl::get_energy(const sample & s) const
+template<typename Location, typename Type>
+std::vector<std::pair<uint32_t, Type>> reader_rapl::values(const sample & s) const
 {
-    std::vector<reader_rapl::skt_energy> retval;
+    std::vector<std::pair<uint32_t, Type>> retval;
     for (uint32_t skt = 0; skt < max_sockets; skt++)
     {
-        result<units_energy> nrg = get_energy<Tag>(s, skt);
-        if (nrg)
-            retval.push_back({ skt, std::move(nrg.value()) });
+        result<Type> val = value<Location, Type>(s, skt);
+        if (val)
+            retval.push_back({ skt, std::move(val.value()) });
     };
     return retval;
 }
@@ -518,52 +581,103 @@ reader_rapl::impl* reader_rapl::pimpl()
     return _impl.get();
 }
 
+// template specializations
+
+#ifndef CPU_NONE
+
+#define SPECIALIZE_VALUE_NOOP(location, type) \
+template<> \
+result<type> reader_rapl::impl::value<loc::location>(const sample&, uint8_t) const \
+{ \
+    return error(error_code::NOT_IMPL); \
+}
+
+#define SPECIALIZE_EVENT_IDX_NOOP(location) \
+template<> \
+int32_t reader_rapl::impl::event_idx<loc::location>(uint8_t) const \
+{ \
+    return -1; \
+}
+
+#define SPECIALIZE_VALUE_NOOP_ALL_LOCS(type) \
+    SPECIALIZE_VALUE_NOOP(sys, type) \
+    SPECIALIZE_VALUE_NOOP(pkg, type) \
+    SPECIALIZE_VALUE_NOOP(cores, type) \
+    SPECIALIZE_VALUE_NOOP(uncore, type) \
+    SPECIALIZE_VALUE_NOOP(nest, type) \
+    SPECIALIZE_VALUE_NOOP(mem, type) \
+    SPECIALIZE_VALUE_NOOP(gpu, type)
+
+#if defined(NRG_X86_64)
+
+// SPECIALIZE_EVENT_IDX_NOOP(sys)
+// SPECIALIZE_EVENT_IDX_NOOP(nest)
+// SPECIALIZE_EVENT_IDX_NOOP(gpu)
+// SPECIALIZE_VALUE_NOOP(sys, units_energy)
+// SPECIALIZE_VALUE_NOOP(nest, units_energy)
+// SPECIALIZE_VALUE_NOOP(gpu, units_energy)
+// SPECIALIZE_VALUE_NOOP_ALL_LOCS(units_power)
+// SPECIALIZE_VALUE_NOOP_ALL_LOCS(units_time)
+
+#elif defined(NRG_PPC64)
+
+// SPECIALIZE_EVENT_IDX_NOOP(uncore)
+// SPECIALIZE_VALUE_NOOP(uncore, units_power)
+// SPECIALIZE_VALUE_NOOP(uncore, units_time)
+// SPECIALIZE_VALUE_NOOP_ALL_LOCS(units_energy)
+
+#endif // defined(NRG_X86_64)
+#endif // CPU_NONE
+
 // explicit instantiation
 
-template
-int32_t
-reader_rapl::event_idx<reader_rapl::package>(uint8_t skt) const;
+#define INSTANTIATE_EVENT_IDX(location) \
+    template \
+    int32_t reader_rapl::event_idx<loc::location>(uint8_t skt) const
 
-template
-int32_t
-reader_rapl::event_idx<reader_rapl::cores>(uint8_t skt) const;
+#define INSTANTIATE_VALUE(location, type) \
+    template \
+    result<type> \
+    reader_rapl::value<loc::location>(const sample& s, uint8_t skt) const
 
-template
-int32_t
-reader_rapl::event_idx<reader_rapl::uncore>(uint8_t skt) const;
+#define INSTANTIATE_VALUES(location, type) \
+    template \
+    std::vector<std::pair<uint32_t, type>> \
+    reader_rapl::values<loc::location>(const sample& s) const
 
-template
-int32_t
-reader_rapl::event_idx<reader_rapl::dram>(uint8_t skt) const;
+#if defined NRG_X86_64
 
-template
-result<units_energy>
-reader_rapl::get_energy<reader_rapl::package>(const sample & s, uint8_t skt) const;
+#define INSTANTIATE_TYPES(macro, location) \
+    macro(location, units_energy)
 
-template
-result<units_energy>
-reader_rapl::get_energy<reader_rapl::cores>(const sample & s, uint8_t skt) const;
+#define INSTANTIATE_ALL(macro) \
+    macro(pkg); \
+    macro(cores); \
+    macro(uncore); \
+    macro(mem)
 
-template
-result<units_energy>
-reader_rapl::get_energy<reader_rapl::uncore>(const sample & s, uint8_t skt) const;
+#elif defined NRG_PPC64
 
-template
-result<units_energy>
-reader_rapl::get_energy<reader_rapl::dram>(const sample & s, uint8_t skt) const;
+#define INSTANTIATE_TYPES(macro, location) \
+    macro(location, units_power); \
+    macro(location, units_time)
 
-template
-std::vector<reader_rapl::skt_energy>
-reader_rapl::get_energy<reader_rapl::package>(const sample & s) const;
+#define INSTANTIATE_ALL(macro) \
+    macro(sys); \
+    macro(pkg); \
+    macro(cores); \
+    macro(nest); \
+    macro(mem); \
+    macro(gpu)
 
-template
-std::vector<reader_rapl::skt_energy>
-reader_rapl::get_energy<reader_rapl::cores>(const sample & s) const;
+#endif
 
-template
-std::vector<reader_rapl::skt_energy>
-reader_rapl::get_energy<reader_rapl::uncore>(const sample & s) const;
+#define INSTANTIATE_VALUE_ALL(location) \
+    INSTANTIATE_TYPES(INSTANTIATE_VALUE, location)
 
-template
-std::vector<reader_rapl::skt_energy>
-reader_rapl::get_energy<reader_rapl::dram>(const sample & s) const;
+#define INSTANTIATE_VALUES_ALL(location) \
+    INSTANTIATE_TYPES(INSTANTIATE_VALUES, location)
+
+INSTANTIATE_ALL(INSTANTIATE_EVENT_IDX);
+INSTANTIATE_ALL(INSTANTIATE_VALUE_ALL);
+INSTANTIATE_ALL(INSTANTIATE_VALUES_ALL);
