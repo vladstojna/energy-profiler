@@ -3,47 +3,64 @@
 #pragma once
 
 #include <nrg/constants.hpp>
-#include <nrg/types.hpp>
 
 #include <array>
+#include <cstdint>
+#include <chrono>
 
 namespace nrgprf
 {
 
     class error;
     class reader;
+    class reader_rapl;
+    class reader_gpu;
+
+#if defined(NRG_X86_64)
+
+#define NRG_SAMPLE_DECLARE_MEMBERS \
+    std::array<uint64_t, max_cpu_events> cpu; \
+    std::array<uint32_t, max_gpu_events> gpu
+
+#elif defined(NRG_PPC64)
+
+#define NRG_SAMPLE_DECLARE_MEMBERS \
+    std::array<uint64_t, max_cpu_events> timestamps; \
+    std::array<uint16_t, max_cpu_events> cpu; \
+    std::array<uint32_t, max_gpu_events> gpu
+
+#endif // defined(NRG_X86_64)
 
     class sample
     {
     public:
-        using value_type = units_energy::rep;
+        using value_type = uint64_t;
+
+        friend reader_rapl;
+        friend reader_gpu;
 
     private:
-        std::array<value_type, max_cpu_events + max_gpu_events> _values;
+        NRG_SAMPLE_DECLARE_MEMBERS;
 
     public:
-        sample(const reader&, error&);
-
-        value_type& at_cpu(size_t idx);
-        value_type& at_gpu(size_t idx);
-
-        result<value_type> at_cpu(size_t idx) const;
-        result<value_type> at_gpu(size_t idx) const;
+        sample();
+        sample(const reader& reader, error& e);
 
         bool operator==(const sample& rhs) const;
         bool operator!=(const sample& rhs) const;
 
         sample operator+(const sample& rhs) const;
         sample operator-(const sample& rhs) const;
-        sample operator/(sample::value_type rhs) const;
-        sample operator*(sample::value_type rhs) const;
+        sample operator/(value_type rhs) const;
+        sample operator*(value_type rhs) const;
 
         sample& operator+=(const sample& rhs);
         sample& operator-=(const sample& rhs);
-        sample& operator*=(sample::value_type rhs);
-        sample& operator/=(sample::value_type rhs);
-    };
+        sample& operator*=(value_type rhs);
+        sample& operator/=(value_type rhs);
 
+        explicit operator bool() const;
+    };
 
     class timed_sample
     {
@@ -56,10 +73,8 @@ namespace nrgprf
         sample _sample;
 
     public:
+        timed_sample();
         timed_sample(const reader&, error&);
-
-        sample& smp();
-        const sample& smp() const;
 
         const time_point& timepoint() const;
 
@@ -67,6 +82,9 @@ namespace nrgprf
         bool operator!=(const timed_sample& rhs) const;
 
         duration operator-(const timed_sample& rhs) const;
+
+        operator const sample& () const;
+        operator sample& ();
     };
 
 }
