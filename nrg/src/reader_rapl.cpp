@@ -361,6 +361,44 @@ namespace occ
         quad = 0x0100
     };
 
+    bool assert_sensor_type(sensor_type type)
+    {
+        switch (type)
+        {
+        case sensor_type::generic:
+        case sensor_type::current:
+        case sensor_type::voltage:
+        case sensor_type::temp:
+        case sensor_type::util:
+        case sensor_type::time:
+        case sensor_type::freq:
+        case sensor_type::power:
+        case sensor_type::perf:
+            return true;
+        }
+        assert(false);
+        return false;
+    }
+
+    bool assert_sensor_location(sensor_loc loc)
+    {
+        switch (loc)
+        {
+        case sensor_loc::system:
+        case sensor_loc::proc:
+        case sensor_loc::partition:
+        case sensor_loc::memory:
+        case sensor_loc::vrm:
+        case sensor_loc::occ:
+        case sensor_loc::core:
+        case sensor_loc::gpu:
+        case sensor_loc::quad:
+            return true;
+        }
+        assert(false);
+        return false;
+    }
+
     std::ostream& operator<<(std::ostream& os, sensor_type type)
     {
         using cast_type = std::underlying_type_t<sensor_type>;
@@ -392,6 +430,10 @@ namespace occ
             break;
         case sensor_type::perf:
             os << "perf[" << static_cast<cast_type>(sensor_type::perf) << "]";
+            break;
+        default:
+            assert(false);
+            os << "unknown sensor type";
             break;
         }
         return os;
@@ -428,6 +470,10 @@ namespace occ
             break;
         case sensor_loc::quad:
             os << "quad[" << static_cast<cast_type>(sensor_loc::quad) << "]";
+            break;
+        default:
+            assert(false);
+            os << "unknown sensor location";
             break;
         }
         return os;
@@ -677,20 +723,27 @@ namespace occ
         curr += retrieve_field(&entry.structure_version, curr);
         curr += retrieve_field(&entry.reading_offset, curr);
         retrieve_field(&entry.specific_info1, curr);
+
+        // null-terminate name and units fields, just in case
+        entry.name[sizeof(entry.name) - 1] = '\0';
+        entry.units[sizeof(entry.units) - 1] = '\0';
         return is;
     }
 
-    bool assert_names_entry(const sensor_names_entry& names, std::string& msg)
+    bool assert_names_entry(const sensor_names_entry& entry, std::string& msg)
     {
-        assert(names.structure_version == 1 || names.structure_version == 2);
-        switch (names.structure_version)
-        {
-        case 1:
-        case 2:
+        assert(entry.structure_version == 1 || entry.structure_version == 2);
+        assert(assert_sensor_location(entry.location));
+        assert(assert_sensor_type(entry.type));
+        if (!assert_sensor_location(entry.location))
+            msg = "Unknown sensor location";
+        else if (!assert_sensor_type(entry.type))
+            msg = "Unknown sensor type";
+        else if (entry.structure_version != 1 && entry.structure_version != 2)
+            msg = cmmn::concat("Unsupported structure version, expected 1 or 2, found ",
+                std::to_string(+entry.structure_version));
+        else
             return true;
-        }
-        msg = cmmn::concat("Unsupported structure version, expected 1 or 2, found ",
-            std::to_string(+names.structure_version));
         return false;
     }
 
@@ -780,6 +833,33 @@ namespace occ
             return true;
         }
         assert(entry.structure_version == 1 || entry.structure_version == 2);
+        return false;
+    }
+
+    bool assert_sensor_structure(
+        const sensor_structure& sstruct,
+        const sensor_names_entry& nentry,
+        std::string& msg)
+    {
+        bool result = false;
+        switch (nentry.structure_version)
+        {
+        case 1:
+            result = sstruct.sv1.gsid == nentry.gsid;
+            if (!result)
+                msg = cmmn::concat("Sensor GSID are different between readings and names entry,"
+                    " found ", std::to_string(sstruct.sv1.gsid),
+                    " and ", std::to_string(nentry.gsid));
+            return result;
+        case 2:
+            result = sstruct.sv2.gsid != nentry.gsid;
+            if (!result)
+                msg = cmmn::concat("Sensor GSID are different between readings and names entry,"
+                    " found ", std::to_string(sstruct.sv2.gsid),
+                    " and ", std::to_string(nentry.gsid));
+            return result;
+        }
+        assert(false);
         return false;
     }
 
@@ -964,6 +1044,10 @@ public:
 private:
     error get_header(uint32_t occ_num, occ::sensor_data_header_block& hb);
     error get_names_entries(uint32_t occ_num, std::vector<occ::sensor_names_entry>& entries);
+    error get_sensor_buffers(uint32_t occ_num, occ::sensor_buffers& buffs);
+    error get_sensor_structs(const occ::sensor_buffers& buffs,
+        const std::vector<occ::sensor_names_entry>& entries,
+        std::vector<occ::sensor_structure>& structs);
 };
 
 #endif
@@ -1149,8 +1233,18 @@ reader_rapl::impl::impl(location_mask lmask, socket_mask smask, error& err) :
         if (err = get_header(occ_num, hb))
             return;
 
-        std::vector<occ::sensor_names_entry> names(hb.sensor_count, occ::sensor_names_entry{});
+        std::vector<occ::sensor_names_entry> entries(hb.sensor_count, occ::sensor_names_entry{});
+        if (err = get_names_entries(occ_num, entries))
+            return;
 
+        occ::sensor_buffers sbuffs{};
+        if (err = get_sensor_buffers(occ_num, sbuffs))
+            return;
+
+        std::vector<occ::sensor_structure> structs;
+        structs.reserve(entries.size());
+        if (err = get_sensor_structs(sbuffs, entries, structs))
+            return;
     }
 }
 
@@ -1218,6 +1312,62 @@ error reader_rapl::impl::get_names_entries(
     }
     return error::success();
 }
+
+error reader_rapl::impl::get_sensor_buffers(uint32_t occ_num, occ::sensor_buffers& buffs)
+{
+    assert(occ_num < occ::max_count);
+    size_t occ_offset = occ_num * occ::sensor_data_block_size;
+    std::string occ_num_str = std::to_string(occ_num);
+
+    _ifs->seekg(occ_offset + occ::sensor_ping_buffer_offset);
+    if (!*_ifs)
+        return { error_code::SYSTEM, system_error_str(
+            cmmn::concat("Error seeking to OCC ", occ_num_str, " sensor names")) };
+
+    if (!(*_ifs >> buffs))
+    {
+        std::string msg;
+        if (_ifs->eof())
+            msg = cmmn::concat("Reached end-of-stream before"
+                " reading sensor buffers of OCC ", occ_num_str);
+        else if (_ifs->bad())
+            msg = system_error_str(cmmn::concat("Error reading sensor buffers of OCC ",
+                occ_num_str));
+        else
+            msg = cmmn::concat("Error reading sensor buffers of OCC ", occ_num_str);
+        return { error_code::SYSTEM, std::move(msg) };
+    }
+    return error::success();
+}
+
+
+error reader_rapl::impl::get_sensor_structs(const occ::sensor_buffers& buffs,
+    const std::vector<occ::sensor_names_entry>& entries,
+    std::vector<occ::sensor_structure>& structs)
+{
+    for (const auto& entry : entries)
+    {
+        occ::sensor_structure sstruct;
+        if (!occ::get_sensor_record(buffs, entry, sstruct))
+            return { error_code::FORMAT_ERROR, "Both ping and pong buffers are not valid" };
+        std::cout << entry << "\n";
+        switch (entry.structure_version)
+        {
+        case 1:
+            std::cout << "  " << sstruct.sv1 << "\n";
+            break;
+        case 2:
+            std::cout << "  " << sstruct.sv2 << "\n";
+            break;
+        default:
+            assert(false);
+            return { error_code::FORMAT_ERROR, "Unsupported sensor structure version found" };
+        }
+        structs.push_back(sstruct);
+    }
+    return error::success();
+}
+
 
 error reader_rapl::impl::read(sample&) const
 {
