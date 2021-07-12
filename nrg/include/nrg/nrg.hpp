@@ -2,6 +2,7 @@
 
 #pragma once
 
+#include <nrg/arch.hpp>
 #include <nrg/constants.hpp>
 #include <nrg/error.hpp>
 #include <nrg/hybrid_reader.hpp>
