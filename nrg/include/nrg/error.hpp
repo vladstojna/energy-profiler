@@ -25,6 +25,7 @@ namespace nrgprf
         NO_SOCKETS,
         TOO_MANY_SOCKETS,
         TOO_MANY_DEVICES,
+        FORMAT_ERROR,
         INVALID_DOMAIN_NAME,
         UNKNOWN_ERROR,
     };
