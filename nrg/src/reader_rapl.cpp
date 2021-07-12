@@ -17,12 +17,18 @@
 #include <charconv>
 #include <cstdio>
 #include <cstring>
+#include <fstream>
 
 #ifdef NRG_X86_64
 #include <sys/stat.h>
 #include <unistd.h>
 #include <fcntl.h>
 #endif // NRG_X86_64
+#ifdef NRG_PPC64
+#include <cmath>
+#include <sstream>
+#include <iomanip>
+#endif
 
 #endif // CPU_NONE
 
@@ -32,16 +38,7 @@ using namespace nrgprf;
 
 #ifndef CPU_NONE
 
-#if defined(NRG_X86_64)
-
-constexpr static const char EVENT_PKG_PREFIX[] = "package";
-constexpr static const char EVENT_PP0[] = "core";
-constexpr static const char EVENT_PP1[] = "uncore";
-constexpr static const char EVENT_DRAM[] = "dram";
-
-#endif // defined(NRG_X86_64)
-
-#if defined(NRG_X86_64)
+#if defined NRG_X86_64
 
 namespace nrgprf::loc
 {
@@ -54,7 +51,7 @@ namespace nrgprf::loc
     struct gpu {};
 }
 
-#elif defined(NRG_PPC64)
+#elif defined NRG_PPC64
 
 namespace nrgprf::loc
 {
@@ -67,13 +64,62 @@ namespace nrgprf::loc
     struct gpu : std::integral_constant<int, 5> {};
 }
 
-#endif // defined(NRG_X86_64)
+#endif // defined NRG_X86_64
 
 #endif // CPU_NONE
 
 #ifndef CPU_NONE
 
-#ifdef NRG_X86_64
+static std::string system_error_str(std::string_view prefix)
+{
+    char buffer[256];
+    return cmmn::concat(prefix, ": ", strerror_r(errno, buffer, sizeof(buffer)));
+}
+
+static result<uint8_t> count_sockets()
+{
+    char filename[128];
+    bool pkg_found[max_sockets]{ false };
+    uint8_t ret = 0;
+    for (int i = 0; ; i++)
+    {
+        uint32_t pkg;
+        snprintf(filename, sizeof(filename),
+            "/sys/devices/system/cpu/cpu%d/topology/physical_package_id", i);
+
+        std::ifstream ifs(filename, std::ios::in);
+        if (!ifs)
+        {
+            // file does not exist
+            if (errno == ENOENT)
+                break;
+            return error(error_code::SYSTEM, system_error_str(
+                cmmn::concat("Error opening ", filename)));
+        }
+        ifs >> pkg;
+        if (!ifs)
+            return error(error_code::SYSTEM, system_error_str("Error reading package"));
+        if (pkg >= max_sockets)
+            return error(error_code::TOO_MANY_SOCKETS,
+                cmmn::concat("Too many sockets: maximum of ", std::to_string(nrgprf::max_sockets),
+                    ", found ", std::to_string(pkg)));
+        if (!pkg_found[pkg])
+        {
+            pkg_found[pkg] = true;
+            ret++;
+        }
+    };
+    if (ret == 0)
+        return error(error_code::NO_SOCKETS, "No sockets found");
+    return ret;
+}
+
+#if defined NRG_X86_64
+
+constexpr static const char EVENT_PKG_PREFIX[] = "package";
+constexpr static const char EVENT_PP0[] = "core";
+constexpr static const char EVENT_PP1[] = "uncore";
+constexpr static const char EVENT_DRAM[] = "dram";
 
 namespace nrgprf
 {
@@ -109,14 +155,6 @@ namespace nrgprf
 
 // begin helper functions
 
-std::string system_error_str(const char* prefix)
-{
-    char buffer[256];
-    return std::string(prefix)
-        .append(": ")
-        .append(strerror_r(errno, buffer, 256));
-}
-
 
 ssize_t read_buff(int fd, char* buffer, size_t buffsz)
 {
@@ -139,38 +177,6 @@ int read_uint64(int fd, uint64_t* res)
     if (buffer != end && errno != ERANGE)
         return 0;
     return -1;
-}
-
-
-result<uint8_t> count_sockets()
-{
-    char filename[128];
-    bool pkg_found[max_sockets]{ false };
-    uint8_t ret = 0;
-    for (int i = 0; ; i++)
-    {
-        uint64_t pkg;
-        snprintf(filename, sizeof(filename),
-            "/sys/devices/system/cpu/cpu%d/topology/physical_package_id", i);
-        if (access(filename, F_OK) == -1)
-            break;
-        result<detail::file_descriptor> filed = detail::file_descriptor::create(filename);
-        if (!filed)
-            return std::move(filed.error());
-        if (read_uint64(filed.value().value, &pkg) < 0)
-            return error(error_code::SYSTEM, system_error_str(filename));
-        if (pkg >= max_sockets)
-            return error(error_code::TOO_MANY_SOCKETS,
-                "Too many sockets (a maximum of 8 is supported)");
-        if (!pkg_found[pkg])
-        {
-            pkg_found[pkg] = true;
-            ret++;
-        }
-    };
-    if (ret == 0)
-        return error(error_code::NO_SOCKETS, "no sockets found");
-    return ret;
 }
 
 
@@ -298,13 +304,601 @@ detail::event_data::event_data(file_descriptor&& fd, uint64_t max) :
     curr_max(0)
 {}
 
-#endif // NRG_X86_64
+#elif defined NRG_PPC64
+
+#ifdef NRG_OCC_USE_DUMMY_FILE
+constexpr const char sensors_file[] = NRG_OCC_USE_DUMMY_FILE;
+#else
+constexpr const char sensors_file[] = "/sys/firmware/opal/exports/occ_inband_sensors";
+#endif
+
+namespace occ
+{
+    // Specification reference
+    // https://raw.githubusercontent.com/open-power/docs/master/occ/OCC_P9_FW_Interfaces.pdf
+
+    constexpr const size_t max_count = 8;
+    constexpr const size_t bar2_offset = 0x580000;
+    constexpr const size_t sensor_data_block_size = 150 * 1024; // 150 kB
+
+    constexpr const size_t sensor_header_version = 1;
+    constexpr const size_t sensor_data_header_block_offset = 0;
+    constexpr const size_t sensor_data_header_block_size = 1024; // 1 kB
+    constexpr const size_t sensor_names_offset = 0x400;
+    constexpr const size_t sensor_names_size = 50 * 1024; // 50 kB
+
+    constexpr const size_t sensor_readings_size = 40 * 1024; // 40 kB
+    constexpr const size_t sensor_buffer_gap = 4096; // 4 kB
+
+    constexpr const size_t sensor_ping_buffer_offset = 0xdc00;
+    constexpr const size_t sensor_ping_buffer_size = sensor_readings_size;
+    constexpr const size_t sensor_pong_buffer_offset = 0x18c00;
+    constexpr const size_t sensor_pong_buffer_size = sensor_ping_buffer_size;
+
+    enum class sensor_type : uint16_t
+    {
+        generic = 0x0001,
+        current = 0x0002,
+        voltage = 0x0004,
+        temp = 0x0008,
+        util = 0x0010,
+        time = 0x0020,
+        freq = 0x0040,
+        power = 0x0080,
+        perf = 0x0200
+    };
+
+    enum class sensor_loc : uint16_t
+    {
+        system = 0x0001,
+        proc = 0x0002,
+        partition = 0x0004,
+        memory = 0x0008,
+        vrm = 0x0010,
+        occ = 0x0020,
+        core = 0x0040,
+        gpu = 0x0080,
+        quad = 0x0100
+    };
+
+    std::ostream& operator<<(std::ostream& os, sensor_type type)
+    {
+        using cast_type = std::underlying_type_t<sensor_type>;
+        switch (type)
+        {
+        case sensor_type::generic:
+            os << "generic[" << static_cast<cast_type>(sensor_type::generic) << "]";
+            break;
+        case sensor_type::current:
+            os << "current[" << static_cast<cast_type>(sensor_type::current) << "]";
+            break;
+        case sensor_type::voltage:
+            os << "voltage[" << static_cast<cast_type>(sensor_type::voltage) << "]";
+            break;
+        case sensor_type::temp:
+            os << "temp[" << static_cast<cast_type>(sensor_type::temp) << "]";
+            break;
+        case sensor_type::util:
+            os << "util[" << static_cast<cast_type>(sensor_type::util) << "]";
+            break;
+        case sensor_type::time:
+            os << "time[" << static_cast<cast_type>(sensor_type::time) << "]";
+            break;
+        case sensor_type::freq:
+            os << "freq[" << static_cast<cast_type>(sensor_type::freq) << "]";
+            break;
+        case sensor_type::power:
+            os << "power[" << static_cast<cast_type>(sensor_type::power) << "]";
+            break;
+        case sensor_type::perf:
+            os << "perf[" << static_cast<cast_type>(sensor_type::perf) << "]";
+            break;
+        }
+        return os;
+    }
+
+    std::ostream& operator<<(std::ostream& os, sensor_loc loc)
+    {
+        using cast_type = std::underlying_type_t<sensor_type>;
+        switch (loc)
+        {
+        case sensor_loc::system:
+            os << "system[" << static_cast<cast_type>(sensor_loc::system) << "]";
+            break;
+        case sensor_loc::proc:
+            os << "proc[" << static_cast<cast_type>(sensor_loc::proc) << "]";
+            break;
+        case sensor_loc::partition:
+            os << "partition[" << static_cast<cast_type>(sensor_loc::partition) << "]";
+            break;
+        case sensor_loc::memory:
+            os << "memory[" << static_cast<cast_type>(sensor_loc::memory) << "]";
+            break;
+        case sensor_loc::vrm:
+            os << "vrm[" << static_cast<cast_type>(sensor_loc::vrm) << "]";
+            break;
+        case sensor_loc::occ:
+            os << "occ[" << static_cast<cast_type>(sensor_loc::occ) << "]";
+            break;
+        case sensor_loc::core:
+            os << "core[" << static_cast<cast_type>(sensor_loc::core) << "]";
+            break;
+        case sensor_loc::gpu:
+            os << "gpu[" << static_cast<cast_type>(sensor_loc::gpu) << "]";
+            break;
+        case sensor_loc::quad:
+            os << "quad[" << static_cast<cast_type>(sensor_loc::quad) << "]";
+            break;
+        }
+        return os;
+    }
+
+    struct sensor_data_header_block
+    {
+        constexpr static const size_t size = 24;
+        uint8_t valid;
+        uint8_t header_version;
+        uint16_t sensor_count;
+        uint8_t readings_version;
+        uint32_t names_offset;
+        uint8_t names_version;
+        uint8_t name_length;
+        uint32_t readings_ping_buffer_offset;
+        uint32_t readings_pong_buffer_offset;
+    };
+
+    struct sensor_names_entry
+    {
+        constexpr static const size_t size = 48;
+        constexpr static const size_t name_sz = 16;
+        constexpr static const size_t unit_sz = 4;
+        char name[name_sz];
+        char units[unit_sz];
+        uint16_t gsid;
+        double freq;
+        double scaling_factor;
+        sensor_type type;
+        sensor_loc location;
+        uint8_t structure_version;
+        uint32_t reading_offset;
+        uint8_t specific_info1;
+    };
+
+    struct sensor_structure_common
+    {
+        using time_point = std::chrono::time_point<std::chrono::high_resolution_clock>;
+        uint16_t gsid;
+        uint64_t timestamp;
+    };
+
+    struct sensor_structure_v1 : sensor_structure_common
+    {
+        constexpr static const size_t size = 48;
+        uint16_t sample;
+        uint16_t sample_min;
+        uint16_t sample_max;
+        uint16_t csm_sample_min;
+        uint16_t csm_sample_max;
+        uint16_t profiler_sample_min;
+        uint16_t profiler_sample_max;
+        uint16_t job_s_sample_min;
+        uint16_t job_s_sample_max;
+        uint64_t accumulator;
+        uint32_t update_tag;
+    };
+
+    struct sensor_structure_v1_sample
+    {
+        constexpr static const size_t size = 10;
+        uint64_t timestamp;
+        uint16_t sample;
+    };
+
+    struct sensor_structure_v2 : sensor_structure_common
+    {
+        constexpr static const size_t size = 24;
+        uint64_t accumulator;
+        uint8_t sample;
+    };
+
+    union sensor_structure
+    {
+        sensor_structure_v1 sv1;
+        sensor_structure_v2 sv2;
+    };
+
+    struct sensor_readings_buffer
+    {
+        constexpr static const size_t size = sensor_readings_size;
+        constexpr static const size_t pad = 8;
+        uint8_t valid;
+        uint8_t readings[size - pad]; // valid byte and 7 bytes reserved
+    };
+
+    struct sensor_buffers
+    {
+        constexpr static const size_t size = sensor_pong_buffer_offset -
+            sensor_ping_buffer_offset + sensor_pong_buffer_size;
+
+        static_assert(size ==
+            sensor_ping_buffer_size + sensor_pong_buffer_size + sensor_buffer_gap);
+
+        sensor_readings_buffer ping;
+        sensor_readings_buffer pong;
+    };
+
+    namespace detail
+    {
+        template<typename T>
+        std::string to_hex_string(const T& arg)
+        {
+            std::ostringstream ss;
+            ss << std::hex << arg;
+            return ss.str();
+        }
+
+        static double to_double(uint32_t val)
+        {
+            return (val >> 8) * std::pow(10, static_cast<int8_t>(val & 0xff));
+        }
+
+        static void copy_readings_buffer(
+            const std::istream::char_type* from,
+            sensor_readings_buffer& into)
+        {
+            into.valid = *from;
+            std::memcpy(into.readings, from + 8, sizeof(into.readings)); // 7 bytes reserved
+        }
+
+        template<typename T, size_t sz = sizeof(T)>
+        static size_t retrieve_field(T* into, const void* from)
+        {
+            if constexpr (sz > 1)
+            {
+                std::memcpy(into, from, sz);
+                if constexpr (sz == 2)
+                    *into = be16toh(*into);
+                else if constexpr (sz == 4)
+                    *into = be32toh(*into);
+                else if constexpr (sz == 8)
+                    *into = be64toh(*into);
+            }
+            else
+                *into = *static_cast<const T*>(from);
+            return sz;
+        }
+
+        template<size_t sz = sizeof(sensor_type)>
+        static size_t retrieve_field(sensor_type* into, const void* from)
+        {
+            std::memcpy(into, from, sz);
+            *into = static_cast<sensor_type>(
+                be16toh(static_cast<std::underlying_type_t<sensor_type>>(*into)));
+            return sz;
+        }
+
+        template<size_t sz = sizeof(sensor_loc)>
+        static size_t retrieve_field(sensor_loc* into, const void* from)
+        {
+            std::memcpy(into, from, sz);
+            *into = static_cast<sensor_loc>(
+                be16toh(static_cast<std::underlying_type_t<sensor_loc>>(*into)));
+            return sz;
+        }
+
+        template<size_t sz>
+        static size_t retrieve_field(char* into, const void* from)
+        {
+            if constexpr (sz > 1)
+                std::memcpy(into, from, sz);
+            else
+                *into = *static_cast<const char*>(from);
+            return sz;
+        }
+    }
+
+    std::istream& operator>>(std::istream& is, sensor_data_header_block& hb)
+    {
+        using namespace detail;
+        std::istream::char_type buffer[sensor_data_header_block::size];
+        std::istream::char_type* curr = buffer;
+        if (!is.read(buffer, sizeof(buffer)))
+            return is;
+
+        curr += retrieve_field(&hb.valid, curr);
+        curr += retrieve_field(&hb.header_version, curr);
+        curr += retrieve_field(&hb.sensor_count, curr);
+        curr += retrieve_field(&hb.readings_version, curr);
+        curr += 3; // reserved
+        curr += retrieve_field(&hb.names_offset, curr);
+        curr += retrieve_field(&hb.names_version, curr);
+        curr += retrieve_field(&hb.name_length, curr);
+        curr += 2; // reserved
+        curr += retrieve_field(&hb.readings_ping_buffer_offset, curr);
+        retrieve_field(&hb.readings_pong_buffer_offset, curr);
+        return is;
+    }
+
+    bool assert_header_block(const sensor_data_header_block& hb, std::string& msg)
+    {
+        assert(hb.valid);
+        assert(hb.header_version == sensor_header_version);
+        assert(hb.names_offset == sensor_names_offset);
+        assert(hb.readings_ping_buffer_offset == sensor_ping_buffer_offset);
+        assert(hb.readings_pong_buffer_offset == sensor_pong_buffer_offset);
+        if (!hb.valid)
+            msg = cmmn::concat("Header block not valid; static data not ready for consumption");
+
+        else if (hb.header_version != sensor_header_version)
+            msg = cmmn::concat("Unsupported header version, expected ",
+                std::to_string(sensor_header_version), ", found ",
+                std::to_string(+hb.header_version));
+
+        else if (hb.names_offset != sensor_names_offset)
+            msg = cmmn::concat("Incorrect names offset, expected 0x",
+                detail::to_hex_string(sensor_names_offset), ", found 0x",
+                detail::to_hex_string(hb.names_offset));
+
+        else if (hb.readings_ping_buffer_offset != sensor_ping_buffer_offset)
+            msg = cmmn::concat("Incorrect ping buffer offset, expected 0x",
+                detail::to_hex_string(sensor_ping_buffer_offset), ", found 0x",
+                detail::to_hex_string(hb.readings_ping_buffer_offset));
+
+        else if (hb.readings_pong_buffer_offset != sensor_pong_buffer_offset)
+            msg = cmmn::concat("Incorrect pong buffer offset, expected 0x",
+                detail::to_hex_string(sensor_pong_buffer_offset), ", found 0x",
+                detail::to_hex_string(hb.readings_pong_buffer_offset));
+
+        else
+            return true;
+        return false;
+    }
+
+    std::istream& operator>>(std::istream& is, sensor_names_entry& entry)
+    {
+        using namespace detail;
+        std::istream::char_type buffer[sensor_names_entry::size];
+        std::istream::char_type* curr = buffer;
+        if (!is.read(buffer, sizeof(buffer)))
+            return is;
+
+        curr += retrieve_field<sizeof(entry.name)>(entry.name, curr);
+        curr += retrieve_field<sizeof(entry.units)>(entry.units, curr);
+        curr += retrieve_field(&entry.gsid, curr);
+
+        uint32_t placeholder;
+        curr += retrieve_field(&placeholder, curr);
+        entry.freq = to_double(placeholder);
+        curr += retrieve_field(&placeholder, curr);
+        entry.scaling_factor = to_double(placeholder);
+
+        curr += retrieve_field(&entry.type, curr);
+        curr += retrieve_field(&entry.location, curr);
+        curr += retrieve_field(&entry.structure_version, curr);
+        curr += retrieve_field(&entry.reading_offset, curr);
+        retrieve_field(&entry.specific_info1, curr);
+        return is;
+    }
+
+    bool assert_names_entry(const sensor_names_entry& names, std::string& msg)
+    {
+        assert(names.structure_version == 1 || names.structure_version == 2);
+        switch (names.structure_version)
+        {
+        case 1:
+        case 2:
+            return true;
+        }
+        msg = cmmn::concat("Unsupported structure version, expected 1 or 2, found ",
+            std::to_string(+names.structure_version));
+        return false;
+    }
+
+    std::istream& operator>>(std::istream& is, sensor_readings_buffer& srb)
+    {
+        std::istream::char_type buffer[sensor_readings_buffer::size];
+        if (is.read(buffer, sizeof(buffer)))
+            detail::copy_readings_buffer(buffer, srb);
+        return is;
+    }
+
+    std::istream& operator>>(std::istream& is, sensor_buffers& buffs)
+    {
+        std::istream::char_type buffer[sensor_buffers::size];
+        if (is.read(buffer, sizeof(buffer)))
+        {
+            detail::copy_readings_buffer(buffer, buffs.ping);
+            detail::copy_readings_buffer(buffer + sensor_readings_size + sensor_buffer_gap,
+                buffs.pong);
+        }
+        return is;
+    }
+
+    sensor_structure_v1_sample get_v1_sample(const sensor_readings_buffer& buffer, size_t offset)
+    {
+        assert(buffer.valid);
+        sensor_structure_v1_sample ret;
+
+        // skip the first field gsid, assertions are done during initial parse
+        const uint8_t* curr = buffer.readings + offset -
+            sensor_readings_buffer::pad + sizeof(sensor_structure_v1::gsid);
+
+        curr += detail::retrieve_field(&ret.timestamp, curr);
+        detail::retrieve_field(&ret.sample, curr);
+        return ret;
+    }
+
+    sensor_structure_v1 get_sensor_structure_v1(const sensor_readings_buffer& buffer, size_t offset)
+    {
+        assert(buffer.valid);
+        using namespace detail;
+        sensor_structure_v1 ret;
+        const uint8_t* curr = buffer.readings + offset - sensor_readings_buffer::pad;
+
+        curr += retrieve_field(&ret.gsid, curr);
+        curr += retrieve_field(&ret.timestamp, curr);
+        curr += retrieve_field(&ret.sample, curr);
+        curr += retrieve_field(&ret.sample_min, curr);
+        curr += retrieve_field(&ret.sample_max, curr);
+        curr += retrieve_field(&ret.csm_sample_min, curr);
+        curr += retrieve_field(&ret.csm_sample_max, curr);
+        curr += retrieve_field(&ret.profiler_sample_min, curr);
+        curr += retrieve_field(&ret.profiler_sample_max, curr);
+        curr += retrieve_field(&ret.job_s_sample_min, curr);
+        curr += retrieve_field(&ret.job_s_sample_max, curr);
+        curr += retrieve_field(&ret.accumulator, curr);
+        retrieve_field(&ret.update_tag, curr);
+        return ret;
+    }
+
+    sensor_structure_v2 get_sensor_structure_v2(const sensor_readings_buffer& buffer, size_t offset)
+    {
+        assert(buffer.valid);
+        using namespace detail;
+        sensor_structure_v2 ret;
+        const uint8_t* curr = buffer.readings + offset - sensor_readings_buffer::pad;
+
+        curr += retrieve_field(&ret.gsid, curr);
+        curr += retrieve_field(&ret.timestamp, curr);
+        curr += retrieve_field(&ret.accumulator, curr);
+        curr += retrieve_field(&ret.sample, curr);
+        return ret;
+    }
+
+    bool get_sensor_structure(
+        const sensor_readings_buffer& buffer,
+        const sensor_names_entry& entry,
+        sensor_structure& out)
+    {
+        switch (entry.structure_version)
+        {
+        case 1:
+            out.sv1 = get_sensor_structure_v1(buffer, entry.reading_offset);
+            return true;
+        case 2:
+            out.sv2 = get_sensor_structure_v2(buffer, entry.reading_offset);
+            return true;
+        }
+        assert(entry.structure_version == 1 || entry.structure_version == 2);
+        return false;
+    }
+
+    uint64_t get_timestamp(
+        const sensor_readings_buffer& buffer,
+        size_t offset)
+    {
+        assert(buffer.valid);
+        uint64_t timestamp;
+        const uint8_t* curr = buffer.readings + offset - sensor_readings_buffer::pad;
+        detail::retrieve_field(&timestamp, curr);
+        return timestamp;
+    }
+
+    bool get_sensor_record(
+        const sensor_buffers& buffs,
+        const sensor_names_entry& entry,
+        sensor_structure& out)
+    {
+        if (buffs.ping.valid && buffs.pong.valid)
+        {
+            auto ping_ts = get_timestamp(buffs.ping, entry.reading_offset);
+            auto pong_ts = get_timestamp(buffs.pong, entry.reading_offset);
+            if (ping_ts > pong_ts)
+                return get_sensor_structure(buffs.ping, entry, out);
+            else
+                return get_sensor_structure(buffs.pong, entry, out);
+        }
+        if (buffs.pong.valid)
+            return get_sensor_structure(buffs.pong, entry, out);
+        if (buffs.ping.valid)
+            return get_sensor_structure(buffs.ping, entry, out);
+
+        assert(buffs.ping.valid || buffs.pong.valid);
+        return false;
+    }
+
+    std::ostream& operator<<(std::ostream& os, const sensor_data_header_block& hb)
+    {
+        std::ios::fmtflags flags(os.flags());
+        os << std::boolalpha << "valid: " << bool(hb.valid) << "\n";
+        os.flags(flags);
+
+        os << "header version: " << +hb.header_version << "\n";
+        os << "number of sensors: " << hb.sensor_count << "\n";
+        os << "readings version: " << +hb.readings_version << "\n";
+
+        flags = os.flags();
+        os << std::hex << "names offset: 0x" << hb.names_offset << "\n";
+        os.flags(flags);
+
+        os << "names version: " << +hb.names_version << "\n";
+        os << "names length: " << +hb.name_length << "\n";
+
+        flags = os.flags();
+        os << std::hex;
+        os << "ping buffer offset: 0x" << hb.readings_ping_buffer_offset << "\n";
+        os << "pong buffer offset: 0x" << hb.readings_pong_buffer_offset;
+        os.flags(flags);
+
+        return os;
+    }
+
+    std::ostream& operator<<(std::ostream& os, const sensor_names_entry& ne)
+    {
+        os << ne.name << ":" << ne.units << ":" << ne.gsid;
+        os << ":f=" << ne.freq;
+        os << ":s=" << ne.scaling_factor;
+        os << ":" << ne.type << ":" << ne.location;
+        os << ":v=" << +ne.structure_version;
+        std::ios::fmtflags flags(os.flags());
+        os << std::hex << ":0x" << ne.reading_offset;
+        os.flags(flags);
+        os << ":" << +ne.specific_info1;
+        return os;
+    }
+
+    std::ostream& operator<<(std::ostream& os, const sensor_structure_v1& s)
+    {
+        os << "v1";
+        os << ":" << s.gsid << ":" << s.timestamp;
+        os << ":s=" << s.sample << ":m=" << s.sample_min << ":M=" << s.sample_max;
+        os << ":csmm=" << s.csm_sample_min << ":csmM=" << s.csm_sample_max;
+        os << ":pm=" << s.profiler_sample_min << ":pM=" << s.profiler_sample_max;
+        os << ":jm=" << s.job_s_sample_min << ":jM=" << s.job_s_sample_max;
+        os << ":a=" << s.accumulator << ":u=" << s.update_tag;
+        return os;
+    }
+
+    std::ostream& operator<<(std::ostream& os, const sensor_structure_v2& s)
+    {
+        os << "v2";
+        os << ":" << s.gsid << ":" << s.timestamp;
+        os << ":a=" << s.accumulator;
+        os << ":" << +s.sample;
+        return os;
+    }
+
+    static_assert(24 == occ::sensor_data_header_block::size,
+        "occ::sensor_data_header_block::size != 24");
+    static_assert(48 == occ::sensor_names_entry::size,
+        "occ::sensor_names_entry::size != 48");
+    static_assert(48 == occ::sensor_structure_v1::size,
+        "occ::sensor_structure_v1::size != 48");
+    static_assert(24 == occ::sensor_structure_v2::size,
+        "occ::sensor_structure_v2::size != 24");
+    static_assert(40960 == occ::sensor_readings_buffer::size,
+        "occ::sensor_readings_buffer::size != 40960");
+    static_assert(86016 == occ::sensor_buffers::size,
+        "occ::sensor_buffers::size != 86016");
+}
+
+#endif // defined NRG_X86_64
 
 #endif // CPU_NONE
 
 // reader_rapl::impl
 
-#if defined(CPU_NONE) || defined(NRG_PPC64)
+#if defined CPU_NONE
 
 class reader_rapl::impl
 {
@@ -322,7 +916,7 @@ public:
     result<Type> value(const sample& s, uint8_t) const;
 };
 
-#elif defined(NRG_X86_64)
+#elif defined NRG_X86_64
 
 class reader_rapl::impl
 {
@@ -346,9 +940,35 @@ private:
     error add_event(const char* base, location_mask dmask, uint8_t skt);
 };
 
+#elif defined NRG_PPC64
+
+class reader_rapl::impl
+{
+    std::array<std::array<int8_t, occ_domains>, max_sockets> _event_map;
+    std::shared_ptr<std::ifstream> _ifs;
+    std::vector<uint32_t> _active_events;
+
+public:
+    impl(location_mask, socket_mask, error&);
+
+    error read(sample&) const;
+    error read(sample&, uint8_t) const;
+    size_t num_events() const;
+
+    template<typename Tag>
+    int32_t event_idx(uint8_t) const;
+
+    template<typename Location, typename Type>
+    result<Type> value(const sample& s, uint8_t) const;
+
+private:
+    error get_header(uint32_t occ_num, occ::sensor_data_header_block& hb);
+    error get_names_entries(uint32_t occ_num, std::vector<occ::sensor_names_entry>& entries);
+};
+
 #endif
 
-#if defined(CPU_NONE) || defined(NRG_PPC64)
+#if defined CPU_NONE
 
 reader_rapl::impl::impl(location_mask, socket_mask, error&)
 {
@@ -382,7 +1002,7 @@ result<Type> reader_rapl::impl::value(const sample&, uint8_t) const
     return error(error_code::NO_EVENT);
 }
 
-#elif defined(NRG_X86_64)
+#elif defined NRG_X86_64
 
 reader_rapl::impl::impl(location_mask dmask, socket_mask skt_mask, error& ec) :
     _event_map(),
@@ -495,6 +1115,137 @@ error reader_rapl::impl::add_event(const char* base, location_mask dmask, uint8_
     return error::success();
 }
 
+#elif defined NRG_PPC64
+
+reader_rapl::impl::impl(location_mask lmask, socket_mask smask, error& err) :
+    _event_map(),
+    _ifs(std::make_shared<std::ifstream>(sensors_file, std::ios::in | std::ios::binary)),
+    _active_events()
+{
+    if (!*_ifs)
+    {
+        err = { error_code::SYSTEM, system_error_str(
+            cmmn::concat("Error opening ", sensors_file)) };
+        return;
+    }
+
+    for (auto& skts : _event_map)
+        skts.fill(-1);
+
+    result<uint8_t> sockets = count_sockets();
+    if (!sockets)
+    {
+        err = std::move(sockets.error());
+        return;
+    }
+    std::cout << fileline(cmmn::concat("Found ", std::to_string(sockets.value()), " sockets\n"));
+    for (uint32_t occ_num = 0; occ_num < sockets.value(); occ_num++)
+    {
+        if (!smask[occ_num])
+            continue;
+        std::cout << fileline(cmmn::concat("Registered socket: ", std::to_string(occ_num), "\n"));
+
+        occ::sensor_data_header_block hb{};
+        if (err = get_header(occ_num, hb))
+            return;
+
+        std::vector<occ::sensor_names_entry> names(hb.sensor_count, occ::sensor_names_entry{});
+
+    }
+}
+
+error reader_rapl::impl::get_header(uint32_t occ_num, occ::sensor_data_header_block& hb)
+{
+    assert(occ_num < occ::max_count);
+
+    size_t occ_offset = occ_num * occ::sensor_data_block_size;
+    std::string occ_num_str = std::to_string(occ_num);
+
+    _ifs->seekg(occ_offset + occ::sensor_data_header_block_offset);
+    if (!*_ifs)
+        return { error_code::SYSTEM, system_error_str(
+            cmmn::concat("Error seeking to OCC ", occ_num_str, " header")) };
+
+    if (!(*_ifs >> hb))
+    {
+        std::string msg;
+        if (_ifs->eof())
+            msg = cmmn::concat("Reached end-of-stream before reading header block of OCC ",
+                occ_num_str);
+        else if (_ifs->bad())
+            msg = system_error_str(cmmn::concat("Error reading header of OCC ", occ_num_str));
+        else
+            msg = cmmn::concat("Error reading header of OCC ", occ_num_str);
+        return { error_code::SYSTEM, std::move(msg) };
+    }
+
+    if (std::string msg; !occ::assert_header_block(hb, msg))
+        return { error_code::FORMAT_ERROR, std::move(msg) };
+
+    std::cout << hb << std::endl;
+    return error::success();
+}
+
+error reader_rapl::impl::get_names_entries(
+    uint32_t occ_num,
+    std::vector<occ::sensor_names_entry>& entries)
+{
+    assert(occ_num < occ::max_count);
+    size_t occ_offset = occ_num * occ::sensor_data_block_size;
+    std::string occ_num_str = std::to_string(occ_num);
+
+    _ifs->seekg(occ_offset + occ::sensor_names_offset);
+    if (!*_ifs)
+        return { error_code::SYSTEM, system_error_str(
+            cmmn::concat("Error seeking to OCC ", occ_num_str, " sensor names")) };
+    for (auto& entry : entries)
+    {
+        if (!(*_ifs >> entry))
+        {
+            std::string msg;
+            if (_ifs->eof())
+                msg = cmmn::concat("Reached end-of-stream before"
+                    " reading sensor names entries of OCC ", occ_num_str);
+            else if (_ifs->bad())
+                msg = system_error_str(cmmn::concat("Error reading sensor name entry of OCC ",
+                    occ_num_str));
+            else
+                msg = cmmn::concat("Error reading sensor name entry of OCC ", occ_num_str);
+            return { error_code::SYSTEM, std::move(msg) };
+        }
+        if (std::string msg; !occ::assert_names_entry(entry, msg))
+            return { error_code::FORMAT_ERROR, std::move(msg) };
+    }
+    return error::success();
+}
+
+error reader_rapl::impl::read(sample&) const
+{
+    return error::success();
+}
+
+error reader_rapl::impl::read(sample&, uint8_t) const
+{
+    return error::success();
+}
+
+size_t reader_rapl::impl::num_events() const
+{
+    return _active_events.size();
+}
+
+template<typename Location>
+int32_t reader_rapl::impl::event_idx(uint8_t skt) const
+{
+    return _event_map[skt][Location::value];
+}
+
+template<typename Location, typename Type>
+result<Type> reader_rapl::impl::value(const sample&, uint8_t) const
+{
+    return error(error_code::NO_EVENT);
+}
+
 #endif // CPU_NONE
 
 // reader_rapl
@@ -544,10 +1295,10 @@ size_t reader_rapl::num_events() const
     return pimpl()->num_events();
 }
 
-template<typename Tag>
+template<typename Location>
 int32_t reader_rapl::event_idx(uint8_t skt) const
 {
-    return pimpl()->event_idx<Tag>(skt);
+    return pimpl()->event_idx<Location>(skt);
 }
 
 template<typename Location, typename Type>
@@ -608,7 +1359,7 @@ int32_t reader_rapl::impl::event_idx<loc::location>(uint8_t) const \
     SPECIALIZE_VALUE_NOOP(mem, type) \
     SPECIALIZE_VALUE_NOOP(gpu, type)
 
-#if defined(NRG_X86_64)
+#if defined NRG_X86_64
 
 // SPECIALIZE_EVENT_IDX_NOOP(sys)
 // SPECIALIZE_EVENT_IDX_NOOP(nest)
@@ -619,14 +1370,14 @@ int32_t reader_rapl::impl::event_idx<loc::location>(uint8_t) const \
 // SPECIALIZE_VALUE_NOOP_ALL_LOCS(units_power)
 // SPECIALIZE_VALUE_NOOP_ALL_LOCS(units_time)
 
-#elif defined(NRG_PPC64)
+#elif defined NRG_PPC64
 
 // SPECIALIZE_EVENT_IDX_NOOP(uncore)
 // SPECIALIZE_VALUE_NOOP(uncore, units_power)
 // SPECIALIZE_VALUE_NOOP(uncore, units_time)
 // SPECIALIZE_VALUE_NOOP_ALL_LOCS(units_energy)
 
-#endif // defined(NRG_X86_64)
+#endif // defined NRG_X86_64
 #endif // CPU_NONE
 
 // explicit instantiation
