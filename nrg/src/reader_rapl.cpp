@@ -1022,11 +1022,44 @@ private:
 
 #elif defined NRG_PPC64
 
+namespace nrgprf::detail
+{
+    static constexpr const uint16_t gsid_pwrsys = 20;
+    static constexpr const uint16_t gsid_pwrgpu = 24;
+    static constexpr const uint16_t gsid_pwrproc = 48;
+    static constexpr const uint16_t gsid_pwrmem = 49;
+    static constexpr const uint16_t gsid_pwrvdd = 56;
+    static constexpr const uint16_t gsid_pwrvdn = 57;
+
+    struct sensor_static_data
+    {
+        uint16_t gsid;
+        occ::sensor_type type;
+        occ::sensor_loc loc;
+    };
+
+    static constexpr const sensor_static_data bit_to_sensor_data[] =
+    {
+        { gsid_pwrproc, occ::sensor_type::power, occ::sensor_loc::proc },
+        { gsid_pwrvdd,  occ::sensor_type::power, occ::sensor_loc::proc },
+        { gsid_pwrvdn,  occ::sensor_type::power, occ::sensor_loc::proc },
+        { gsid_pwrmem,  occ::sensor_type::power, occ::sensor_loc::memory },
+        { gsid_pwrsys,  occ::sensor_type::power, occ::sensor_loc::system },
+        { gsid_pwrgpu,  occ::sensor_type::power, occ::sensor_loc::gpu }
+    };
+
+    struct event_data
+    {
+        uint32_t occ_num;
+        std::vector<occ::sensor_names_entry> entries;
+    };
+}
+
 class reader_rapl::impl
 {
     std::array<std::array<int8_t, occ_domains>, max_sockets> _event_map;
     std::shared_ptr<std::ifstream> _ifs;
-    std::vector<uint32_t> _active_events;
+    std::vector<detail::event_data> _active_events;
 
 public:
     impl(location_mask, socket_mask, error&);
@@ -1048,6 +1081,10 @@ private:
     error get_sensor_structs(const occ::sensor_buffers& buffs,
         const std::vector<occ::sensor_names_entry>& entries,
         std::vector<occ::sensor_structure>& structs);
+
+    void add_event(const std::vector<occ::sensor_names_entry>& entries,
+        uint32_t occ_num,
+        uint32_t location);
 };
 
 #endif
@@ -1245,7 +1282,20 @@ reader_rapl::impl::impl(location_mask lmask, socket_mask smask, error& err) :
         structs.reserve(entries.size());
         if (err = get_sensor_structs(sbuffs, entries, structs))
             return;
+
+        for (uint32_t loc = 0; loc < nrgprf::max_domains; loc++)
+        {
+            if (!lmask[loc])
+                continue;
+            // the system power sensor only exists in the master OCC which is OCC 0
+            if (occ_num != 0 && detail::bit_to_sensor_data[loc].gsid == detail::gsid_pwrsys)
+                continue;
+            add_event(entries, occ_num, loc);
+        }
     }
+
+    if (!num_events())
+        err = { error_code::SETUP_ERROR, "No events were added" };
 }
 
 error reader_rapl::impl::get_header(uint32_t occ_num, occ::sensor_data_header_block& hb)
@@ -1366,6 +1416,26 @@ error reader_rapl::impl::get_sensor_structs(const occ::sensor_buffers& buffs,
         structs.push_back(sstruct);
     }
     return error::success();
+}
+
+void reader_rapl::impl::add_event(const std::vector<occ::sensor_names_entry>& entries,
+    uint32_t occ_num,
+    uint32_t loc)
+{
+    const detail::sensor_static_data& sensor_data = detail::bit_to_sensor_data[loc];
+    _event_map[occ_num][loc] = _active_events.size();
+    _active_events.push_back({ occ_num, std::vector<occ::sensor_names_entry>() });
+    for (const auto& entry : entries)
+    {
+        auto& active_entries = _active_events.back().entries;
+        if (entry.gsid == sensor_data.gsid &&
+            entry.type == sensor_data.type &&
+            entry.location == sensor_data.loc)
+        {
+            active_entries.push_back(entry);
+            std::cout << fileline("added event - OCC=") << occ_num << " " << entry << "\n";
+        }
+    }
 }
 
 
