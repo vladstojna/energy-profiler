@@ -38,16 +38,19 @@ using namespace nrgprf;
 
 #ifndef CPU_NONE
 
-#if defined NRG_X86_64
-
 namespace nrgprf::loc
 {
     struct pkg : std::integral_constant<int, 0> {};
     struct cores : std::integral_constant<int, 1> {};
     struct uncore : std::integral_constant<int, 2> {};
     struct mem : std::integral_constant<int, 3> {};
+}
+
+#if defined NRG_X86_64
+
+namespace nrgprf::loc
+{
     struct sys {};
-    struct nest {};
     struct gpu {};
 }
 
@@ -55,13 +58,8 @@ namespace nrgprf::loc
 
 namespace nrgprf::loc
 {
-    struct pkg : std::integral_constant<int, 0> {};
-    struct cores : std::integral_constant<int, 1> {};
-    struct nest : std::integral_constant<int, 2> {};
-    struct mem : std::integral_constant<int, 3> {};
     struct sys : std::integral_constant<int, 4> {};
     struct gpu : std::integral_constant<int, 5> {};
-    struct uncore {};
 }
 
 #endif // defined NRG_X86_64
@@ -1066,7 +1064,7 @@ namespace nrgprf::detail
         case gsid_pwrvdd:
             return loc::cores::value;
         case gsid_pwrvdn:
-            return loc::nest::value;
+            return loc::uncore::value;
         default:
             assert(false);
             return -1;
@@ -1079,10 +1077,10 @@ namespace nrgprf::detail
         static_assert(std::is_same_v<T, loc::sys> ||
             std::is_same_v<T, loc::pkg> ||
             std::is_same_v<T, loc::cores> ||
-            std::is_same_v<T, loc::nest> ||
+            std::is_same_v<T, loc::uncore> ||
             std::is_same_v<T, loc::mem> ||
             std::is_same_v<T, loc::gpu>,
-            "T must be of type sys, pkg, cores, nest, mem or gpu");
+            "T must be of type sys, pkg, cores, uncore, mem or gpu");
         if constexpr (std::is_same_v<T, loc::sys>)
             return gsid_pwrsys;
         if constexpr (std::is_same_v<T, loc::gpu>)
@@ -1091,7 +1089,7 @@ namespace nrgprf::detail
             return gsid_pwrproc;
         if constexpr (std::is_same_v<T, loc::cores>)
             return gsid_pwrvdd;
-        if constexpr (std::is_same_v<T, loc::nest>)
+        if constexpr (std::is_same_v<T, loc::uncore>)
             return gsid_pwrvdn;
         if constexpr (std::is_same_v<T, loc::mem>)
             return gsid_pwrmem;
@@ -1746,7 +1744,7 @@ int32_t reader_rapl::impl::event_idx<loc::location>(uint8_t) const \
     macro(sys); \
     macro(pkg); \
     macro(cores); \
-    macro(nest); \
+    macro(uncore); \
     macro(mem); \
     macro(gpu)
 
