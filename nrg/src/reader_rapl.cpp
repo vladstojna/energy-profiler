@@ -554,10 +554,11 @@ namespace occ
     struct sensor_readings_buffer
     {
         constexpr static const size_t size = sensor_readings_size;
-        constexpr static const size_t pad = 8;
+        constexpr static const size_t pad = 8; // valid byte + 7 bytes reserved
         uint8_t valid;
-        uint8_t readings[size - pad]; // valid byte and 7 bytes reserved
-    };
+        uint8_t __reserved[7];
+        uint8_t readings[size - pad];
+    } __attribute__((__packed__));
 
     struct sensor_buffers
     {
@@ -568,8 +569,9 @@ namespace occ
             sensor_ping_buffer_size + sensor_pong_buffer_size + sensor_buffer_gap);
 
         sensor_readings_buffer ping;
+        uint8_t __reserved[sensor_buffer_gap];
         sensor_readings_buffer pong;
-    };
+    } __attribute__((__packed__));
 
     namespace detail
     {
@@ -584,14 +586,6 @@ namespace occ
         static double to_double(uint32_t val)
         {
             return (val >> 8) * std::pow(10, static_cast<int8_t>(val & 0xff));
-        }
-
-        static void copy_readings_buffer(
-            const std::istream::char_type* from,
-            sensor_readings_buffer& into)
-        {
-            into.valid = *from;
-            std::memcpy(into.readings, from + 8, sizeof(into.readings)); // 7 bytes reserved
         }
 
         template<typename T, size_t sz = sizeof(T)>
@@ -747,22 +741,12 @@ namespace occ
 
     std::istream& operator>>(std::istream& is, sensor_readings_buffer& srb)
     {
-        std::istream::char_type buffer[sensor_readings_buffer::size];
-        if (is.read(buffer, sizeof(buffer)))
-            detail::copy_readings_buffer(buffer, srb);
-        return is;
+        return is.read(reinterpret_cast<std::istream::char_type*>(&srb), sizeof(srb));
     }
 
     std::istream& operator>>(std::istream& is, sensor_buffers& buffs)
     {
-        std::istream::char_type buffer[sensor_buffers::size];
-        if (is.read(buffer, sizeof(buffer)))
-        {
-            detail::copy_readings_buffer(buffer, buffs.ping);
-            detail::copy_readings_buffer(buffer + sensor_readings_size + sensor_buffer_gap,
-                buffs.pong);
-        }
-        return is;
+        return is.read(reinterpret_cast<std::istream::char_type*>(&buffs), sizeof(buffs));
     }
 
     sensor_structure_v1_sample get_v1_sample(const sensor_readings_buffer& buffer, size_t offset)
@@ -989,9 +973,9 @@ namespace occ
         "occ::sensor_structure_v1::size != 48");
     static_assert(24 == occ::sensor_structure_v2::size,
         "occ::sensor_structure_v2::size != 24");
-    static_assert(40960 == occ::sensor_readings_buffer::size,
+    static_assert(sizeof(occ::sensor_readings_buffer) == occ::sensor_readings_buffer::size,
         "occ::sensor_readings_buffer::size != 40960");
-    static_assert(86016 == occ::sensor_buffers::size,
+    static_assert(sizeof(occ::sensor_buffers) == occ::sensor_buffers::size,
         "occ::sensor_buffers::size != 86016");
 }
 
