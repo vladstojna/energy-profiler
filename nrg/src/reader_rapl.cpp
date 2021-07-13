@@ -1113,10 +1113,136 @@ namespace nrgprf::detail
         uint32_t occ_num;
         std::vector<occ::sensor_names_entry> entries;
     };
+
+    static error get_header(std::ifstream& ifs,
+        uint32_t occ_num,
+        occ::sensor_data_header_block& hb)
+    {
+        assert(occ_num < occ::max_count);
+
+        size_t occ_offset = occ_num * occ::sensor_data_block_size;
+        std::string occ_num_str = std::to_string(occ_num);
+
+        ifs.seekg(occ_offset + occ::sensor_data_header_block_offset);
+        if (!ifs)
+            return { error_code::SYSTEM, system_error_str(
+                cmmn::concat("Error seeking to OCC ", occ_num_str, " header")) };
+
+        if (!(ifs >> hb))
+        {
+            std::string msg;
+            if (ifs.eof())
+                msg = cmmn::concat("Reached end-of-stream before reading header block of OCC ",
+                    occ_num_str);
+            else if (ifs.bad())
+                msg = system_error_str(cmmn::concat("Error reading header of OCC ", occ_num_str));
+            else
+                msg = cmmn::concat("Error reading header of OCC ", occ_num_str);
+            return { error_code::SYSTEM, std::move(msg) };
+        }
+
+        if (std::string msg; !occ::assert_header_block(hb, msg))
+            return { error_code::FORMAT_ERROR, std::move(msg) };
+
+        std::cout << hb << std::endl;
+        return error::success();
+    }
+
+    static error get_names_entries(std::ifstream& ifs,
+        uint32_t occ_num,
+        std::vector<occ::sensor_names_entry>& entries)
+    {
+        assert(occ_num < occ::max_count);
+        size_t occ_offset = occ_num * occ::sensor_data_block_size;
+        std::string occ_num_str = std::to_string(occ_num);
+
+        ifs.seekg(occ_offset + occ::sensor_names_offset);
+        if (!ifs)
+            return { error_code::SYSTEM, system_error_str(
+                cmmn::concat("Error seeking to OCC ", occ_num_str, " sensor names")) };
+        for (auto& entry : entries)
+        {
+            if (!(ifs >> entry))
+            {
+                std::string msg;
+                if (ifs.eof())
+                    msg = cmmn::concat("Reached end-of-stream before"
+                        " reading sensor names entries of OCC ", occ_num_str);
+                else if (ifs.bad())
+                    msg = system_error_str(cmmn::concat("Error reading sensor name entry of OCC ",
+                        occ_num_str));
+                else
+                    msg = cmmn::concat("Error reading sensor name entry of OCC ", occ_num_str);
+                return { error_code::SYSTEM, std::move(msg) };
+            }
+            if (std::string msg; !occ::assert_names_entry(entry, msg))
+                return { error_code::FORMAT_ERROR, std::move(msg) };
+        }
+        return error::success();
+    }
+
+    static error get_sensor_buffers(std::ifstream& ifs,
+        uint32_t occ_num,
+        occ::sensor_buffers& buffs)
+    {
+        assert(occ_num < occ::max_count);
+        size_t occ_offset = occ_num * occ::sensor_data_block_size;
+        std::string occ_num_str = std::to_string(occ_num);
+
+        ifs.seekg(occ_offset + occ::sensor_ping_buffer_offset);
+        if (!ifs)
+            return { error_code::SYSTEM, system_error_str(
+                cmmn::concat("Error seeking to OCC ", occ_num_str, " sensor names")) };
+
+        if (!(ifs >> buffs))
+        {
+            std::string msg;
+            if (ifs.eof())
+                msg = cmmn::concat("Reached end-of-stream before"
+                    " reading sensor buffers of OCC ", occ_num_str);
+            else if (ifs.bad())
+                msg = system_error_str(cmmn::concat("Error reading sensor buffers of OCC ",
+                    occ_num_str));
+            else
+                msg = cmmn::concat("Error reading sensor buffers of OCC ", occ_num_str);
+            return { error_code::SYSTEM, std::move(msg) };
+        }
+        return error::success();
+    }
+
+    static error get_sensor_structs(const occ::sensor_buffers& buffs,
+        const std::vector<occ::sensor_names_entry>& entries,
+        std::vector<occ::sensor_structure>& structs)
+    {
+        for (const auto& entry : entries)
+        {
+            occ::sensor_structure sstruct;
+            if (!occ::get_sensor_record(buffs, entry, sstruct))
+                return { error_code::FORMAT_ERROR, "Both ping and pong buffers are not valid" };
+            std::cout << entry << "\n";
+            switch (entry.structure_version)
+            {
+            case 1:
+                std::cout << "  " << sstruct.sv1 << "\n";
+                break;
+            case 2:
+                std::cout << "  " << sstruct.sv2 << "\n";
+                break;
+            default:
+                assert(false);
+                return { error_code::FORMAT_ERROR, "Unsupported sensor structure version found" };
+            }
+            structs.push_back(sstruct);
+        }
+        return error::success();
+    }
 }
 
 class reader_rapl::impl
 {
+    // the file here functions as a cache, so as to avoid opening the file every time
+    // we want to read the sensors
+    std::shared_ptr<std::ifstream> _file;
     std::array<std::array<int8_t, occ_domains>, max_sockets> _event_map;
     std::vector<detail::event_data> _active_events;
 
@@ -1134,22 +1260,6 @@ public:
     result<Type> value(const sample& s, uint8_t) const;
 
 private:
-    error get_header(std::ifstream& ifs,
-        uint32_t occ_num,
-        occ::sensor_data_header_block& hb) const;
-
-    error get_names_entries(std::ifstream& ifs,
-        uint32_t occ_num,
-        std::vector<occ::sensor_names_entry>& entries) const;
-
-    error get_sensor_buffers(std::ifstream& ifs,
-        uint32_t occ_num,
-        occ::sensor_buffers& buffs) const;
-
-    error get_sensor_structs(const occ::sensor_buffers& buffs,
-        const std::vector<occ::sensor_names_entry>& entries,
-        std::vector<occ::sensor_structure>& structs) const;
-
     error add_event(const std::vector<occ::sensor_names_entry>& entries,
         uint32_t occ_num,
         uint32_t location);
@@ -1307,11 +1417,11 @@ error reader_rapl::impl::add_event(const char* base, location_mask dmask, uint8_
 #elif defined NRG_PPC64
 
 reader_rapl::impl::impl(location_mask lmask, socket_mask smask, error& err) :
+    _file(std::make_shared<std::ifstream>(sensors_file, std::ios::in | std::ios::binary)),
     _event_map(),
     _active_events()
 {
-    std::ifstream ifs(sensors_file, std::ios::in | std::ios::binary);
-    if (!ifs)
+    if (!*_file)
     {
         err = { error_code::SYSTEM, system_error_str(
             cmmn::concat("Error opening ", sensors_file)) };
@@ -1335,20 +1445,20 @@ reader_rapl::impl::impl(location_mask lmask, socket_mask smask, error& err) :
         std::cout << fileline(cmmn::concat("Registered socket: ", std::to_string(occ_num), "\n"));
 
         occ::sensor_data_header_block hb{};
-        if (err = get_header(ifs, occ_num, hb))
+        if (err = detail::get_header(*_file, occ_num, hb))
             return;
 
         std::vector<occ::sensor_names_entry> entries(hb.sensor_count, occ::sensor_names_entry{});
-        if (err = get_names_entries(ifs, occ_num, entries))
+        if (err = detail::get_names_entries(*_file, occ_num, entries))
             return;
 
         occ::sensor_buffers sbuffs{};
-        if (err = get_sensor_buffers(ifs, occ_num, sbuffs))
+        if (err = detail::get_sensor_buffers(*_file, occ_num, sbuffs))
             return;
 
         std::vector<occ::sensor_structure> structs;
         structs.reserve(entries.size());
-        if (err = get_sensor_structs(sbuffs, entries, structs))
+        if (err = detail::get_sensor_structs(sbuffs, entries, structs))
             return;
 
         for (uint32_t loc = 0; loc < nrgprf::max_domains; loc++)
@@ -1364,130 +1474,6 @@ reader_rapl::impl::impl(location_mask lmask, socket_mask smask, error& err) :
 
     if (!num_events())
         err = { error_code::SETUP_ERROR, "No events were added" };
-}
-
-error reader_rapl::impl::get_header(std::ifstream& ifs,
-    uint32_t occ_num,
-    occ::sensor_data_header_block& hb) const
-{
-    assert(occ_num < occ::max_count);
-
-    size_t occ_offset = occ_num * occ::sensor_data_block_size;
-    std::string occ_num_str = std::to_string(occ_num);
-
-    ifs.seekg(occ_offset + occ::sensor_data_header_block_offset);
-    if (!ifs)
-        return { error_code::SYSTEM, system_error_str(
-            cmmn::concat("Error seeking to OCC ", occ_num_str, " header")) };
-
-    if (!(ifs >> hb))
-    {
-        std::string msg;
-        if (ifs.eof())
-            msg = cmmn::concat("Reached end-of-stream before reading header block of OCC ",
-                occ_num_str);
-        else if (ifs.bad())
-            msg = system_error_str(cmmn::concat("Error reading header of OCC ", occ_num_str));
-        else
-            msg = cmmn::concat("Error reading header of OCC ", occ_num_str);
-        return { error_code::SYSTEM, std::move(msg) };
-    }
-
-    if (std::string msg; !occ::assert_header_block(hb, msg))
-        return { error_code::FORMAT_ERROR, std::move(msg) };
-
-    std::cout << hb << std::endl;
-    return error::success();
-}
-
-error reader_rapl::impl::get_names_entries(std::ifstream& ifs,
-    uint32_t occ_num,
-    std::vector<occ::sensor_names_entry>& entries) const
-{
-    assert(occ_num < occ::max_count);
-    size_t occ_offset = occ_num * occ::sensor_data_block_size;
-    std::string occ_num_str = std::to_string(occ_num);
-
-    ifs.seekg(occ_offset + occ::sensor_names_offset);
-    if (!ifs)
-        return { error_code::SYSTEM, system_error_str(
-            cmmn::concat("Error seeking to OCC ", occ_num_str, " sensor names")) };
-    for (auto& entry : entries)
-    {
-        if (!(ifs >> entry))
-        {
-            std::string msg;
-            if (ifs.eof())
-                msg = cmmn::concat("Reached end-of-stream before"
-                    " reading sensor names entries of OCC ", occ_num_str);
-            else if (ifs.bad())
-                msg = system_error_str(cmmn::concat("Error reading sensor name entry of OCC ",
-                    occ_num_str));
-            else
-                msg = cmmn::concat("Error reading sensor name entry of OCC ", occ_num_str);
-            return { error_code::SYSTEM, std::move(msg) };
-        }
-        if (std::string msg; !occ::assert_names_entry(entry, msg))
-            return { error_code::FORMAT_ERROR, std::move(msg) };
-    }
-    return error::success();
-}
-
-error reader_rapl::impl::get_sensor_buffers(std::ifstream& ifs,
-    uint32_t occ_num,
-    occ::sensor_buffers& buffs) const
-{
-    assert(occ_num < occ::max_count);
-    size_t occ_offset = occ_num * occ::sensor_data_block_size;
-    std::string occ_num_str = std::to_string(occ_num);
-
-    ifs.seekg(occ_offset + occ::sensor_ping_buffer_offset);
-    if (!ifs)
-        return { error_code::SYSTEM, system_error_str(
-            cmmn::concat("Error seeking to OCC ", occ_num_str, " sensor names")) };
-
-    if (!(ifs >> buffs))
-    {
-        std::string msg;
-        if (ifs.eof())
-            msg = cmmn::concat("Reached end-of-stream before"
-                " reading sensor buffers of OCC ", occ_num_str);
-        else if (ifs.bad())
-            msg = system_error_str(cmmn::concat("Error reading sensor buffers of OCC ",
-                occ_num_str));
-        else
-            msg = cmmn::concat("Error reading sensor buffers of OCC ", occ_num_str);
-        return { error_code::SYSTEM, std::move(msg) };
-    }
-    return error::success();
-}
-
-
-error reader_rapl::impl::get_sensor_structs(const occ::sensor_buffers& buffs,
-    const std::vector<occ::sensor_names_entry>& entries,
-    std::vector<occ::sensor_structure>& structs) const
-{
-    for (const auto& entry : entries)
-    {
-        occ::sensor_structure sstruct;
-        if (!occ::get_sensor_record(buffs, entry, sstruct))
-            return { error_code::FORMAT_ERROR, "Both ping and pong buffers are not valid" };
-        std::cout << entry << "\n";
-        switch (entry.structure_version)
-        {
-        case 1:
-            std::cout << "  " << sstruct.sv1 << "\n";
-            break;
-        case 2:
-            std::cout << "  " << sstruct.sv2 << "\n";
-            break;
-        default:
-            assert(false);
-            return { error_code::FORMAT_ERROR, "Unsupported sensor structure version found" };
-        }
-        structs.push_back(sstruct);
-    }
-    return error::success();
 }
 
 error reader_rapl::impl::add_event(const std::vector<occ::sensor_names_entry>& entries,
@@ -1517,14 +1503,10 @@ error reader_rapl::impl::add_event(const std::vector<occ::sensor_names_entry>& e
 
 error reader_rapl::impl::read(sample& s) const
 {
-    std::ifstream ifs(sensors_file, std::ios::in | std::ios::binary);
-    if (!ifs)
-        return { error_code::SYSTEM, system_error_str(
-            cmmn::concat("Error opening ", sensors_file)) };
     for (const auto& ed : _active_events)
     {
         occ::sensor_buffers sbuffs;
-        if (error err = get_sensor_buffers(ifs, ed.occ_num, sbuffs))
+        if (error err = detail::get_sensor_buffers(*_file, ed.occ_num, sbuffs))
             return err;
         for (const auto& entry : ed.entries)
         {
@@ -1542,6 +1524,7 @@ error reader_rapl::impl::read(sample& s) const
     return error::success();
 }
 
+// TODO
 error reader_rapl::impl::read(sample&, uint8_t) const
 {
     return error::success();
