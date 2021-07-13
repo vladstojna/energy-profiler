@@ -18,7 +18,6 @@ namespace nrgprf
         struct pkg;
         struct cores;
         struct uncore;
-        struct nest;
         struct mem;
         struct gpu;
     }
