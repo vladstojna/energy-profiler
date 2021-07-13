@@ -895,6 +895,31 @@ namespace occ
         return false;
     }
 
+    bool get_sensor_record(
+        const sensor_buffers& buffs,
+        const sensor_names_entry& entry,
+        sensor_structure_v1_sample& out)
+    {
+        assert(buffs.ping.valid || buffs.pong.valid);
+        if (!buffs.ping.valid && !buffs.pong.valid)
+            return false;
+
+        if (buffs.ping.valid && buffs.pong.valid)
+        {
+            auto ping_ts = get_timestamp(buffs.ping, entry.reading_offset);
+            auto pong_ts = get_timestamp(buffs.pong, entry.reading_offset);
+            if (ping_ts > pong_ts)
+                out = get_v1_sample(buffs.ping, entry.reading_offset);
+            else
+                out = get_v1_sample(buffs.pong, entry.reading_offset);
+        }
+        if (buffs.pong.valid)
+            out = get_v1_sample(buffs.pong, entry.reading_offset);
+        if (buffs.ping.valid)
+            out = get_v1_sample(buffs.ping, entry.reading_offset);
+        return true;
+    }
+
     std::ostream& operator<<(std::ostream& os, const sensor_data_header_block& hb)
     {
         std::ios::fmtflags flags(os.flags());
@@ -1513,9 +1538,9 @@ error reader_rapl::impl::read_single_occ(const detail::event_data& ed,
         size_t stride = ed.occ_num * nrgprf::max_domains +
             detail::sensor_gsid_to_index(entry.gsid);
 
-        // TODO: read from both ping and pong buffers
-        occ::sensor_structure_v1_sample record =
-            occ::get_v1_sample(sbuffs.pong, entry.reading_offset);
+        occ::sensor_structure_v1_sample record;
+        if (!occ::get_sensor_record(sbuffs, entry, record))
+            return { error_code::READ_ERROR, "Both ping and pong buffers are not valid" };
 
         s.timestamps[stride] = record.timestamp;
         s.cpu[stride] = record.sample;
