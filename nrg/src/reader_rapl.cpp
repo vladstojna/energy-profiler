@@ -1261,6 +1261,10 @@ private:
     error add_event(const std::vector<occ::sensor_names_entry>& entries,
         uint32_t occ_num,
         uint32_t location);
+
+    error read_single_occ(const detail::event_data& ed,
+        occ::sensor_buffers& sbuffs,
+        sample& s) const;
 };
 
 #endif
@@ -1498,33 +1502,43 @@ error reader_rapl::impl::add_event(const std::vector<occ::sensor_names_entry>& e
     return error::success();
 }
 
-
-error reader_rapl::impl::read(sample& s) const
+error reader_rapl::impl::read_single_occ(const detail::event_data& ed,
+    occ::sensor_buffers& sbuffs,
+    sample& s) const
 {
-    for (const auto& ed : _active_events)
+    if (error err = detail::get_sensor_buffers(*_file, ed.occ_num, sbuffs))
+        return err;
+    for (const auto& entry : ed.entries)
     {
-        occ::sensor_buffers sbuffs;
-        if (error err = detail::get_sensor_buffers(*_file, ed.occ_num, sbuffs))
-            return err;
-        for (const auto& entry : ed.entries)
-        {
-            size_t stride = ed.occ_num * nrgprf::max_domains +
-                detail::sensor_gsid_to_index(entry.gsid);
+        size_t stride = ed.occ_num * nrgprf::max_domains +
+            detail::sensor_gsid_to_index(entry.gsid);
 
-            // TODO: read from both ping and pong buffers
-            occ::sensor_structure_v1_sample record =
-                occ::get_v1_sample(sbuffs.pong, entry.reading_offset);
+        // TODO: read from both ping and pong buffers
+        occ::sensor_structure_v1_sample record =
+            occ::get_v1_sample(sbuffs.pong, entry.reading_offset);
 
-            s.timestamps[stride] = record.timestamp;
-            s.cpu[stride] = record.sample;
-        }
+        s.timestamps[stride] = record.timestamp;
+        s.cpu[stride] = record.sample;
     }
     return error::success();
 }
 
-// TODO
-error reader_rapl::impl::read(sample&, uint8_t) const
+
+error reader_rapl::impl::read(sample& s) const
 {
+    occ::sensor_buffers sbuffs;
+    for (const auto& ed : _active_events)
+        if (error err = read_single_occ(ed, sbuffs, s))
+            return err;
+    return error::success();
+}
+
+// Since sensors are read in bulk, reading with an index reads all sensors in some OCC
+error reader_rapl::impl::read(sample& s, uint8_t idx) const
+{
+    occ::sensor_buffers sbuffs;
+    if (error err = read_single_occ(_active_events[idx], sbuffs, s))
+        return err;
     return error::success();
 }
 
