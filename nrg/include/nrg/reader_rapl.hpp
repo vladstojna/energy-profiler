@@ -52,11 +52,11 @@ namespace nrgprf
         template<typename Tag>
         int32_t event_idx(uint8_t skt) const;
 
-        template<typename Location, typename Type>
-        result<Type> value(const sample& s, uint8_t skt) const;
+        template<typename Location>
+        result<sensor_value> value(const sample& s, uint8_t skt) const;
 
-        template<typename Location, typename Type>
-        std::vector<std::pair<uint32_t, Type>> values(const sample& s) const;
+        template<typename Location>
+        std::vector<std::pair<uint32_t, sensor_value>> values(const sample& s) const;
 
     private:
         const impl* pimpl() const;

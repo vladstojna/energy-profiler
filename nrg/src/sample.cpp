@@ -27,25 +27,13 @@ static void operator+=(std::array<T, sz>& lhs, const std::array<T, sz>& rhs)
         lhs[ix] += rhs[ix];
 }
 
-#if defined(NRG_X86_64)
 
 sample::sample() :
-    cpu{},
-    gpu{}
+    data{}
 {}
-
-#elif defined(NRG_PPC64)
-
-sample::sample() :
-    timestamps{},
-    cpu{},
-    gpu{}
-{}
-
-#endif // defined(NRG_X86_64)
 
 sample::sample(const reader& reader, error& e) :
-    sample{}
+    sample()
 {
     e = reader.read(*this);
 }
@@ -54,14 +42,14 @@ sample::sample(const reader& reader, error& e) :
 
 bool sample::operator==(const sample& rhs) const
 {
-    return cpu == rhs.cpu && gpu == rhs.gpu;
+    return data.cpu == rhs.data.cpu && data.gpu == rhs.data.gpu;
 }
 
 #elif defined(NRG_PPC64)
 
 bool sample::operator==(const sample& rhs) const
 {
-    return timestamps == rhs.timestamps && cpu == rhs.cpu && gpu == rhs.gpu;
+    return data.timestamps == rhs.data.timestamps && data.cpu == rhs.data.cpu && data.gpu == rhs.data.gpu;
 }
 
 #endif // defined(NRG_X86_64)
@@ -105,33 +93,33 @@ sample::operator bool() const
 
 sample& sample::operator-=(const sample& rhs)
 {
-    cpu -= rhs.cpu;
-    gpu -= rhs.gpu;
+    data.cpu -= rhs.data.cpu;
+    data.gpu -= rhs.data.gpu;
     return *this;
 }
 
 sample& sample::operator+=(const sample& rhs)
 {
-    cpu += rhs.cpu;
-    gpu += rhs.gpu;
+    data.cpu += rhs.data.cpu;
+    data.gpu += rhs.data.gpu;
     return *this;
 }
 
 sample& sample::operator/=(sample::value_type rhs)
 {
     assert(rhs);
-    for (auto& val : cpu)
+    for (auto& val : data.cpu)
         val /= rhs;
-    for (auto& val : gpu)
+    for (auto& val : data.gpu)
         val /= rhs;
     return *this;
 }
 
 sample& sample::operator*=(sample::value_type rhs)
 {
-    for (auto& val : cpu)
+    for (auto& val : data.cpu)
         val *= rhs;
-    for (auto& val : gpu)
+    for (auto& val : data.gpu)
         val *= rhs;
     return *this;
 }
@@ -140,39 +128,39 @@ sample& sample::operator*=(sample::value_type rhs)
 
 sample& sample::operator-=(const sample& rhs)
 {
-    timestamps -= rhs.timestamps;
-    cpu -= rhs.cpu;
-    gpu -= rhs.gpu;
+    data.timestamps -= rhs.data.timestamps;
+    data.cpu -= rhs.data.cpu;
+    data.gpu -= rhs.data.gpu;
     return *this;
 }
 
 sample& sample::operator+=(const sample& rhs)
 {
-    timestamps -= rhs.timestamps;
-    cpu += rhs.cpu;
-    gpu += rhs.gpu;
+    data.timestamps -= rhs.data.timestamps;
+    data.cpu += rhs.data.cpu;
+    data.gpu += rhs.data.gpu;
     return *this;
 }
 
 sample& sample::operator/=(sample::value_type rhs)
 {
     assert(rhs);
-    for (auto& val : timestamps)
+    for (auto& val : data.timestamps)
         val /= rhs;
-    for (auto& val : cpu)
+    for (auto& val : data.cpu)
         val /= rhs;
-    for (auto& val : gpu)
+    for (auto& val : data.gpu)
         val /= rhs;
     return *this;
 }
 
 sample& sample::operator*=(sample::value_type rhs)
 {
-    for (auto& val : timestamps)
+    for (auto& val : data.timestamps)
         val /= rhs;
-    for (auto& val : cpu)
+    for (auto& val : data.cpu)
         val *= rhs;
-    for (auto& val : gpu)
+    for (auto& val : data.gpu)
         val *= rhs;
     return *this;
 }
