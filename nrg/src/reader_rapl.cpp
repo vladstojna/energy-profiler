@@ -999,15 +999,15 @@ public:
     template<typename Tag>
     int32_t event_idx(uint8_t) const;
 
-    template<typename Location, typename Type>
-    result<Type> value(const sample& s, uint8_t) const;
+    template<typename Location>
+    result<sensor_value> value(const sample& s, uint8_t) const;
 };
 
 #elif defined NRG_X86_64
 
 class reader_rapl::impl
 {
-    std::array<std::array<int32_t, rapl_domains>, max_sockets> _event_map;
+    std::array<std::array<int32_t, max_domains>, max_sockets> _event_map;
     std::vector<detail::event_data> _active_events;
 
 public:
@@ -1020,8 +1020,8 @@ public:
     template<typename Tag>
     int32_t event_idx(uint8_t) const;
 
-    template<typename Location, typename Type>
-    result<Type> value(const sample& s, uint8_t) const;
+    template<typename Location>
+    result<sensor_value> value(const sample& s, uint8_t) const;
 
 private:
     error add_event(const char* base, location_mask dmask, uint8_t skt);
@@ -1250,7 +1250,7 @@ class reader_rapl::impl
     // the file here functions as a cache, so as to avoid opening the file every time
     // we want to read the sensors
     std::shared_ptr<std::ifstream> _file;
-    std::array<std::array<int8_t, occ_domains>, max_sockets> _event_map;
+    std::array<std::array<int8_t, max_domains>, max_sockets> _event_map;
     std::vector<detail::event_data> _active_events;
 
 public:
@@ -1263,8 +1263,8 @@ public:
     template<typename Tag>
     int32_t event_idx(uint8_t) const;
 
-    template<typename Location, typename Type>
-    result<Type> value(const sample& s, uint8_t) const;
+    template<typename Location>
+    result<sensor_value> value(const sample& s, uint8_t) const;
 
 private:
     error add_event(const std::vector<occ::sensor_names_entry>& entries,
@@ -1306,8 +1306,8 @@ int32_t reader_rapl::impl::event_idx(uint8_t) const
     return -1;
 }
 
-template<typename Location, typename Type>
-result<Type> reader_rapl::impl::value(const sample&, uint8_t) const
+template<typename Location>
+result<sensor_value> reader_rapl::impl::value(const sample&, uint8_t) const
 {
     return error(error_code::NO_EVENT);
 }
@@ -1343,7 +1343,7 @@ reader_rapl::impl::impl(location_mask dmask, socket_mask skt_mask, error& ec) :
             return;
         }
         // already found one domain above
-        for (uint8_t domain_count = 0; domain_count < rapl_domains - 1; domain_count++)
+        for (uint8_t domain_count = 0; domain_count < max_domains - 1; domain_count++)
         {
             snprintf(base + written, sizeof(base) - written, "/intel-rapl:%u:%u", skt, domain_count);
             // only consider the domain if the file exists
@@ -1382,7 +1382,7 @@ error reader_rapl::impl::read(sample& s, uint8_t ev_idx) const
         _active_events[ev_idx].curr_max += _active_events[ev_idx].max;
     }
     _active_events[ev_idx].prev = curr;
-    s.cpu[ev_idx] = curr + _active_events[ev_idx].curr_max;
+    s.data.cpu[ev_idx] = curr + _active_events[ev_idx].curr_max;
     return error::success();
 }
 
@@ -1397,12 +1397,12 @@ int32_t reader_rapl::impl::event_idx(uint8_t skt) const
     return _event_map[skt][Location::value];
 }
 
-template<typename Location, typename Type>
-result<Type> reader_rapl::impl::value(const sample& s, uint8_t skt) const
+template<typename Location>
+result<sensor_value> reader_rapl::impl::value(const sample& s, uint8_t skt) const
 {
     if (event_idx<Location>(skt) < 0)
         return error(error_code::NO_EVENT);
-    auto result = s.cpu[event_idx<Location>(skt)];
+    auto result = s.data.cpu[event_idx<Location>(skt)];
     if (!result)
         return error(error_code::NO_EVENT);
     return result;
@@ -1526,8 +1526,8 @@ error reader_rapl::impl::read_single_occ(const detail::event_data& ed,
         if (!occ::get_sensor_record(sbuffs, entry, record))
             return { error_code::READ_ERROR, "Both ping and pong buffers are not valid" };
 
-        s.timestamps[stride] = record.timestamp;
-        s.cpu[stride] = record.sample;
+        s.data.timestamps[stride] = record.timestamp;
+        s.data.cpu[stride] = record.sample;
     }
     return error::success();
 }
@@ -1562,38 +1562,32 @@ int32_t reader_rapl::impl::event_idx(uint8_t skt) const
     return _event_map[skt][Location::value];
 }
 
-template<typename Location, typename Type>
-result<Type> reader_rapl::impl::value(const sample& s, uint8_t skt) const
+template<typename Location>
+result<sensor_value> reader_rapl::impl::value(const sample& s, uint8_t skt) const
 {
     assert(skt < max_sockets);
     int32_t idx = event_idx<Location>(skt);
     if (idx < 0)
         return error(error_code::NO_EVENT);
     uint32_t stride = skt * nrgprf::max_domains + Location::value;
-    if constexpr (std::is_same_v<Type, units_power>)
-    {
-        auto result = s.cpu[stride];
-        if (!result)
-            return error(error_code::NO_EVENT);
-        for (const auto& sensor_entry : _active_events[idx].entries)
-        {
-            if (sensor_entry.gsid == detail::to_sensor_gsid<Location>())
-            {
-                watts<double> power = detail::canonicalize_power(result, sensor_entry);
-                if (!power.count())
-                    return error(error_code::NOT_IMPL, "Unsupported power units found");
-                return unit_cast<units_power>(power);
-            }
-        };
+
+    auto value_timestamp = s.data.timestamps[stride];
+    auto value_sample = s.data.cpu[stride];
+    if (!value_timestamp || !value_sample)
         return error(error_code::NO_EVENT);
-    }
-    else if constexpr (std::is_same_v<Type, units_time>)
+    for (const auto& sensor_entry : _active_events[idx].entries)
     {
-        auto result = s.timestamps[stride];
-        if (!result)
-            return error(error_code::NO_EVENT);
-        return units_time::duration{ result };
-    }
+        if (sensor_entry.gsid == detail::to_sensor_gsid<Location>())
+        {
+            watts<double> power = detail::canonicalize_power(value_sample, sensor_entry);
+            if (!power.count())
+                return error(error_code::NOT_IMPL, "Unsupported power units found");
+            return sensor_value{
+                time_point{ time_point::duration{ value_timestamp } },
+                unit_cast<units_power>(power) };
+        }
+    };
+    return error(error_code::NO_EVENT);
 }
 
 #endif // CPU_NONE
@@ -1651,19 +1645,19 @@ int32_t reader_rapl::event_idx(uint8_t skt) const
     return pimpl()->event_idx<Location>(skt);
 }
 
-template<typename Location, typename Type>
-result<Type> reader_rapl::value(const sample & s, uint8_t skt) const
+template<typename Location>
+result<sensor_value> reader_rapl::value(const sample & s, uint8_t skt) const
 {
-    return pimpl()->value<Location, Type>(s, skt);
+    return pimpl()->value<Location>(s, skt);
 }
 
-template<typename Location, typename Type>
-std::vector<std::pair<uint32_t, Type>> reader_rapl::values(const sample & s) const
+template<typename Location>
+std::vector<std::pair<uint32_t, sensor_value>> reader_rapl::values(const sample & s) const
 {
-    std::vector<std::pair<uint32_t, Type>> retval;
+    std::vector<std::pair<uint32_t, sensor_value>> retval;
     for (uint32_t skt = 0; skt < max_sockets; skt++)
     {
-        result<Type> val = value<Location, Type>(s, skt);
+        result<sensor_value> val = value<Location>(s, skt);
         if (val)
             retval.push_back({ skt, std::move(val.value()) });
     };
@@ -1736,20 +1730,17 @@ int32_t reader_rapl::impl::event_idx<loc::location>(uint8_t) const \
     template \
     int32_t reader_rapl::event_idx<loc::location>(uint8_t skt) const
 
-#define INSTANTIATE_VALUE(location, type) \
+#define INSTANTIATE_VALUE(location) \
     template \
-    result<type> \
+    result<sensor_value> \
     reader_rapl::value<loc::location>(const sample& s, uint8_t skt) const
 
-#define INSTANTIATE_VALUES(location, type) \
+#define INSTANTIATE_VALUES(location) \
     template \
-    std::vector<std::pair<uint32_t, type>> \
+    std::vector<std::pair<uint32_t, sensor_value>> \
     reader_rapl::values<loc::location>(const sample& s) const
 
 #if defined NRG_X86_64
-
-#define INSTANTIATE_TYPES(macro, location) \
-    macro(location, units_energy)
 
 #define INSTANTIATE_ALL(macro) \
     macro(pkg); \
@@ -1758,10 +1749,6 @@ int32_t reader_rapl::impl::event_idx<loc::location>(uint8_t) const \
     macro(mem)
 
 #elif defined NRG_PPC64
-
-#define INSTANTIATE_TYPES(macro, location) \
-    macro(location, units_power); \
-    macro(location, units_time)
 
 #define INSTANTIATE_ALL(macro) \
     macro(sys); \
@@ -1773,12 +1760,6 @@ int32_t reader_rapl::impl::event_idx<loc::location>(uint8_t) const \
 
 #endif
 
-#define INSTANTIATE_VALUE_ALL(location) \
-    INSTANTIATE_TYPES(INSTANTIATE_VALUE, location)
-
-#define INSTANTIATE_VALUES_ALL(location) \
-    INSTANTIATE_TYPES(INSTANTIATE_VALUES, location)
-
 INSTANTIATE_ALL(INSTANTIATE_EVENT_IDX);
-INSTANTIATE_ALL(INSTANTIATE_VALUE_ALL);
-INSTANTIATE_ALL(INSTANTIATE_VALUES_ALL);
+INSTANTIATE_ALL(INSTANTIATE_VALUE);
+INSTANTIATE_ALL(INSTANTIATE_VALUES);

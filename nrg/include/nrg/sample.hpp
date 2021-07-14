@@ -3,6 +3,7 @@
 #pragma once
 
 #include <nrg/constants.hpp>
+#include <nrg/arch/sample_data.hpp>
 
 #include <array>
 #include <cstdint>
@@ -16,21 +17,6 @@ namespace nrgprf
     class reader_rapl;
     class reader_gpu;
 
-#if defined(NRG_X86_64)
-
-#define NRG_SAMPLE_DECLARE_MEMBERS \
-    std::array<uint64_t, max_cpu_events> cpu; \
-    std::array<uint32_t, max_gpu_events> gpu
-
-#elif defined(NRG_PPC64)
-
-#define NRG_SAMPLE_DECLARE_MEMBERS \
-    std::array<uint64_t, max_cpu_events> timestamps; \
-    std::array<uint16_t, max_cpu_events> cpu; \
-    std::array<uint32_t, max_gpu_events> gpu
-
-#endif // defined(NRG_X86_64)
-
     class sample
     {
     public:
@@ -40,7 +26,7 @@ namespace nrgprf
         friend reader_gpu;
 
     private:
-        NRG_SAMPLE_DECLARE_MEMBERS;
+        detail::sample_data data;
 
     public:
         sample();
