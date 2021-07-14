@@ -1491,12 +1491,24 @@ error reader_rapl::impl::add_event(const std::vector<occ::sensor_names_entry>& e
     uint32_t occ_num,
     uint32_t loc)
 {
-    const detail::sensor_static_data& sensor_data = detail::bit_to_sensor_data[loc];
-    _event_map[occ_num][loc] = _active_events.size();
-    _active_events.push_back({ occ_num, std::vector<occ::sensor_names_entry>() });
+    int8_t& idxref = _event_map[occ_num][loc];
+    // find if an event for a certain OCC has been added
+    for (auto it = _active_events.cbegin(); it != _active_events.end(); it++)
+        if (it->occ_num == occ_num)
+            idxref = std::distance(_active_events.cbegin(), it);
+
+    // if it has then the index must be >= 0
+    // in this case, push back a new event and register its index
+    if (idxref < 0)
+    {
+        idxref = _active_events.size();
+        _active_events.push_back({ occ_num, std::vector<occ::sensor_names_entry>() });
+    }
+
     for (const auto& entry : entries)
     {
-        auto& active_entries = _active_events.back().entries;
+        const auto& sensor_data = detail::bit_to_sensor_data[loc];
+        auto& active_entries = _active_events[idxref].entries;
         if (entry.gsid == sensor_data.gsid &&
             entry.type == sensor_data.type &&
             entry.location == sensor_data.loc)
@@ -1505,7 +1517,8 @@ error reader_rapl::impl::add_event(const std::vector<occ::sensor_names_entry>& e
             if (entry.structure_version != 1)
                 return { error_code::NOT_IMPL, "Unsupported structure version" };
             active_entries.push_back(entry);
-            std::cout << fileline("added event - OCC=") << occ_num << " " << entry << "\n";
+            std::cout << fileline("added event - idx=") << +idxref
+                << " OCC=" << occ_num << " " << entry << "\n";
         }
     }
     return error::success();
@@ -1553,7 +1566,10 @@ error reader_rapl::impl::read(sample& s, uint8_t idx) const
 
 size_t reader_rapl::impl::num_events() const
 {
-    return _active_events.size();
+    size_t num_events = 0;
+    for (const auto& ed : _active_events)
+        num_events += ed.entries.size();
+    return num_events;
 }
 
 template<typename Location>
