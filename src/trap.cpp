@@ -1,6 +1,7 @@
 // trap.cpp
 
 #include <cassert>
+#include <iomanip>
 #include <iostream>
 
 #include "trap.hpp"

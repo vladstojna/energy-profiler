@@ -540,6 +540,8 @@ unit_lines::highest_addr(uint32_t lineno) const
     return get_addr_impl(lineno, &unit_lines::get_highest_addr);
 }
 
+#define CALL_MEMBER_FN(object, member_ptr) ((object).*(member_ptr))
+
 dbg_expected<std::pair<uint32_t, uintptr_t>>
 unit_lines::get_addr_impl(uint32_t lineno, addr_getter fn) const
 {
@@ -548,7 +550,7 @@ unit_lines::get_addr_impl(uint32_t lineno, addr_getter fn) const
     // if there is an element not less than lineno
     if (eqrange.first != _lines.end())
     {
-        auto res = std::invoke(fn, *this, eqrange.first->second);
+        auto res = CALL_MEMBER_FN(*this, fn)(eqrange.first->second);
         if (!res)
             return std::move(res.error());
         return { eqrange.first->first, res.value() };
@@ -556,7 +558,7 @@ unit_lines::get_addr_impl(uint32_t lineno, addr_getter fn) const
     // otherwise, the first element greater than lineno
     if (eqrange.second != _lines.end())
     {
-        auto res = std::invoke(fn, *this, eqrange.second->second);
+        auto res = CALL_MEMBER_FN(*this, fn)(eqrange.second->second);
         if (!res)
             return std::move(res.error());
         return { eqrange.second->first, res.value() };
