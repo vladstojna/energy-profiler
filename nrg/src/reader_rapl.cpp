@@ -1162,7 +1162,7 @@ namespace
                 assert(false);
                 return false;
             }
-    }
+        }
 
     #else
 
@@ -1188,7 +1188,7 @@ namespace
             "occ::sensor_readings_buffer::size != 40960");
         static_assert(sizeof(occ::sensor_buffers) == occ::sensor_buffers::size,
             "occ::sensor_buffers::size != 86016");
-}
+    }
 
     // TODO: Need to confirm whether sensor GSIDs are constant or dynamically assigned
     // (at reboot, for example)
@@ -1272,6 +1272,14 @@ namespace
             return watts<double>{};
         }
     };
+
+    // OCC timestamps have a resolution of 512 MHz
+    // this means that each value incremented in the counter corresponds to 1000/512 ns
+    time_point canonicalize_timestamp(uint64_t timestamp)
+    {
+        std::chrono::duration<uint64_t, std::ratio<1, 512000000UL>> dur(timestamp);
+        return time_point({ std::chrono::duration_cast<time_point::duration>(dur) });
+    }
 
     struct event_data
     {
@@ -1594,11 +1602,10 @@ result<sensor_value> reader_rapl::impl::value(const sample& s, uint8_t skt) cons
         if (sensor_entry.gsid == to_sensor_gsid<Location>())
         {
             watts<double> power = canonicalize_power(value_sample, sensor_entry);
+            time_point tp = canonicalize_timestamp(value_timestamp);
             if (!power.count())
                 return error(error_code::NOT_IMPL, "Unsupported power units found");
-            return sensor_value{
-                time_point{ time_point::duration{ value_timestamp } },
-                unit_cast<units_power>(power) };
+            return sensor_value{ tp, power };
         }
     };
     return error(error_code::NO_EVENT);
