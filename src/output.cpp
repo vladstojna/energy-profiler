@@ -351,7 +351,10 @@ void readings_output_dev<nrgprf::reader_rapl>::output(detail::output_impl& os,
         cpu_energy<nrgprf::loc::cores> pp0(_reader, exec, skt);
         cpu_energy<nrgprf::loc::uncore> pp1(_reader, exec, skt);
         cpu_energy<nrgprf::loc::mem> dram(_reader, exec, skt);
-        if (!pkg && !pp0 && !pp1 && !dram)
+        cpu_energy<nrgprf::loc::sys> sys(_reader, exec, skt);
+        cpu_energy<nrgprf::loc::gpu> gpu(_reader, exec, skt);
+
+        if (!pkg && !pp0 && !pp1 && !dram && !sys && !gpu)
             continue;
 
         json readings;
@@ -359,6 +362,8 @@ void readings_output_dev<nrgprf::reader_rapl>::output(detail::output_impl& os,
         json& jcores = readings["cores"];
         json& juncore = readings["uncore"];
         json& jdram = readings["dram"];
+        json& jsys = readings["sys"];
+        json& jgpu = readings["gpu"];
 
         readings["target"] = "cpu";
         readings["socket"] = skt;
@@ -371,6 +376,10 @@ void readings_output_dev<nrgprf::reader_rapl>::output(detail::output_impl& os,
             output_energy<nrgprf::loc::uncore>(juncore, _reader, pp1.get(), exec, _idle, skt);
         if (dram)
             output_energy<nrgprf::loc::mem>(jdram, _reader, dram.get(), exec, _idle, skt);
+        if (sys)
+            output_energy<nrgprf::loc::sys>(jsys, _reader, sys.get(), exec, _idle, skt);
+        if (gpu)
+            output_energy<nrgprf::loc::gpu>(jgpu, _reader, gpu.get(), exec, _idle, skt);
 
         os.json().push_back(std::move(readings));
     }
