@@ -24,6 +24,7 @@
 #include <cstring>
 #include <fstream>
 #include <iostream>
+#include <set>
 #include <fcntl.h>
 #include <unistd.h>
 
@@ -39,6 +40,7 @@
 #include <cstring>
 #include <fstream>
 #include <iostream>
+#include <set>
 #include <sstream>
 #include <iomanip>
 
@@ -70,14 +72,11 @@ namespace
     result<uint8_t> count_sockets()
     {
         char filename[128];
-        bool pkg_found[max_sockets]{ false };
-        uint8_t ret = 0;
+        std::set<uint32_t> packages;
         for (int i = 0; ; i++)
         {
-            uint32_t pkg;
             snprintf(filename, sizeof(filename),
                 "/sys/devices/system/cpu/cpu%d/topology/physical_package_id", i);
-
             std::ifstream ifs(filename, std::ios::in);
             if (!ifs)
             {
@@ -87,22 +86,18 @@ namespace
                 return error(error_code::SYSTEM, system_error_str(
                     cmmn::concat("Error opening ", filename)));
             }
-            ifs >> pkg;
-            if (!ifs)
+            uint32_t pkg;
+            if (!(ifs >> pkg))
                 return error(error_code::SYSTEM, system_error_str("Error reading package"));
-            if (pkg >= max_sockets)
-                return error(error_code::TOO_MANY_SOCKETS,
-                    cmmn::concat("Too many sockets: maximum of ", std::to_string(nrgprf::max_sockets),
-                        ", found ", std::to_string(pkg)));
-            if (!pkg_found[pkg])
-            {
-                pkg_found[pkg] = true;
-                ret++;
-            }
+            packages.insert(pkg);
         };
-        if (ret == 0)
+        if (packages.empty())
             return error(error_code::NO_SOCKETS, "No sockets found");
-        return ret;
+        if (packages.size() > max_sockets)
+            return error(error_code::TOO_MANY_SOCKETS, cmmn::concat(
+                "Too many sockets: maximum of ", std::to_string(nrgprf::max_sockets),
+                ", found ", std::to_string(packages.size())));
+        return packages.size();
     }
 }
 #endif // !defined CPU_NONE
