@@ -442,6 +442,18 @@ int32_t reader_rapl::impl::event_idx(uint8_t skt) const
     return _event_map[skt][Location::value];
 }
 
+template<>
+int32_t reader_rapl::impl::event_idx<loc::sys>(uint8_t) const
+{
+    return -1;
+}
+
+template<>
+int32_t reader_rapl::impl::event_idx<loc::gpu>(uint8_t) const
+{
+    return -1;
+}
+
 template<typename Location>
 result<sensor_value> reader_rapl::impl::value(const sample& s, uint8_t skt) const
 {
@@ -451,6 +463,18 @@ result<sensor_value> reader_rapl::impl::value(const sample& s, uint8_t skt) cons
     if (!result)
         return error(error_code::NO_EVENT);
     return result;
+}
+
+template<>
+result<sensor_value> reader_rapl::impl::value<loc::sys>(const sample&, uint8_t) const
+{
+    return error(error_code::NO_EVENT);
+}
+
+template<>
+result<sensor_value> reader_rapl::impl::value<loc::gpu>(const sample&, uint8_t) const
+{
+    return error(error_code::NO_EVENT);
 }
 
 error reader_rapl::impl::add_event(const char* base, location_mask dmask, uint8_t skt)
@@ -1713,25 +1737,13 @@ reader_rapl::impl* reader_rapl::pimpl()
     std::vector<std::pair<uint32_t, sensor_value>> \
     reader_rapl::values<loc::location>(const sample& s) const
 
-#if defined NRG_X86_64
-
 #define INSTANTIATE_ALL(macro) \
-    macro(pkg); \
-    macro(cores); \
-    macro(uncore); \
-    macro(mem)
-
-#elif defined NRG_PPC64
-
-#define INSTANTIATE_ALL(macro) \
-    macro(sys); \
     macro(pkg); \
     macro(cores); \
     macro(uncore); \
     macro(mem); \
+    macro(sys); \
     macro(gpu)
-
-#endif
 
 INSTANTIATE_ALL(INSTANTIATE_EVENT_IDX);
 INSTANTIATE_ALL(INSTANTIATE_VALUE);
