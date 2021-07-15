@@ -171,13 +171,10 @@ public:
         {
             const auto& prev = *std::prev(it);
             const auto& curr = *it;
-
-            nrgprf::result<nrgprf::units_power> pwr_prev = rdr.get_board_power(prev.smp(), dev);
-            nrgprf::result<nrgprf::units_power> pwr_curr = rdr.get_board_power(curr.smp(), dev);
-
+            nrgprf::result<nrgprf::units_power> pwr_prev = rdr.get_board_power(prev, dev);
+            nrgprf::result<nrgprf::units_power> pwr_curr = rdr.get_board_power(curr, dev);
             if (!pwr_prev || !pwr_curr)
                 return;
-
             nrgprf::timed_sample::duration dur = curr - prev;
             nrgprf::watts<double> avg_pwr = (pwr_prev.value() + pwr_curr.value()) / 2.0;
             _energy += (avg_pwr * dur);
@@ -197,6 +194,9 @@ public:
     }
 };
 
+#if defined NRG_X86_64
+
+template<typename T>
 class cpu_energy
 {
 private:
@@ -214,12 +214,11 @@ private:
     }
 
 public:
-    template<typename Tag>
     cpu_energy(const nrgprf::reader_rapl& reader, const timed_execution& exec,
-        uint8_t skt, Tag) :
+        uint8_t skt) :
         _energy(subtract(
-            reader.get_energy<Tag>(exec.back().smp(), skt),
-            reader.get_energy<Tag>(exec.front().smp(), skt)))
+            reader.value<T>(exec.back(), skt),
+            reader.value<T>(exec.front(), skt)))
     {}
 
     const nrgprf::units_energy& get() const
@@ -234,6 +233,64 @@ public:
 
 };
 
+#elif defined NRG_PPC64
+
+template<typename T>
+class cpu_energy
+{
+private:
+    nrgprf::joules<double> _energy;
+
+    nrgprf::joules<double> compute(
+        const nrgprf::reader_rapl& reader,
+        const timed_execution& exec,
+        uint8_t skt)
+    {
+        if (exec.empty())
+            return {};
+        nrgprf::joules<double> energy{};
+        for (auto it = std::next(exec.begin()); it != exec.end(); it++)
+        {
+            const auto& sprev = *std::prev(it);
+            const auto& scurr = *it;
+            nrgprf::result<nrgprf::sensor_value> prev = reader.value<T>(sprev, skt);
+            nrgprf::result<nrgprf::sensor_value> curr = reader.value<T>(scurr, skt);
+
+            if (!prev || !curr)
+                return {};
+            nrgprf::time_point::duration interval =
+                curr.value().timestamp - prev.value().timestamp;
+
+            assert(interval.count() >= 0);
+            if (interval.count() > 0)
+            {
+                nrgprf::watts<double> avg_pwr = (prev.value().power + curr.value().power) / 2.0;
+                energy += (avg_pwr * interval);
+            }
+        }
+        return energy;
+    }
+
+public:
+    cpu_energy(const nrgprf::reader_rapl& reader,
+        const timed_execution& exec,
+        uint8_t skt) :
+        _energy(compute(reader, exec, skt))
+    {}
+
+    const nrgprf::joules<double>& get() const
+    {
+        return _energy;
+    }
+
+    explicit operator bool() const
+    {
+        return _energy.count();
+    }
+};
+
+#endif // defined NRG_X86_64
+
 template<typename Tag>
 void output_energy(nlohmann::json& j,
     const nrgprf::reader_rapl& reader,
@@ -247,7 +304,7 @@ void output_energy(nlohmann::json& j,
         j = energy_holder{ energy_total,
             get_idle_delta(
                 { energy_total, get_duration(exec) },
-                { cpu_energy(reader, idle, skt, Tag{}).get(), get_duration(idle) }) };
+                { cpu_energy<Tag>(reader, idle, skt).get(), get_duration(idle) }) };
     else
         j = energy_holder{ energy_total, {} };
 }
@@ -284,17 +341,16 @@ template<>
 void readings_output_dev<nrgprf::reader_rapl>::output(detail::output_impl& os,
     const timed_execution& exec) const
 {
-    using reader_rapl = nrgprf::reader_rapl;
     using json = nlohmann::json;
 
     assert(exec.size() > 1);
     assert(_idle.empty() || _idle.size() > 1);
     for (uint32_t skt = 0; skt < nrgprf::max_sockets; skt++)
     {
-        cpu_energy pkg(_reader, exec, skt, reader_rapl::package{});
-        cpu_energy pp0(_reader, exec, skt, reader_rapl::cores{});
-        cpu_energy pp1(_reader, exec, skt, reader_rapl::uncore{});
-        cpu_energy dram(_reader, exec, skt, reader_rapl::dram{});
+        cpu_energy<nrgprf::loc::pkg> pkg(_reader, exec, skt);
+        cpu_energy<nrgprf::loc::cores> pp0(_reader, exec, skt);
+        cpu_energy<nrgprf::loc::uncore> pp1(_reader, exec, skt);
+        cpu_energy<nrgprf::loc::mem> dram(_reader, exec, skt);
         if (!pkg && !pp0 && !pp1 && !dram)
             continue;
 
@@ -308,13 +364,13 @@ void readings_output_dev<nrgprf::reader_rapl>::output(detail::output_impl& os,
         readings["socket"] = skt;
 
         if (pkg)
-            output_energy<reader_rapl::package>(jpackage, _reader, pkg.get(), exec, _idle, skt);
+            output_energy<nrgprf::loc::pkg>(jpackage, _reader, pkg.get(), exec, _idle, skt);
         if (pp0)
-            output_energy<reader_rapl::cores>(jcores, _reader, pp0.get(), exec, _idle, skt);
+            output_energy<nrgprf::loc::cores>(jcores, _reader, pp0.get(), exec, _idle, skt);
         if (pp1)
-            output_energy<reader_rapl::uncore>(juncore, _reader, pp1.get(), exec, _idle, skt);
+            output_energy<nrgprf::loc::uncore>(juncore, _reader, pp1.get(), exec, _idle, skt);
         if (dram)
-            output_energy<reader_rapl::dram>(jdram, _reader, dram.get(), exec, _idle, skt);
+            output_energy<nrgprf::loc::mem>(jdram, _reader, dram.get(), exec, _idle, skt);
 
         os.json().push_back(std::move(readings));
     }
