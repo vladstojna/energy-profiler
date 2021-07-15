@@ -908,11 +908,6 @@ namespace
             return false;
         }
 
-        std::istream& operator>>(std::istream& is, sensor_readings_buffer& srb)
-        {
-            return is.read(reinterpret_cast<std::istream::char_type*>(&srb), sizeof(srb));
-        }
-
         std::istream& operator>>(std::istream& is, sensor_buffers& buffs)
         {
             return is.read(reinterpret_cast<std::istream::char_type*>(&buffs), sizeof(buffs));
@@ -1003,7 +998,7 @@ namespace
                         " and ", std::to_string(nentry.gsid));
                 return result;
             case 2:
-                result = sstruct.sv2.gsid != nentry.gsid;
+                result = sstruct.sv2.gsid == nentry.gsid;
                 if (!result)
                     msg = cmmn::concat("Sensor GSID are different between readings and names entry,"
                         " found ", std::to_string(sstruct.sv2.gsid),
@@ -1342,6 +1337,8 @@ namespace
             occ::sensor_structure sstruct;
             if (!occ::get_sensor_record(buffs, entry, sstruct))
                 return { error_code::FORMAT_ERROR, "Both ping and pong buffers are not valid" };
+            if (std::string msg; !occ::assert_sensor_structure(sstruct, entry, msg))
+                return { error_code::FORMAT_ERROR, std::move(msg) };
             std::cout << entry << "\n";
             switch (entry.structure_version)
             {
