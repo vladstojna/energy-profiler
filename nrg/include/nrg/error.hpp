@@ -3,6 +3,7 @@
 #pragma once
 
 #include <string>
+#include <memory>
 
 namespace nrgprf
 {
@@ -32,12 +33,22 @@ namespace nrgprf
 
     class error
     {
+        struct data
+        {
+            error_code code;
+            std::string msg;
+
+            data(error_code code);
+            data(error_code code, const char* message);
+            data(error_code code, const std::string& message);
+            data(error_code code, std::string&& message);
+        };
+
     public:
         static error success();
 
     private:
-        error_code _code;
-        std::string _msg;
+        std::unique_ptr<data> _data;
 
     public:
         error(error_code code);
@@ -45,10 +56,14 @@ namespace nrgprf
         error(error_code code, const std::string& message);
         error(error_code code, std::string&& message);
 
-        error_code code() const { return _code; }
+        error_code code() const;
         const std::string& msg() const;
 
         explicit operator bool() const;
+        operator const std::string& () const;
+
+    private:
+        error();
     };
 
     std::ostream& operator<<(std::ostream& os, const error& e);

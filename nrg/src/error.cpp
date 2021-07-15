@@ -4,44 +4,72 @@
 
 #include <iostream>
 #include <cassert>
-#include <cstring>
-
 
 using namespace nrgprf;
-
 
 static const std::string error_success("No error");
 static const std::string error_unknown("Unknown error");
 static const std::string error_no_event("No such event");
 
-error error::success()
+error::data::data(error_code code) :
+    code(code),
+    msg()
+{}
+
+error::data::data(error_code code, const char* message) :
+    code(code),
+    msg(message)
 {
-    return { error_code::SUCCESS };
+    assert(message);
 }
 
+error::data::data(error_code code, const std::string& message) :
+    code(code),
+    msg(message)
+{}
+
+error::data::data(error_code code, std::string&& message) :
+    code(code),
+    msg(std::move(message))
+{}
+
+error error::success()
+{
+    return {};
+}
+
+error::error() :
+    _data()
+{}
+
 error::error(error_code code) :
-    _code(code),
-    _msg()
+    _data(std::make_unique<data>(code))
 {}
 
 error::error(error_code code, const char* message) :
-    _code(code),
-    _msg(message)
+    _data(std::make_unique<data>(code, message))
 {}
 
 error::error(error_code code, const std::string& message) :
-    _code(code),
-    _msg(message)
+    _data(std::make_unique<data>(code, message))
 {}
 
 error::error(error_code code, std::string&& message) :
-    _code(code),
-    _msg(std::move(message))
+    _data(std::make_unique<data>(code, std::move(message)))
 {}
+
+error_code error::code() const
+{
+    if (!_data)
+        return error_code::SUCCESS;
+    return _data->code;
+}
 
 const std::string& error::msg() const
 {
-    switch (_code)
+    if (!_data)
+        return error_success;
+    switch (_data->code)
     {
     case error_code::SUCCESS:
         return error_success;
@@ -50,13 +78,18 @@ const std::string& error::msg() const
     case error_code::NO_EVENT:
         return error_no_event;
     default:
-        return _msg;
+        return _data->msg;
     }
 }
 
 error::operator bool() const
 {
-    return _code != error_code::SUCCESS;
+    return bool(_data) && _data->code != error_code::SUCCESS;
+}
+
+error::operator const std::string& () const
+{
+    return msg();
 }
 
 std::ostream& nrgprf::operator<<(std::ostream& os, const error_code& ec)
