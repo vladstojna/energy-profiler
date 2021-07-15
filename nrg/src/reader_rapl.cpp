@@ -493,7 +493,7 @@ namespace
     namespace occ
     {
         // Specification reference
-        // https://raw.githubusercontent.com/open-power/docs/master/occ/OCC_P9_FW_Interfaces.pdf
+        // https://github.com/open-power/docs/blob/master/occ/OCC_P9_FW_Interfaces.pdf
 
         constexpr const size_t max_count = 8;
         constexpr const size_t bar2_offset = 0x580000;
@@ -1079,6 +1079,22 @@ namespace
             return true;
         }
 
+        std::ostream& operator<<(std::ostream& os, const sensor_names_entry& ne)
+        {
+            os << ne.name << ":" << ne.units << ":" << ne.gsid;
+            os << ":f=" << ne.freq;
+            os << ":s=" << ne.scaling_factor;
+            os << ":" << ne.type << ":" << ne.location;
+            os << ":v=" << +ne.structure_version;
+            std::ios::fmtflags flags(os.flags());
+            os << std::hex << ":0x" << ne.reading_offset;
+            os.flags(flags);
+            os << ":" << +ne.specific_info1;
+            return os;
+        }
+
+    #if defined NRG_OCC_DEBUG_PRINTS
+
         std::ostream& operator<<(std::ostream& os, const sensor_data_header_block& hb)
         {
             std::ios::fmtflags flags(os.flags());
@@ -1105,20 +1121,6 @@ namespace
             return os;
         }
 
-        std::ostream& operator<<(std::ostream& os, const sensor_names_entry& ne)
-        {
-            os << ne.name << ":" << ne.units << ":" << ne.gsid;
-            os << ":f=" << ne.freq;
-            os << ":s=" << ne.scaling_factor;
-            os << ":" << ne.type << ":" << ne.location;
-            os << ":v=" << +ne.structure_version;
-            std::ios::fmtflags flags(os.flags());
-            os << std::hex << ":0x" << ne.reading_offset;
-            os.flags(flags);
-            os << ":" << +ne.specific_info1;
-            return os;
-        }
-
         std::ostream& operator<<(std::ostream& os, const sensor_structure_v1& s)
         {
             os << "v1";
@@ -1140,6 +1142,40 @@ namespace
             return os;
         }
 
+        void debug_print(const occ::sensor_data_header_block& header)
+        {
+            std::cout << header << std::endl;
+        }
+
+        bool debug_print(const occ::sensor_names_entry& entry, const occ::sensor_structure& record)
+        {
+            std::cout << entry << "\n";
+            switch (entry.structure_version)
+            {
+            case 1:
+                std::cout << "  " << record.sv1 << "\n";
+                return true;
+            case 2:
+                std::cout << "  " << record.sv2 << "\n";
+                return true;
+            default:
+                assert(false);
+                return false;
+            }
+    }
+
+    #else
+
+        void debug_print(const occ::sensor_data_header_block&)
+        {}
+
+        bool debug_print(const occ::sensor_names_entry&, const occ::sensor_structure&)
+        {
+            return true;
+        }
+
+    #endif // defined NRG_OCC_DEBUG_PRINTS
+
         static_assert(24 == occ::sensor_data_header_block::size,
             "occ::sensor_data_header_block::size != 24");
         static_assert(48 == occ::sensor_names_entry::size,
@@ -1152,7 +1188,7 @@ namespace
             "occ::sensor_readings_buffer::size != 40960");
         static_assert(sizeof(occ::sensor_buffers) == occ::sensor_buffers::size,
             "occ::sensor_buffers::size != 86016");
-    }
+}
 
     // TODO: Need to confirm whether sensor GSIDs are constant or dynamically assigned
     // (at reboot, for example)
@@ -1273,7 +1309,7 @@ namespace
         if (std::string msg; !occ::assert_header_block(hb, msg))
             return { error_code::FORMAT_ERROR, std::move(msg) };
 
-        std::cout << hb << std::endl;
+        debug_print(hb);
         return error::success();
     }
 
@@ -1350,19 +1386,8 @@ namespace
                 return { error_code::FORMAT_ERROR, "Both ping and pong buffers are not valid" };
             if (std::string msg; !occ::assert_sensor_structure(sstruct, entry, msg))
                 return { error_code::FORMAT_ERROR, std::move(msg) };
-            std::cout << entry << "\n";
-            switch (entry.structure_version)
-            {
-            case 1:
-                std::cout << "  " << sstruct.sv1 << "\n";
-                break;
-            case 2:
-                std::cout << "  " << sstruct.sv2 << "\n";
-                break;
-            default:
-                assert(false);
+            if (!debug_print(entry, sstruct))
                 return { error_code::FORMAT_ERROR, "Unsupported sensor structure version found" };
-            }
             structs.push_back(sstruct);
         }
         return error::success();
