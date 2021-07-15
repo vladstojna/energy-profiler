@@ -1290,7 +1290,7 @@ namespace
             assert(false);
             return watts<double>{};
         }
-    };
+    }
 
     // OCC timestamps have a resolution of 512 MHz
     // this means that each value incremented in the counter corresponds to 1000/512 ns
