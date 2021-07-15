@@ -50,6 +50,17 @@ using namespace nrgprf;
 #if !defined CPU_NONE
 namespace
 {
+    constexpr int bitnum(int v)
+    {
+        int num = 0;
+        while (!(v & 0x1))
+        {
+            v >>= 1;
+            num++;
+        }
+        return num;
+    }
+
     std::string system_error_str(std::string_view prefix)
     {
         char buffer[256];
@@ -151,10 +162,10 @@ result<sensor_value> reader_rapl::impl::value(const sample&, uint8_t) const
 
 namespace nrgprf::loc
 {
-    struct pkg : std::integral_constant<int, 0> {};
-    struct cores : std::integral_constant<int, 1> {};
-    struct uncore : std::integral_constant<int, 2> {};
-    struct mem : std::integral_constant<int, 3> {};
+    struct pkg : std::integral_constant<int, bitnum(locmask::pkg)> {};
+    struct cores : std::integral_constant<int, bitnum(locmask::cores)> {};
+    struct uncore : std::integral_constant<int, bitnum(locmask::uncore)> {};
+    struct mem : std::integral_constant<int, bitnum(locmask::mem)> {};
     struct sys {};
     struct gpu {};
 }
@@ -463,12 +474,12 @@ error reader_rapl::impl::add_event(const char* base, location_mask dmask, uint8_
 
 namespace nrgprf::loc
 {
-    struct pkg : std::integral_constant<int, 0> {};
-    struct cores : std::integral_constant<int, 1> {};
-    struct uncore : std::integral_constant<int, 2> {};
-    struct mem : std::integral_constant<int, 3> {};
-    struct sys : std::integral_constant<int, 4> {};
-    struct gpu : std::integral_constant<int, 5> {};
+    struct pkg : std::integral_constant<int, bitnum(locmask::pkg)> {};
+    struct cores : std::integral_constant<int, bitnum(locmask::cores)> {};
+    struct uncore : std::integral_constant<int, bitnum(locmask::uncore)> {};
+    struct mem : std::integral_constant<int, bitnum(locmask::mem)> {};
+    struct sys : std::integral_constant<int, bitnum(locmask::sys)> {};
+    struct gpu : std::integral_constant<int, bitnum(locmask::gpu)> {};
 }
 
 namespace
