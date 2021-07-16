@@ -648,6 +648,11 @@ dbg_expected<dbg_info> dbg_info::create(const char* filename)
     return dli;
 }
 
+dbg_expected<dbg_info> dbg_info::create(const std::string& filename)
+{
+    return create(filename.c_str());
+}
+
 dbg_info::dbg_info(const char* filename, dbg_error& err) :
     _hi(filename, err),
     _lines(),

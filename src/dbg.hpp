@@ -178,6 +178,7 @@ namespace tep
     {
     public:
         static dbg_expected<dbg_info> create(const char* filename);
+        static dbg_expected<dbg_info> create(const std::string& filename);
 
     private:
         header_info _hi;

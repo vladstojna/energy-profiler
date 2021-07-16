@@ -61,7 +61,7 @@ long ptrace_wrapper::ptrace(int& error, __ptrace_request req, pid_t pid, ...) no
     return _data.ptrace.result;
 }
 
-pid_t ptrace_wrapper::fork(int& error, void(*callback)(char* const []), char** arg) noexcept
+pid_t ptrace_wrapper::fork(int& error, void(*callback)(char* const []), char* const* arg) noexcept
 {
     std::lock_guard lock(_global_mx);
     _data.req = request::fork;
