@@ -3,6 +3,7 @@
 #include "cmdargs.hpp"
 
 #include <cassert>
+#include <cstring>
 #include <iostream>
 #include <getopt.h>
 
@@ -13,136 +14,71 @@ extern int optopt;
 extern int optind;
 extern char* optarg;
 
-enum class output_file::tag
+optional_output_file::optional_output_file(const std::string& path) :
+    _file()
 {
-    file,
-    stdstream
-};
+    if (!path.empty())
+        _file.open(path);
+}
 
-void output_file::init()
+optional_output_file::operator bool() const
 {
-    if (_filename.empty() || _filename == "stdout")
-    {
-        _tag = tag::stdstream;
-        _outstream = &std::cout;
-    }
-    else if (_filename == "stderr")
-    {
-        _tag = tag::stdstream;
-        _outstream = &std::cerr;
-    }
+    return bool(_file);
+}
+
+optional_output_file::operator std::ostream& ()
+{
+    if (_file && !_file.is_open())
+        return std::cout;
+    return _file;
+}
+
+optional_input_file::optional_input_file(const std::string& path) :
+    _file()
+{
+    if (!path.empty())
+        _file.open(path);
+}
+
+optional_input_file::operator bool() const
+{
+    return bool(_file);
+}
+
+optional_input_file::operator std::istream& ()
+{
+    if (_file && !_file.is_open())
+        return std::cin;
+    return _file;
+}
+
+std::ostream& tep::operator<<(std::ostream& os, const optional_output_file& f)
+{
+    if (!f)
+        os << "failed to open";
+    else if (f._file.is_open())
+        os << "file";
     else
-    {
-        _tag = tag::file;
-        _outstream = new std::ofstream(_filename);
-    }
+        os << "stdout";
+    return os;
 }
 
-output_file::output_file(const std::string& file) :
-    _tag(tag::file),
-    _filename(file),
-    _outstream(nullptr)
+std::ostream& tep::operator<<(std::ostream& os, const optional_input_file& f)
 {
-    init();
-}
-
-output_file::output_file(std::string&& file) :
-    _tag(tag::file),
-    _filename(std::move(file)),
-    _outstream(nullptr)
-{
-    init();
-}
-
-output_file::~output_file()
-{
-    if (_tag == tag::file)
-        delete _outstream;
-}
-
-output_file::output_file(output_file&& other) :
-    _tag(std::exchange(other._tag, tag::stdstream)),
-    _filename(std::move(other._filename)),
-    _outstream(std::exchange(other._outstream, nullptr))
-{}
-
-output_file& output_file::operator=(output_file&& other)
-{
-    _tag = std::exchange(other._tag, tag::stdstream);
-    _filename = std::move(other._filename);
-    _outstream = std::exchange(other._outstream, nullptr);
-    return *this;
-}
-
-std::ostream& output_file::stream()
-{
-    return *_outstream;
-}
-
-const std::string& output_file::filename() const
-{
-    return _filename;
-}
-
-output_file::operator bool() const
-{
-    if (_outstream == nullptr)
-        return false;
-    return bool(*_outstream);
-}
-
-arguments::arguments(int idx, const flags& flags, output_file&& of, const std::string& cfg) :
-    _target_idx(idx),
-    _flags(flags),
-    _outfile(std::move(of)),
-    _config(cfg)
-{}
-
-arguments::arguments(int idx, const flags& flags, output_file&& of, std::string&& cfg) :
-    _target_idx(idx),
-    _flags(flags),
-    _outfile(std::move(of)),
-    _config(std::move(cfg))
-{}
-
-int arguments::target_index() const
-{
-    return _target_idx;
-}
-
-const flags& arguments::get_flags() const
-{
-    return _flags;
-}
-
-output_file& arguments::outfile()
-{
-    return _outfile;
-}
-
-const output_file& arguments::outfile() const
-{
-    return _outfile;
-}
-
-const std::string& arguments::config() const
-{
-    return _config;
-}
-
-std::ostream& tep::operator<<(std::ostream& os, const output_file& of)
-{
-    return os << (of.filename().empty() ? "stdout" : of.filename());
+    if (!f)
+        os << "failed to open";
+    else if (f._file.is_open())
+        os << "file";
+    else
+        os << "stdin";
+    return os;
 }
 
 std::ostream& tep::operator<<(std::ostream& os, const arguments& args)
 {
-#ifndef NDEBUG
-    os << "target @ index " << args.target_index() << "\n";
-#endif
-    os << "flags:\n" << args.get_flags();
-    os << "\noutput to: " << args.outfile();
-    os << "\nconfig file: " << args.config();
+    os << "flags: " << args.profiler_flags;
+    os << ", output: " << args.output;
+    os << ", config: " << args.config;
     return os;
 }
 
@@ -153,12 +89,14 @@ void print_usage(const char* profiler_name)
     std::cout << "options:\n\n";
     std::cout << "-h, --help            print this message\n";
     std::cout << "\n";
-    std::cout << "-c, --config <file>   (required) read from configuration file <file>\n";
+    std::cout << "-c, --config <file>   (optional) read from configuration file <file>\n";
+    std::cout << "                      if <file> is 'stdin' then stdin is used\n";
     std::cout << "                      cannot be empty\n";
+    std::cout << "                      (default: stdin)\n";
     std::cout << "\n";
     std::cout << "-o, --output <file>   (optional) write profiling results to <file>\n";
     std::cout << "                      if <file> is 'stdout' then stdout is used\n";
-    std::cout << "                      if <file> is 'stderr' then stderr is used\n";
+    std::cout << "                      cannot be empty\n";
     std::cout << "                      (default: stdout)\n";
     std::cout << "\n";
     std::cout << "--idle                (default) gather idle readings at startup\n";
@@ -213,18 +151,27 @@ cmmn::expected<arguments, arg_error> tep::parse_arguments(int argc, char* const 
         return arg_error();
     }
 
-    output_file of(std::move(output));
+    optional_output_file of(output);
+    optional_input_file cfg(config);
+
     if (!of)
     {
-        std::cerr << "error opening output file " << of << "\n";
+        std::cerr << "error opening output file '" << output << "': "
+            << strerror(errno) << "\n";
         return arg_error();
     }
-
-    if (config.empty())
+    if (!cfg)
     {
-        std::cerr << "configuration file name cannot be empty\n";
+        std::cerr << "error opening config file '" << config << "': "
+            << strerror(errno) << "\n";
         return arg_error();
     }
 
-    return { optind, flags(idle), std::move(of), std::move(config) };
+    return arguments{
+        flags(idle),
+        std::move(config),
+        std::move(of),
+        std::string(argv[optind]),
+        &argv[optind]
+    };
 }

@@ -19,16 +19,14 @@ int main(int argc, char* argv[])
     if (!args)
         return 1;
 
-    int idx = args.value().target_index();
-
-    dbg_expected<dbg_info> dbg_info = dbg_info::create(argv[idx]);
+    dbg_expected<dbg_info> dbg_info = dbg_info::create(args.value().target);
     if (!dbg_info)
     {
         std::cerr << dbg_info.error() << std::endl;
         return 1;
     }
 
-    cfg_result config = load_config(args.value().config());
+    cfg_result config = load_config(args.value().config);
     if (!config)
     {
         std::cerr << config.error() << std::endl;
@@ -42,11 +40,11 @@ int main(int argc, char* argv[])
 #endif
 
     int errnum;
-    pid_t child_pid = ptrace_wrapper::instance.fork(errnum, &run_target, &argv[idx]);
+    pid_t child_pid = ptrace_wrapper::instance.fork(errnum, &run_target, args.value().argv);
     if (child_pid > 0)
     {
         cmmn::expected<profiler, tracer_error> profiler = profiler::create(child_pid,
-            args.value().get_flags(),
+            args.value().profiler_flags,
             std::move(dbg_info.value()), std::move(config.value()));
         if (!profiler)
         {
@@ -61,7 +59,7 @@ int main(int argc, char* argv[])
             return 1;
         }
 
-        args.value().outfile().stream() << results.value();
+        args.value().output << results.value();
         return 0;
     }
     else if (child_pid == -1)

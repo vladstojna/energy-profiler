@@ -4,66 +4,50 @@
 
 #include "flags.hpp"
 
-#include <string>
 #include <fstream>
 #include <iosfwd>
+#include <string>
 
 #include <util/expected.hpp>
 
 namespace tep
 {
-
     struct arg_error
     {};
 
-
-    class output_file
+    class optional_output_file
     {
-    private:
-        enum class tag;
-
-        tag _tag;
-        std::string _filename;
-        std::ostream* _outstream;
+        std::ofstream _file;
 
     public:
-        output_file(const std::string& file);
-        output_file(std::string&& file);
-        ~output_file();
-
-        output_file(output_file&& other);
-        output_file& operator=(output_file&& other);
-
-        std::ostream& stream();
-        const std::string& filename() const;
-
+        optional_output_file(const std::string& path = "");
+        operator std::ostream& ();
         explicit operator bool() const;
-
-    private:
-        void init();
+        friend std::ostream& operator<<(std::ostream&, const optional_output_file&);
     };
 
-
-    class arguments
+    class optional_input_file
     {
-    private:
-        int _target_idx;
-        flags _flags;
-        output_file _outfile;
-        std::string _config;
+        std::ifstream _file;
 
     public:
-        arguments(int idx, const flags& flags, output_file&& of, const std::string& cfg);
-        arguments(int idx, const flags& flags, output_file&& of, std::string&& cfg);
-
-        int target_index() const;
-        const flags& get_flags() const;
-        output_file& outfile();
-        const output_file& outfile() const;
-        const std::string& config() const;
+        optional_input_file(const std::string& path = "");
+        operator std::istream& ();
+        explicit operator bool() const;
+        friend std::ostream& operator<<(std::ostream&, const optional_input_file&);
     };
 
-    std::ostream& operator<<(std::ostream& os, const output_file& of);
+    struct arguments
+    {
+        flags profiler_flags;
+        optional_input_file config;
+        optional_output_file output;
+        std::string target;
+        char* const* argv;
+    };
+
+    std::ostream& operator<<(std::ostream& os, const optional_output_file& f);
+    std::ostream& operator<<(std::ostream& os, const optional_input_file& f);
     std::ostream& operator<<(std::ostream& os, const arguments& a);
 
     cmmn::expected<arguments, arg_error> parse_arguments(int argc, char* const argv[]);

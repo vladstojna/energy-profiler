@@ -30,7 +30,7 @@ namespace defaults
 template<typename R>
 using cfg_expected = cmmn::expected<R, cfg_error>;
 
-static const char* error_messages[] =
+constexpr static const char* error_messages[] =
 {
     "No error",
 
@@ -76,6 +76,9 @@ static const char* error_messages[] =
     "func: invalid name: cannot be empty"
 };
 
+static_assert(static_cast<size_t>(cfg_error_code::FUNC_INVALID_NAME) + 1 ==
+    sizeof(error_messages) / sizeof(error_messages[0]),
+    "cfg_error_code number of entries does not match message array size");
 
 // begin helper functions
 
@@ -930,15 +933,14 @@ bool config_data::push_back_impl(Group&& grp)
 
 // load_config
 
-cfg_expected<config_data> tep::load_config(const char* file)
+cfg_expected<config_data> tep::load_config(std::istream& from)
 {
     assert(static_cast<size_t>(cfg_error_code::FUNC_INVALID_NAME) + 1 ==
         sizeof(error_messages) / sizeof(error_messages[0]));
-    assert(file != nullptr);
     using namespace pugi;
 
     xml_document doc;
-    xml_parse_result parse_result = doc.load_file(file);
+    xml_parse_result parse_result = doc.load(from);
     if (!parse_result)
     {
         switch (parse_result.status)
@@ -983,11 +985,6 @@ cfg_expected<config_data> tep::load_config(const char* file)
             return cfg_error(cfg_error_code::GROUP_LABEL_ALREADY_EXISTS);
     }
     return cfgdata;
-}
-
-cfg_result tep::load_config(const std::string& file)
-{
-    return load_config(file.c_str());
 }
 
 // operator overloads
