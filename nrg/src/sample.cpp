@@ -1,52 +1,58 @@
 // sample.cpp
 
-#include <nrg/sample.hpp>
+#include <nrg/error.hpp>
 #include <nrg/reader.hpp>
+#include <nrg/sample.hpp>
 
 #include <cassert>
 
 using namespace nrgprf;
 
-
-sample::sample(const reader& rdr, error& e) :
-    _values{}
+template<typename T, size_t sz>
+static void operator-=(std::array<T, sz>& lhs, const std::array<T, sz>& rhs)
 {
-    e = rdr.read(*this);
+    for (typename std::array<T, sz>::size_type ix = 0; ix < lhs.size(); ix++)
+    {
+        if (lhs[ix] > rhs[ix])
+            lhs[ix] -= rhs[ix];
+        else
+            lhs[ix] = 0;
+    }
 }
 
-sample::value_type& sample::at_cpu(size_t idx)
+template<typename T, size_t sz>
+static void operator+=(std::array<T, sz>& lhs, const std::array<T, sz>& rhs)
 {
-    assert(idx < max_cpu_events);
-    return _values[idx];
+    for (typename std::array<T, sz>::size_type ix = 0; ix < lhs.size(); ix++)
+        lhs[ix] += rhs[ix];
 }
 
-sample::value_type& sample::at_gpu(size_t idx)
+
+sample::sample() :
+    data{}
+{}
+
+sample::sample(const reader& reader, error& e) :
+    sample()
 {
-    assert(idx < max_gpu_events);
-    return _values[max_cpu_events + idx];
+    e = reader.read(*this);
 }
 
-result<sample::value_type> sample::at_cpu(size_t idx) const
-{
-    assert(idx < max_cpu_events);
-    if (_values[idx] == 0)
-        return error(error_code::NO_EVENT);
-    return _values[idx];
-}
-
-result<sample::value_type> sample::at_gpu(size_t idx) const
-{
-    assert(idx < max_gpu_events);
-    if (_values[max_cpu_events + idx] == 0)
-        return error(error_code::NO_EVENT);
-    return _values[max_cpu_events + idx];
-}
-
+#if defined(NRG_X86_64)
 
 bool sample::operator==(const sample& rhs) const
 {
-    return _values == rhs._values;
+    return data.cpu == rhs.data.cpu && data.gpu == rhs.data.gpu;
 }
+
+#elif defined(NRG_PPC64)
+
+bool sample::operator==(const sample& rhs) const
+{
+    return data.timestamps == rhs.data.timestamps && data.cpu == rhs.data.cpu && data.gpu == rhs.data.gpu;
+}
+
+#endif // defined(NRG_X86_64)
 
 bool sample::operator!=(const sample& rhs) const
 {
@@ -77,55 +83,99 @@ sample sample::operator*(sample::value_type rhs) const
     return retval *= rhs;
 }
 
+sample::operator bool() const
+{
+    sample empty{};
+    return *this != empty;
+}
+
+#if defined(NRG_X86_64)
+
 sample& sample::operator-=(const sample& rhs)
 {
-    for (decltype(_values)::size_type ix = 0; ix < _values.size(); ix++)
-    {
-        if (_values[ix] > rhs._values[ix])
-            _values[ix] -= rhs._values[ix];
-        else
-            _values[ix] = 0;
-    }
+    data.cpu -= rhs.data.cpu;
+    data.gpu -= rhs.data.gpu;
+    return *this;
+}
+
+sample& sample::operator+=(const sample& rhs)
+{
+    data.cpu += rhs.data.cpu;
+    data.gpu += rhs.data.gpu;
     return *this;
 }
 
 sample& sample::operator/=(sample::value_type rhs)
 {
     assert(rhs);
-    for (auto& val : _values)
+    for (auto& val : data.cpu)
+        val /= rhs;
+    for (auto& val : data.gpu)
         val /= rhs;
     return *this;
 }
 
 sample& sample::operator*=(sample::value_type rhs)
 {
-    for (auto& val : _values)
+    for (auto& val : data.cpu)
         val *= rhs;
+    for (auto& val : data.gpu)
+        val *= rhs;
+    return *this;
+}
+
+#elif defined(NRG_PPC64)
+
+sample& sample::operator-=(const sample& rhs)
+{
+    data.timestamps -= rhs.data.timestamps;
+    data.cpu -= rhs.data.cpu;
+    data.gpu -= rhs.data.gpu;
     return *this;
 }
 
 sample& sample::operator+=(const sample& rhs)
 {
-    for (decltype(_values)::size_type ix = 0; ix < _values.size(); ix++)
-        _values[ix] += rhs._values[ix];
+    data.timestamps -= rhs.data.timestamps;
+    data.cpu += rhs.data.cpu;
+    data.gpu += rhs.data.gpu;
     return *this;
 }
 
+sample& sample::operator/=(sample::value_type rhs)
+{
+    assert(rhs);
+    for (auto& val : data.timestamps)
+        val /= rhs;
+    for (auto& val : data.cpu)
+        val /= rhs;
+    for (auto& val : data.gpu)
+        val /= rhs;
+    return *this;
+}
+
+sample& sample::operator*=(sample::value_type rhs)
+{
+    for (auto& val : data.timestamps)
+        val /= rhs;
+    for (auto& val : data.cpu)
+        val *= rhs;
+    for (auto& val : data.gpu)
+        val *= rhs;
+    return *this;
+}
+
+#endif // defined(NRG_X86_64)
+
+timed_sample::timed_sample() :
+    _timepoint{},
+    _sample{}
+{}
 
 timed_sample::timed_sample(const reader& reader, error& e) :
     _timepoint(time_point::clock::now()),
     _sample(reader, e)
 {}
-
-sample& timed_sample::smp()
-{
-    return _sample;
-}
-
-const sample& timed_sample::smp() const
-{
-    return _sample;
-}
 
 const timed_sample::time_point& timed_sample::timepoint() const
 {
@@ -134,15 +184,25 @@ const timed_sample::time_point& timed_sample::timepoint() const
 
 bool timed_sample::operator==(const timed_sample& rhs) const
 {
-    return timepoint() == rhs.timepoint() && smp() == rhs.smp();
+    return timepoint() == rhs.timepoint() && sample(*this) == sample(rhs);
 }
 
 bool timed_sample::operator!=(const timed_sample& rhs) const
 {
-    return timepoint() != rhs.timepoint() && smp() != rhs.smp();
+    return timepoint() != rhs.timepoint() && sample(*this) == sample(rhs);
 }
 
 timed_sample::duration timed_sample::operator-(const timed_sample& rhs) const
 {
     return timepoint() - rhs.timepoint();
+}
+
+timed_sample::operator const nrgprf::sample& () const
+{
+    return _sample;
+}
+
+timed_sample::operator nrgprf::sample& ()
+{
+    return _sample;
 }

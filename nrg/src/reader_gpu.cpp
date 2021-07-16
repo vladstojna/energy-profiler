@@ -345,7 +345,7 @@ error reader_gpu::impl::read(sample& s, uint8_t ev_idx) const
     if (result != NVML_SUCCESS)
         return { error_code::READER_GPU, nvmlErrorString(result) };
     // NVML returns milliwatts, multiply by 1000 to get microwatts
-    s.at_gpu(ev_idx) = power * 1000;
+    s.data.gpu[ev_idx] = power * 1000;
     return error::success();
 }
 
@@ -362,7 +362,7 @@ error reader_gpu::impl::read(sample& s, uint8_t ev_idx) const
         return { error_code::READER_GPU, str };
     }
     // ROCm SMI reads power in microwatts
-    s.at_gpu(ev_idx) = power;
+    s.data.gpu[ev_idx] = power;
     return error::success();
 }
 
@@ -410,7 +410,7 @@ result<units_power> reader_gpu::impl::get_board_power(const sample& s, uint8_t d
     int8_t idx = event_idx(dev);
     if (idx < 0)
         return error(error_code::NO_EVENT);
-    result<sample::value_type> result = s.at_gpu(idx);
+    result<sample::value_type> result = s.data.gpu[idx];
     if (!result)
         return std::move(result.error());
     return result.value();
