@@ -46,6 +46,7 @@ namespace tep
         GROUP_EMPTY,
         GROUP_INVALID_LABEL,
         GROUP_LABEL_ALREADY_EXISTS,
+        GROUP_INVALID_EXTRA,
 
         PARAM_INVALID_DOMAIN_MASK,
         PARAM_INVALID_SOCKET_MASK,
@@ -257,16 +258,21 @@ namespace tep
         {
         private:
             std::string _label;
+            std::string _extra;
             std::vector<section> _sections;
 
         public:
-            section_group(const std::string& label);
-            section_group(std::string&& label);
+            section_group(const std::string& label, const std::string& extra);
+            section_group(const std::string& label, std::string&& extra);
+            section_group(std::string&& label, const std::string& extra);
+            section_group(std::string&& label, std::string&& extra);
 
             const std::string& label() const;
+            const std::string& extra() const;
             const std::vector<section>& sections() const;
 
             bool has_label() const;
+            bool has_extra() const;
 
             bool has_section_with(config_data::target) const;
             bool has_section_with(config_data::profiling_method) const;
