@@ -93,15 +93,16 @@ namespace tep
 
     private:
         std::string _label;
+        std::string _extra;
         container _sections;
 
     public:
-        group_output(std::string_view label);
-        group_output(std::string&& label);
+        group_output(std::string_view label, std::string_view extra);
 
         section_output& push_back(section_output&& so);
 
         const std::string& label() const;
+        const std::string& extra() const;
 
         container& sections();
         const container& sections() const;
