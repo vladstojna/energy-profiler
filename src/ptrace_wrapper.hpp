@@ -36,7 +36,7 @@ namespace tep
                 {
                     pid_t result;
                     void (*callback)(char* const []);
-                    char** arg;
+                    char* const* arg;
                 } fork;
             };
             int error;
@@ -55,7 +55,7 @@ namespace tep
 
     public:
         long ptrace(int& error, __ptrace_request req, pid_t pid, ...) noexcept;
-        pid_t fork(int& error, void(*callback)(char* const []), char** arg) noexcept;
+        pid_t fork(int& error, void(*callback)(char* const []), char* const* arg) noexcept;
 
     };
 
