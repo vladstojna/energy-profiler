@@ -140,6 +140,10 @@ namespace tep
             j["label"] = nullptr;
         else
             j["label"] = go.label();
+        if (go.extra().empty())
+            j["extra"] = nullptr;
+        else
+            j["extra"] = go.extra();
         for (const auto& so : go.sections())
             j["sections"].emplace_back(so);
     }
@@ -409,12 +413,9 @@ const std::vector<position_exec>& section_output::executions() const
 
 
 
-group_output::group_output(std::string_view label) :
-    _label(label)
-{}
-
-group_output::group_output(std::string&& label) :
-    _label(std::move(label))
+group_output::group_output(std::string_view label, std::string_view extra) :
+    _label(label),
+    _extra(extra)
 {}
 
 section_output& group_output::push_back(section_output&& so)
@@ -425,6 +426,11 @@ section_output& group_output::push_back(section_output&& so)
 const std::string& group_output::label() const
 {
     return _label;
+}
+
+const std::string& group_output::extra() const
+{
+    return _extra;
 }
 
 group_output::container& group_output::sections()

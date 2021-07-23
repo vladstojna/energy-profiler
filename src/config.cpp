@@ -56,6 +56,7 @@ constexpr static const char* error_messages[] =
     "section group: <sections></sections> is empty",
     "section group: label cannot be empty",
     "section group: group label already exists",
+    "section group: extra data cannot be empty",
 
     "params: parameter 'domain_mask' must be a valid integer",
     "params: parameter 'socket_mask' must be a valid integer",
@@ -442,8 +443,13 @@ static cfg_expected<config_data::section_group> get_group(const pugi::xml_node& 
     xml_attribute attr_label = nsections.attribute("label");
     if (attr_label && !*attr_label.value())
         return cfg_error(cfg_error_code::GROUP_INVALID_LABEL);
-    config_data::section_group group{ attr_label.value() };
 
+    // <extra></extra> - optional, must not be empty
+    xml_node nxtra = nsections.child("extra");
+    if (nxtra && !*nxtra.child_value())
+        return cfg_error(cfg_error_code::GROUP_INVALID_EXTRA);
+
+    config_data::section_group group{ attr_label.value(), nxtra.child_value() };
     // <section></section> - at least one required
     for (xml_node nsection = nsections.child("section");
         nsection;
@@ -806,17 +812,34 @@ bool config_data::section::allow_concurrency() const
 
 // section_group
 
-config_data::section_group::section_group(const std::string& label) :
-    _label(label)
+config_data::section_group::section_group(const std::string& label, const std::string& extra) :
+    _label(label),
+    _extra(extra)
 {}
 
-config_data::section_group::section_group(std::string&& label) :
-    _label(std::move(label))
+config_data::section_group::section_group(const std::string& label, std::string&& extra) :
+    _label(label),
+    _extra(std::move(extra))
+{}
+
+config_data::section_group::section_group(std::string&& label, const std::string& extra) :
+    _label(std::move(label)),
+    _extra(extra)
+{}
+
+config_data::section_group::section_group(std::string&& label, std::string&& extra) :
+    _label(std::move(label)),
+    _extra(std::move(extra))
 {}
 
 const std::string& config_data::section_group::label() const
 {
     return _label;
+}
+
+const std::string& config_data::section_group::extra() const
+{
+    return _extra;
 }
 
 const std::vector<config_data::section>& config_data::section_group::sections() const
@@ -827,6 +850,11 @@ const std::vector<config_data::section>& config_data::section_group::sections() 
 bool config_data::section_group::has_label() const
 {
     return !_label.empty();
+}
+
+bool config_data::section_group::has_extra() const
+{
+    return !_extra.empty();
 }
 
 bool config_data::section_group::has_section_with(config_data::target tgt) const
@@ -1097,6 +1125,7 @@ std::ostream& tep::operator<<(std::ostream& os, const config_data::section::targ
 std::ostream& tep::operator<<(std::ostream& os, const config_data::section_group& g)
 {
     os << "label: " << (g.has_label() ? g.label() : "-") << "\n";
+    os << "extra: " << (g.has_extra() ? g.extra() : "-") << "\n";
     os << "sections (" << g.sections().size() << "):";
     for (const auto& section : g.sections())
         os << "\n----------\n" << section;

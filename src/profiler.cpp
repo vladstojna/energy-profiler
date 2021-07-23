@@ -145,7 +145,7 @@ bool profiler::output_mapping::insert(addr_bounds bounds,
 
     if (grp_it == results.groups().end())
     {
-        results.groups().push_back({ group.label() });
+        results.groups().push_back({ group.label(), group.extra() });
         grp_it = std::prev(results.groups().end());
     }
     assert(grp_it != results.groups().end());
