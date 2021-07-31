@@ -11,6 +11,7 @@
 
 #include "util.hpp"
 
+#include <cassert>
 #include <iostream>
 
 #elif defined NRG_X86_64
