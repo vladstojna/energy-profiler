@@ -11,19 +11,65 @@
 
 using namespace tep;
 
-
-namespace nlohmann
+namespace
 {
     template<typename T>
-    struct adl_serializer<std::chrono::duration<T>>
+    std::string to_string(const T& obj)
     {
-        static void to_json(json& j, const std::chrono::duration<T>& d)
-        {
-            j = { { "value", d.count() }, { "units", "seconds" } };
-        }
-    };
-}
+        std::ostringstream oss;
+        oss << obj;
+        return oss.str();
+    }
 
+#if defined NRG_X86_64
+
+    void format_output(nlohmann::json& j)
+    {
+        using json = nlohmann::json;
+        j["cpu"].push_back(json{ {"timestamp", "ns"} });
+        j["cpu"].push_back(json{ {"energy", "J"} });
+        j["gpu"].push_back(json{ {"timestamp", "ns"} });
+        j["gpu"].push_back(json{ {"power", "W"} });
+    }
+
+    void output_sample_data(
+        nlohmann::json& j,
+        nrgprf::timed_sample::time_point timepoint,
+        const nrgprf::sensor_value& sensor_value)
+    {
+        nlohmann::json values;
+        values.push_back(std::chrono::duration_cast<std::chrono::nanoseconds>(
+            timepoint.time_since_epoch()).count());
+        values.push_back(nrgprf::unit_cast<nrgprf::joules<double>>(sensor_value).count());
+        j.push_back(std::move(values));
+    }
+
+#elif defined NRG_PPC64
+
+    void format_output(nlohmann::json& j)
+    {
+        using json = nlohmann::json;
+        j["cpu"].push_back(json{ {"timestamp", "ns"} });
+        j["cpu"].push_back(json{ {"power", "W"} });
+        j["gpu"].push_back(json{ {"timestamp", "ns"} });
+        j["gpu"].push_back(json{ {"power", "W"} });
+    }
+
+    void output_sample_data(
+        nlohmann::json& j,
+        nrgprf::timed_sample::time_point timepoint,
+        const nrgprf::sensor_value& sensor_value)
+    {
+        (void)timepoint;
+        nlohmann::json values;
+        values.push_back(std::chrono::duration_cast<std::chrono::nanoseconds>(
+            sensor_value.timestamp.time_since_epoch()).count());
+        values.push_back(nrgprf::unit_cast<nrgprf::watts<double>>(sensor_value.power).count());
+        j.push_back(std::move(values));
+    }
+
+#endif // defined NRG_X86_64
+}
 
 namespace tep::detail
 {
@@ -51,59 +97,11 @@ namespace tep::detail
     };
 }
 
-
 namespace tep
 {
-
-    using energy_duration_pair = std::pair<nrgprf::joules<double>, std::chrono::duration<double>>;
-
-    struct energy_holder
-    {
-        nrgprf::joules<double> total;
-        nrgprf::joules<double> delta;
-    };
-
-    template<typename T>
-    static std::string to_string(const T& obj)
-    {
-        std::ostringstream oss;
-        oss << obj;
-        return oss.str();
-    }
-
-    static std::chrono::duration<double> get_duration(const timed_execution& exec)
-    {
-        return exec.back() - exec.front();
-    }
-
-    static nrgprf::joules<double> get_idle_delta(
-        const energy_duration_pair& normal,
-        const energy_duration_pair& idle)
-    {
-        nrgprf::joules<double> norm = idle.first * (normal.second / idle.second);
-        if (normal.first <= norm)
-            return nrgprf::joules<double>{};
-        return normal.first - norm;
-    }
-
     static void to_json(nlohmann::json& j, const position_interval& interval)
     {
         j = { { "start", to_string(interval.start()) }, { "end", to_string(interval.end()) } };
-    }
-
-    static void to_json(nlohmann::json& j, const energy_holder& energy)
-    {
-        if (energy.total.count())
-            j["energy"]["total"] = energy.total.count();
-        else
-            j["energy"]["total"] = nullptr;
-
-        if (energy.delta.count())
-            j["energy"]["delta"] = energy.delta.count();
-        else
-            j["energy"]["delta"] = nullptr;
-
-        j["energy"]["units"] = "joules";
     }
 
     static void to_json(nlohmann::json& j, const section_output& so)
@@ -125,11 +123,8 @@ namespace tep
         {
             json exec;
             exec["range"] = *pe.interval;
-            exec["time"] = get_duration(pe.exec);
-
-            detail::output_impl impl(exec["readings"]);
+            detail::output_impl impl(exec);
             so.readings_out().output(impl, pe.exec);
-
             execs.push_back(std::move(exec));
         }
     }
@@ -147,169 +142,7 @@ namespace tep
         for (const auto& so : go.sections())
             j["sections"].emplace_back(so);
     }
-
 }
-
-class gpu_energy
-{
-public:
-    static struct board_tag {} board;
-
-private:
-    bool _valid;
-    nrgprf::joules<double> _energy;
-
-public:
-    gpu_energy(const nrgprf::reader_gpu& rdr, const timed_execution& exec,
-        uint8_t dev, board_tag) :
-        _valid(false),
-        _energy{}
-    {
-        if (exec.empty())
-            return;
-        for (auto it = std::next(exec.begin()); it != exec.end(); it++)
-        {
-            const auto& prev = *std::prev(it);
-            const auto& curr = *it;
-            nrgprf::result<nrgprf::units_power> pwr_prev = rdr.get_board_power(prev, dev);
-            nrgprf::result<nrgprf::units_power> pwr_curr = rdr.get_board_power(curr, dev);
-            if (!pwr_prev || !pwr_curr)
-                return;
-            nrgprf::timed_sample::duration dur = curr - prev;
-            nrgprf::watts<double> avg_pwr = (pwr_prev.value() + pwr_curr.value()) / 2.0;
-            _energy += (avg_pwr * dur);
-        }
-        if (_energy.count() != 0)
-            _valid = true;
-    }
-
-    const nrgprf::joules<double>& get() const
-    {
-        return _energy;
-    }
-
-    explicit operator bool() const
-    {
-        return bool(_valid);
-    }
-};
-
-#if defined NRG_X86_64
-
-template<typename T>
-class cpu_energy
-{
-private:
-    nrgprf::units_energy _energy;
-
-    nrgprf::units_energy subtract(
-        nrgprf::result<nrgprf::units_energy> last,
-        nrgprf::result<nrgprf::units_energy> first)
-    {
-        if (!first)
-            return nrgprf::units_energy{};
-        if (!last)
-            return nrgprf::units_energy{};
-        return last.value() - first.value();
-    }
-
-public:
-    cpu_energy(const nrgprf::reader_rapl& reader, const timed_execution& exec,
-        uint8_t skt) :
-        _energy(subtract(
-            reader.value<T>(exec.back(), skt),
-            reader.value<T>(exec.front(), skt)))
-    {}
-
-    const nrgprf::units_energy& get() const
-    {
-        return _energy;
-    }
-
-    explicit operator bool() const
-    {
-        return _energy.count();
-    }
-
-};
-
-#elif defined NRG_PPC64
-
-template<typename T>
-class cpu_energy
-{
-private:
-    nrgprf::joules<double> _energy;
-
-    nrgprf::joules<double> compute(
-        const nrgprf::reader_rapl& reader,
-        const timed_execution& exec,
-        uint8_t skt)
-    {
-        if (exec.empty())
-            return {};
-        nrgprf::joules<double> energy{};
-        for (auto it = std::next(exec.begin()); it != exec.end(); it++)
-        {
-            const auto& sprev = *std::prev(it);
-            const auto& scurr = *it;
-            nrgprf::result<nrgprf::sensor_value> prev = reader.value<T>(sprev, skt);
-            nrgprf::result<nrgprf::sensor_value> curr = reader.value<T>(scurr, skt);
-
-            if (!prev || !curr)
-                return {};
-            nrgprf::time_point::duration interval =
-                curr.value().timestamp - prev.value().timestamp;
-
-            assert(interval.count() >= 0);
-            if (interval.count() > 0)
-            {
-                nrgprf::watts<double> avg_pwr = (prev.value().power + curr.value().power) / 2.0;
-                energy += (avg_pwr * interval);
-            }
-        }
-        return energy;
-    }
-
-public:
-    cpu_energy(const nrgprf::reader_rapl& reader,
-        const timed_execution& exec,
-        uint8_t skt) :
-        _energy(compute(reader, exec, skt))
-    {}
-
-    const nrgprf::joules<double>& get() const
-    {
-        return _energy;
-    }
-
-    explicit operator bool() const
-    {
-        return _energy.count();
-    }
-};
-
-#endif // defined NRG_X86_64
-
-template<typename Tag>
-void output_energy(nlohmann::json& j,
-    const nrgprf::reader_rapl& reader,
-    nrgprf::joules<double> energy_total,
-    const timed_execution& exec,
-    const timed_execution& idle,
-    uint32_t skt)
-{
-    bool has_idle = !idle.empty() && idle.size() > 1;
-    if (has_idle)
-        j = energy_holder{ energy_total,
-            get_idle_delta(
-                { energy_total, get_duration(exec) },
-                { cpu_energy<Tag>(reader, idle, skt).get(), get_duration(idle) }) };
-    else
-        j = energy_holder{ energy_total, {} };
-}
-
-
 
 void readings_output_holder::push_back(std::unique_ptr<readings_output>&& outputs)
 {
@@ -322,8 +155,6 @@ void readings_output_holder::output(detail::output_impl& os, const timed_executi
         out->output(os, exec);
 }
 
-
-
 template
 class tep::readings_output_dev<nrgprf::reader_rapl>;
 
@@ -331,96 +162,104 @@ template
 class tep::readings_output_dev<nrgprf::reader_gpu>;
 
 template<typename Reader>
-readings_output_dev<Reader>::readings_output_dev(const Reader& r, const timed_execution& idle) :
-    _reader(r),
-    _idle(idle)
+readings_output_dev<Reader>::readings_output_dev(const Reader& r) :
+    _reader(r)
 {}
-
 
 template<>
 void readings_output_dev<nrgprf::reader_rapl>::output(detail::output_impl& os,
     const timed_execution& exec) const
 {
+    assert(exec.size() > 1);
+    using namespace nrgprf;
     using json = nlohmann::json;
 
-    assert(exec.size() > 1);
-    assert(_idle.empty() || _idle.size() > 1);
+    json readings_array = json::array();
     for (uint32_t skt = 0; skt < nrgprf::max_sockets; skt++)
     {
-        cpu_energy<nrgprf::loc::pkg> pkg(_reader, exec, skt);
-        cpu_energy<nrgprf::loc::cores> pp0(_reader, exec, skt);
-        cpu_energy<nrgprf::loc::uncore> pp1(_reader, exec, skt);
-        cpu_energy<nrgprf::loc::mem> dram(_reader, exec, skt);
-        cpu_energy<nrgprf::loc::sys> sys(_reader, exec, skt);
-        cpu_energy<nrgprf::loc::gpu> gpu(_reader, exec, skt);
-
-        if (!pkg && !pp0 && !pp1 && !dram && !sys && !gpu)
-            continue;
-
         json readings;
-        json& jpackage = readings["package"];
-        json& jcores = readings["cores"];
-        json& juncore = readings["uncore"];
-        json& jdram = readings["dram"];
-        json& jsys = readings["sys"];
-        json& jgpu = readings["gpu"];
-
-        readings["target"] = "cpu";
         readings["socket"] = skt;
+        json& jpkg = readings["package"] = json::array();
+        json& jcores = readings["cores"] = json::array();
+        json& juncore = readings["uncore"] = json::array();
+        json& jdram = readings["dram"] = json::array();
+        json& jgpu = readings["gpu"] = json::array();
+        json& jsys = readings["sys"] = json::array();
 
-        if (pkg)
-            output_energy<nrgprf::loc::pkg>(jpackage, _reader, pkg.get(), exec, _idle, skt);
-        if (pp0)
-            output_energy<nrgprf::loc::cores>(jcores, _reader, pp0.get(), exec, _idle, skt);
-        if (pp1)
-            output_energy<nrgprf::loc::uncore>(juncore, _reader, pp1.get(), exec, _idle, skt);
-        if (dram)
-            output_energy<nrgprf::loc::mem>(jdram, _reader, dram.get(), exec, _idle, skt);
-        if (sys)
-            output_energy<nrgprf::loc::sys>(jsys, _reader, sys.get(), exec, _idle, skt);
-        if (gpu)
-            output_energy<nrgprf::loc::gpu>(jgpu, _reader, gpu.get(), exec, _idle, skt);
-
-        os.json().push_back(std::move(readings));
+        for (const auto& sample : exec)
+        {
+            if (result<sensor_value> sens_value = _reader.value<loc::pkg>(sample, skt))
+                output_sample_data(jpkg, sample.timepoint(), sens_value.value());
+            if (result<sensor_value> sens_value = _reader.value<loc::cores>(sample, skt))
+                output_sample_data(jcores, sample.timepoint(), sens_value.value());
+            if (result<sensor_value> sens_value = _reader.value<loc::uncore>(sample, skt))
+                output_sample_data(juncore, sample.timepoint(), sens_value.value());
+            if (result<sensor_value> sens_value = _reader.value<loc::mem>(sample, skt))
+                output_sample_data(jdram, sample.timepoint(), sens_value.value());
+            if (result<sensor_value> sens_value = _reader.value<loc::sys>(sample, skt))
+                output_sample_data(jsys, sample.timepoint(), sens_value.value());
+            if (result<sensor_value> sens_value = _reader.value<loc::gpu>(sample, skt))
+                output_sample_data(jgpu, sample.timepoint(), sens_value.value());
+        }
+        if (!jpkg.empty() || !jcores.empty() || !juncore.empty()
+            || !jdram.empty() || !jgpu.empty() || !jsys.empty())
+        {
+            readings_array.push_back(std::move(readings));
+        }
     }
+    os.json()["cpu"] = std::move(readings_array);
 }
-
 
 template<>
 void readings_output_dev<nrgprf::reader_gpu>::output(detail::output_impl& os,
     const timed_execution& exec) const
 {
+    assert(exec.size() > 1);
+    using namespace nrgprf;
     using json = nlohmann::json;
 
-    assert(exec.size() > 1);
-    assert(_idle.empty() || _idle.size() > 1);
-
-    bool has_idle = !_idle.empty() && _idle.size() > 1;
-    std::chrono::duration<double> duration = get_duration(exec);
+    json readings_array = json::array();
     for (uint32_t dev = 0; dev < nrgprf::max_devices; dev++)
     {
-        gpu_energy total_energy(_reader, exec, dev, gpu_energy::board);
-        if (!total_energy)
-            continue;
-
         json readings;
-        json& jboard = readings["board"];
-
-        readings["target"] = "gpu";
         readings["device"] = dev;
-        if (has_idle)
-            jboard = energy_holder{ total_energy.get(), get_idle_delta(
-                { total_energy.get(), duration },
-                { gpu_energy(_reader, _idle, dev, gpu_energy::board).get(), get_duration(_idle) }
-            ) };
-        else
-            jboard = energy_holder{ total_energy.get(), {} };
-
-        os.json().push_back(std::move(readings));
+        readings["board"] = json::array();
+        for (const auto& sample : exec)
+        {
+            if (result<units_power> power = _reader.get_board_power(sample, dev))
+            {
+                json values;
+                values.push_back(std::chrono::duration_cast<std::chrono::nanoseconds>(
+                    sample.timepoint().time_since_epoch()).count());
+                values.push_back(unit_cast<watts<double>>(power.value()).count());
+                readings["board"].push_back(std::move(values));
+            }
+        }
+        if (!readings["board"].empty())
+            readings_array.push_back(std::move(readings));
     }
+    os.json()["gpu"] = std::move(readings_array);
 }
 
+idle_output::idle_output(std::unique_ptr<readings_output>&& rout) :
+    _rout(std::move(rout))
+{}
 
+timed_execution& idle_output::exec()
+{
+    return _exec;
+}
+
+const timed_execution& idle_output::exec() const
+{
+    return _exec;
+}
+
+const readings_output& idle_output::readings_out() const
+{
+    assert(_rout);
+    return *_rout;
+}
 
 section_output::section_output(std::unique_ptr<readings_output>&& rout,
     std::string_view label, std::string_view extra) :
@@ -476,8 +315,6 @@ const std::vector<position_exec>& section_output::executions() const
     return _executions;
 }
 
-
-
 group_output::group_output(std::string_view label, std::string_view extra) :
     _label(label),
     _extra(extra)
@@ -508,8 +345,6 @@ const group_output::container& group_output::sections() const
     return _sections;
 }
 
-
-
 profiling_results::container& profiling_results::groups()
 {
     return _results;
@@ -520,15 +355,15 @@ const profiling_results::container& profiling_results::groups() const
     return _results;
 }
 
-
 // operator overloads
 
 std::ostream& tep::operator<<(std::ostream& os, const profiling_results& pr)
 {
     using json = nlohmann::json;
     json j;
+    format_output(j["format"]);
     for (const auto& g : pr.groups())
-        j.push_back(json{ { "group", g } });
+        j["groups"].push_back(g);
     os << std::setw(4) << j;
     return os;
 }

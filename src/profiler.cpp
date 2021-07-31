@@ -102,9 +102,9 @@ results_from_target(const reader_container& readers,
     switch (target)
     {
     case config_data::target::cpu:
-        return std::make_unique<readings_output_cpu>(readers.reader_rapl(), idle_res.cpu_readings);
+        return std::make_unique<readings_output_cpu>(readers.reader_rapl());
     case config_data::target::gpu:
-        return std::make_unique<readings_output_gpu>(readers.reader_gpu(), idle_res.gpu_readings);
+        return std::make_unique<readings_output_gpu>(readers.reader_gpu());
     default:
         assert(false);
     }
