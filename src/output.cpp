@@ -104,6 +104,13 @@ namespace tep
         j = { { "start", to_string(interval.start()) }, { "end", to_string(interval.end()) } };
     }
 
+    static void to_json(nlohmann::json& j, const idle_output& io)
+    {
+        detail::output_impl impl(j);
+        if (!io.exec().empty())
+            io.readings_out().output(impl, io.exec());
+    }
+
     static void to_json(nlohmann::json& j, const section_output& so)
     {
         using json = nlohmann::json;
@@ -141,6 +148,29 @@ namespace tep
             j["extra"] = go.extra();
         for (const auto& so : go.sections())
             j["sections"].emplace_back(so);
+    }
+
+    static void to_json(nlohmann::json& j, const std::vector<idle_output>& io)
+    {
+        nlohmann::json result;
+        for (const auto& i : io)
+            to_json(result, i);
+        j = std::move(result);
+    }
+
+    static void to_json(nlohmann::json& j, const profiling_results::container& groups)
+    {
+        nlohmann::json array = nlohmann::json::array();
+        for (const auto& g : groups)
+            array.push_back(g);
+        j = std::move(array);
+    }
+
+    static void to_json(nlohmann::json& j, const profiling_results& pr)
+    {
+        format_output(j["format"]);
+        j["idle"] = pr.idle();
+        j["groups"] = pr.groups();
     }
 }
 
@@ -241,8 +271,9 @@ void readings_output_dev<nrgprf::reader_gpu>::output(detail::output_impl& os,
     os.json()["gpu"] = std::move(readings_array);
 }
 
-idle_output::idle_output(std::unique_ptr<readings_output>&& rout) :
-    _rout(std::move(rout))
+idle_output::idle_output(std::unique_ptr<readings_output>&& rout, timed_execution&& exec) :
+    _rout(std::move(rout)),
+    _exec(std::move(exec))
 {}
 
 timed_execution& idle_output::exec()
@@ -345,6 +376,16 @@ const group_output::container& group_output::sections() const
     return _sections;
 }
 
+std::vector<idle_output>& profiling_results::idle()
+{
+    return _idle;
+}
+
+const std::vector<idle_output>& profiling_results::idle() const
+{
+    return _idle;
+}
+
 profiling_results::container& profiling_results::groups()
 {
     return _results;
@@ -359,11 +400,6 @@ const profiling_results::container& profiling_results::groups() const
 
 std::ostream& tep::operator<<(std::ostream& os, const profiling_results& pr)
 {
-    using json = nlohmann::json;
-    json j;
-    format_output(j["format"]);
-    for (const auto& g : pr.groups())
-        j["groups"].push_back(g);
-    os << std::setw(4) << j;
+    os << std::setfill('\t') << std::setw(1) << nlohmann::json(pr);
     return os;
 }

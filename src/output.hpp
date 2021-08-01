@@ -20,12 +20,6 @@ namespace tep
         timed_execution exec;
     };
 
-    struct idle_results
-    {
-        timed_execution cpu_readings;
-        timed_execution gpu_readings;
-    };
-
     class readings_output
     {
     public:
@@ -63,7 +57,7 @@ namespace tep
         timed_execution _exec;
 
     public:
-        idle_output(std::unique_ptr<readings_output>&& rout);
+        idle_output(std::unique_ptr<readings_output>&& rout, timed_execution&& exec);
 
         timed_execution& exec();
         const timed_execution& exec() const;
