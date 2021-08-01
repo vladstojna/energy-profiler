@@ -105,8 +105,8 @@ namespace nlohmann
                 sensor_value.timestamp.time_since_epoch()).count());
             values.push_back(nrgprf::unit_cast<nrgprf::watts<double>>(sensor_value.power).count());
             j = std::move(values);
-    }
-};
+        }
+    };
 #endif // defined NRG_X86_64
 }
 
