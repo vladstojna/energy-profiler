@@ -398,6 +398,6 @@ const profiling_results::container& profiling_results::groups() const
 
 std::ostream& tep::operator<<(std::ostream& os, const profiling_results& pr)
 {
-    os << std::setfill('\t') << std::setw(1) << nlohmann::json(pr);
+    os << nlohmann::json(pr);
     return os;
 }
