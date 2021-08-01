@@ -21,15 +21,21 @@ namespace
         return oss.str();
     }
 
+    void units_output(nlohmann::json& j)
+    {
+        j["time"] = "ns";
+        j["energy"] = "J";
+        j["power"] = "W";
+    }
+
 #if defined NRG_X86_64
 
     void format_output(nlohmann::json& j)
     {
-        using json = nlohmann::json;
-        j["cpu"].push_back(json{ {"timestamp", "ns"} });
-        j["cpu"].push_back(json{ {"energy", "J"} });
-        j["gpu"].push_back(json{ {"timestamp", "ns"} });
-        j["gpu"].push_back(json{ {"power", "W"} });
+        j["cpu"].push_back("sample_time");
+        j["cpu"].push_back("energy");
+        j["gpu"].push_back("sample_time");
+        j["gpu"].push_back("power");
     }
 
     void output_sample_data(
@@ -48,11 +54,11 @@ namespace
 
     void format_output(nlohmann::json& j)
     {
-        using json = nlohmann::json;
-        j["cpu"].push_back(json{ {"timestamp", "ns"} });
-        j["cpu"].push_back(json{ {"power", "W"} });
-        j["gpu"].push_back(json{ {"timestamp", "ns"} });
-        j["gpu"].push_back(json{ {"power", "W"} });
+        j["cpu"].push_back("sample_time");
+        j["cpu"].push_back("sensor_time");
+        j["cpu"].push_back("power");
+        j["gpu"].push_back("sample_time");
+        j["gpu"].push_back("power");
     }
 
     void output_sample_data(
@@ -60,8 +66,9 @@ namespace
         nrgprf::timed_sample::time_point timepoint,
         const nrgprf::sensor_value& sensor_value)
     {
-        (void)timepoint;
         nlohmann::json values;
+        values.push_back(std::chrono::duration_cast<std::chrono::nanoseconds>(
+            timepoint.time_since_epoch()).count());
         values.push_back(std::chrono::duration_cast<std::chrono::nanoseconds>(
             sensor_value.timestamp.time_since_epoch()).count());
         values.push_back(nrgprf::unit_cast<nrgprf::watts<double>>(sensor_value.power).count());
@@ -168,6 +175,7 @@ namespace tep
 
     static void to_json(nlohmann::json& j, const profiling_results& pr)
     {
+        units_output(j["units"]);
         format_output(j["format"]);
         j["idle"] = pr.idle();
         j["groups"] = pr.groups();
