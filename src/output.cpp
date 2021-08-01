@@ -29,52 +29,18 @@ namespace
     }
 
 #if defined NRG_X86_64
-
     void format_output(nlohmann::json& j)
     {
-        j["cpu"].push_back("sample_time");
         j["cpu"].push_back("energy");
-        j["gpu"].push_back("sample_time");
         j["gpu"].push_back("power");
     }
-
-    void output_sample_data(
-        nlohmann::json& j,
-        nrgprf::timed_sample::time_point timepoint,
-        const nrgprf::sensor_value& sensor_value)
-    {
-        nlohmann::json values;
-        values.push_back(std::chrono::duration_cast<std::chrono::nanoseconds>(
-            timepoint.time_since_epoch()).count());
-        values.push_back(nrgprf::unit_cast<nrgprf::joules<double>>(sensor_value).count());
-        j.push_back(std::move(values));
-    }
-
 #elif defined NRG_PPC64
-
     void format_output(nlohmann::json& j)
     {
-        j["cpu"].push_back("sample_time");
         j["cpu"].push_back("sensor_time");
         j["cpu"].push_back("power");
-        j["gpu"].push_back("sample_time");
         j["gpu"].push_back("power");
     }
-
-    void output_sample_data(
-        nlohmann::json& j,
-        nrgprf::timed_sample::time_point timepoint,
-        const nrgprf::sensor_value& sensor_value)
-    {
-        nlohmann::json values;
-        values.push_back(std::chrono::duration_cast<std::chrono::nanoseconds>(
-            timepoint.time_since_epoch()).count());
-        values.push_back(std::chrono::duration_cast<std::chrono::nanoseconds>(
-            sensor_value.timestamp.time_since_epoch()).count());
-        values.push_back(nrgprf::unit_cast<nrgprf::watts<double>>(sensor_value.power).count());
-        j.push_back(std::move(values));
-    }
-
 #endif // defined NRG_X86_64
 }
 
@@ -104,6 +70,46 @@ namespace tep::detail
     };
 }
 
+namespace nlohmann
+{
+    template<>
+    struct adl_serializer<nrgprf::timed_sample>
+    {
+        static void to_json(json& j, const nrgprf::timed_sample& sample)
+        {
+            j = std::chrono::duration_cast<std::chrono::nanoseconds>(
+                sample.timepoint().time_since_epoch())
+                .count();
+        }
+    };
+
+#if defined NRG_X86_64
+    template<>
+    struct adl_serializer<nrgprf::sensor_value>
+    {
+        static void to_json(json& j, const nrgprf::sensor_value& sensor_value)
+        {
+            nlohmann::json values;
+            values.push_back(nrgprf::unit_cast<nrgprf::joules<double>>(sensor_value).count());
+            j = std::move(values);
+        }
+    };
+#elif defined NRG_PPC64
+    template<>
+    struct adl_serializer<nrgprf::sensor_value>
+    {
+        static void to_json(json& j, const nrgprf::sensor_value& sensor_value)
+        {
+            nlohmann::json values;
+            values.push_back(std::chrono::duration_cast<std::chrono::nanoseconds>(
+                sensor_value.timestamp.time_since_epoch()).count());
+            values.push_back(nrgprf::unit_cast<nrgprf::watts<double>>(sensor_value.power).count());
+            j = std::move(values);
+    }
+};
+#endif // defined NRG_X86_64
+}
+
 namespace tep
 {
     static void to_json(nlohmann::json& j, const position_interval& interval)
@@ -113,9 +119,12 @@ namespace tep
 
     static void to_json(nlohmann::json& j, const idle_output& io)
     {
-        detail::output_impl impl(j);
         if (!io.exec().empty())
+        {
+            j["sample_times"] = io.exec();
+            detail::output_impl impl(j);
             io.readings_out().output(impl, io.exec());
+        }
     }
 
     static void to_json(nlohmann::json& j, const section_output& so)
@@ -137,6 +146,7 @@ namespace tep
         {
             json exec;
             exec["range"] = *pe.interval;
+            exec["sample_times"] = pe.exec;
             detail::output_impl impl(exec);
             so.readings_out().output(impl, pe.exec);
             execs.push_back(std::move(exec));
@@ -155,22 +165,6 @@ namespace tep
             j["extra"] = go.extra();
         for (const auto& so : go.sections())
             j["sections"].emplace_back(so);
-    }
-
-    static void to_json(nlohmann::json& j, const std::vector<idle_output>& io)
-    {
-        nlohmann::json result;
-        for (const auto& i : io)
-            to_json(result, i);
-        j = std::move(result);
-    }
-
-    static void to_json(nlohmann::json& j, const profiling_results::container& groups)
-    {
-        nlohmann::json array = nlohmann::json::array();
-        for (const auto& g : groups)
-            array.push_back(g);
-        j = std::move(array);
     }
 
     static void to_json(nlohmann::json& j, const profiling_results& pr)
@@ -212,7 +206,7 @@ void readings_output_dev<nrgprf::reader_rapl>::output(detail::output_impl& os,
     using namespace nrgprf;
     using json = nlohmann::json;
 
-    json readings_array = json::array();
+    os.json()["cpu"] = json::array();
     for (uint32_t skt = 0; skt < nrgprf::max_sockets; skt++)
     {
         json readings;
@@ -227,25 +221,24 @@ void readings_output_dev<nrgprf::reader_rapl>::output(detail::output_impl& os,
         for (const auto& sample : exec)
         {
             if (result<sensor_value> sens_value = _reader.value<loc::pkg>(sample, skt))
-                output_sample_data(jpkg, sample.timepoint(), sens_value.value());
+                jpkg.push_back(sens_value.value());
             if (result<sensor_value> sens_value = _reader.value<loc::cores>(sample, skt))
-                output_sample_data(jcores, sample.timepoint(), sens_value.value());
+                jcores.push_back(sens_value.value());
             if (result<sensor_value> sens_value = _reader.value<loc::uncore>(sample, skt))
-                output_sample_data(juncore, sample.timepoint(), sens_value.value());
+                juncore.push_back(sens_value.value());
             if (result<sensor_value> sens_value = _reader.value<loc::mem>(sample, skt))
-                output_sample_data(jdram, sample.timepoint(), sens_value.value());
+                jdram.push_back(sens_value.value());
             if (result<sensor_value> sens_value = _reader.value<loc::sys>(sample, skt))
-                output_sample_data(jsys, sample.timepoint(), sens_value.value());
+                jsys.push_back(sens_value.value());
             if (result<sensor_value> sens_value = _reader.value<loc::gpu>(sample, skt))
-                output_sample_data(jgpu, sample.timepoint(), sens_value.value());
+                jgpu.push_back(sens_value.value());
         }
         if (!jpkg.empty() || !jcores.empty() || !juncore.empty()
             || !jdram.empty() || !jgpu.empty() || !jsys.empty())
         {
-            readings_array.push_back(std::move(readings));
+            os.json()["cpu"].push_back(std::move(readings));
         }
     }
-    os.json()["cpu"] = std::move(readings_array);
 }
 
 template<>
@@ -256,7 +249,7 @@ void readings_output_dev<nrgprf::reader_gpu>::output(detail::output_impl& os,
     using namespace nrgprf;
     using json = nlohmann::json;
 
-    json readings_array = json::array();
+    os.json()["gpu"] = json::array();
     for (uint32_t dev = 0; dev < nrgprf::max_devices; dev++)
     {
         json readings;
@@ -267,16 +260,13 @@ void readings_output_dev<nrgprf::reader_gpu>::output(detail::output_impl& os,
             if (result<units_power> power = _reader.get_board_power(sample, dev))
             {
                 json values;
-                values.push_back(std::chrono::duration_cast<std::chrono::nanoseconds>(
-                    sample.timepoint().time_since_epoch()).count());
                 values.push_back(unit_cast<watts<double>>(power.value()).count());
                 readings["board"].push_back(std::move(values));
             }
         }
         if (!readings["board"].empty())
-            readings_array.push_back(std::move(readings));
+            os.json()["gpu"].push_back(std::move(readings));
     }
-    os.json()["gpu"] = std::move(readings_array);
 }
 
 idle_output::idle_output(std::unique_ptr<readings_output>&& rout, timed_execution&& exec) :
