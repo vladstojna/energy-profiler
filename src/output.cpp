@@ -141,7 +141,7 @@ namespace tep
         else
             j["extra"] = so.extra();
 
-        json& execs = j["executions"];
+        json& execs = j["executions"] = nlohmann::json::array();
         for (const auto& pe : so.executions())
         {
             json exec;
