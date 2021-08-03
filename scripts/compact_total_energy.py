@@ -3,6 +3,7 @@
 import json
 import sys
 import copy
+import argparse
 
 
 def convert_units(from_unit, to_unit):
@@ -81,11 +82,22 @@ class data_idx:
         return "(" + str(self.type) + "," + str(self.idx) + ")"
 
 
-def get_file_handle():
-    if len(sys.argv) == 1:
+def read_from(path):
+    if not path:
         return sys.stdin
     else:
-        return open(sys.argv[-1], "r")
+        return open(path, "r")
+
+
+def add_arguments(parser):
+    parser.add_argument(
+        "source_file",
+        action="store",
+        help="file to compact",
+        nargs="?",
+        type=str,
+        default=None,
+    )
 
 
 def get_duration(sample_times, time_units):
@@ -265,7 +277,12 @@ def write_device_readings(
 
 
 def main():
-    with get_file_handle() as f:
+    parser = argparse.ArgumentParser(
+        description="Compact output and show total consumed energy"
+    )
+    add_arguments(parser)
+    args = parser.parse_args()
+    with read_from(args.source_file) as f:
         json_in = json.load(f)
         units = json_in["units"]
         units_out = copy.deepcopy(units)
