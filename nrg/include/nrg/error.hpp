@@ -27,6 +27,7 @@ namespace nrgprf
         TOO_MANY_DEVICES,
         FORMAT_ERROR,
         INVALID_DOMAIN_NAME,
+        UNSUPPORTED,
         UNKNOWN_ERROR,
     };
 
