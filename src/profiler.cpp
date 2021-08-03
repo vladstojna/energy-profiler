@@ -125,6 +125,37 @@ results_from_targets(const reader_container& readers,
     return holder;
 }
 
+tracer_error sample_idle(const char* target, const nrgprf::reader* reader, timed_execution& into)
+{
+    assert(target);
+    assert(reader);
+    constexpr static const std::chrono::milliseconds default_sleep(5000);
+    constexpr static const std::chrono::milliseconds default_period(40);
+    constexpr static const size_t initial_size = default_sleep / default_period + 100;
+
+    auto sleep_func = []()
+    {
+        log(log_lvl::info, "sleeping for %lu milliseconds", default_sleep.count());
+        std::this_thread::sleep_for(default_sleep);
+    };
+    log(log_lvl::info, "gathering idle readings for %s...", target);
+
+    // reserve enough initially in order to avoid future allocations
+    auto results = async_sampler_fn(
+        std::make_unique<unbounded_ps>(reader, initial_size, default_period), sleep_func)
+        .run();
+    if (!results)
+    {
+        log(log_lvl::error, "unsuccessfuly gathered %s idle readings: %s", target,
+            results.error().msg().c_str());
+        return { tracer_errcode::READER_ERROR, results.error().msg() };
+    }
+    log(log_lvl::success, "successfuly gathered %s idle readings", target);
+    into = std::move(results.value());
+    into.shrink_to_fit();
+    return tracer_error::success();
+}
+
 // end helper functions
 
 
@@ -375,55 +406,18 @@ tracer_expected<profiling_results> profiler::run()
 
 tracer_error profiler::obtain_idle_results()
 {
-    static std::chrono::milliseconds default_sleep(5000);
-
     bool cpu = _cd.has_section_with(config_data::target::cpu);
     bool gpu = _cd.has_section_with(config_data::target::gpu);
 
     assert(cpu || gpu);
     if (!cpu && !gpu)
         return tracer_error(tracer_errcode::UNKNOWN_ERROR, "no CPU or GPU sections found");
-
-    auto sleep_func = []()
-    {
-        log(log_lvl::info, "sleeping for %lu milliseconds", default_sleep.count());
-        std::this_thread::sleep_for(default_sleep);
-    };
-
     if (cpu)
-    {
-        log(log_lvl::info, "gathering idle readings for %s...", "CPU");
-
-        auto results = sync_sampler_fn(&_readers.reader_rapl(), sleep_func).run();
-        if (!results)
-        {
-            log(log_lvl::error, "unsuccessfuly gathered CPU idle readings: %s",
-                results.error().msg().c_str());
-            return { tracer_errcode::READER_ERROR, results.error().msg() };
-        }
-        log(log_lvl::success, "successfuly gathered %s idle readings", "CPU");
-        _idle.cpu_readings = std::move(results.value());
-    }
+        if (tracer_error err = sample_idle("CPU", &_readers.reader_rapl(), _idle.cpu_readings))
+            return err;
     if (gpu)
-    {
-        log(log_lvl::info, "gathering idle readings for %s...", "GPU");
-
-        // reserve enough initially in order to avoid future allocations
-        size_t initial_size = default_sleep / unbounded_ps::default_period + 100;
-        auto results = async_sampler_fn(
-            std::make_unique<unbounded_ps>(&_readers.reader_gpu(), initial_size),
-            sleep_func)
-            .run();
-
-        if (!results)
-        {
-            log(log_lvl::error, "unsuccessfuly gathered GPU idle readings: %s",
-                results.error().msg().c_str());
-            return { tracer_errcode::READER_ERROR, results.error().msg() };
-        }
-        log(log_lvl::success, "successfuly gathered %s idle readings", "GPU");
-        _idle.gpu_readings = std::move(results.value());
-    }
+        if (tracer_error err = sample_idle("GPU", &_readers.reader_gpu(), _idle.gpu_readings))
+            return err;
     return tracer_error::success();
 }
 

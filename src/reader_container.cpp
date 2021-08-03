@@ -23,7 +23,7 @@ create_cpu_reader(const config_data::params& params, tracer_error& err)
 {
     nrgprf::error error = nrgprf::error::success();
     nrgprf::reader_rapl reader(
-        nrgprf::rapl_mask(params.domain_mask()),
+        nrgprf::location_mask(params.domain_mask()),
         nrgprf::socket_mask(params.socket_mask()),
         error);
     if (error)

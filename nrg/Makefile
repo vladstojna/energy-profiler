@@ -29,7 +29,7 @@ ifeq ($(gpu),GPU_NV)
 incl += /opt/cuda/include
 ldflags += -lnvidia-ml
 
-endif
+endif # $(gpu),GPU_NV
 
 ifeq ($(gpu),GPU_AMD)
 
@@ -47,13 +47,15 @@ incl += $(rsmi_base)/include
 ldflags += -lrocm_smi64
 ldflags += $(addprefix -L, $(LD_RUN_PATH))
 
-endif
+endif # $(gpu),GPU_AMD
 
 # compiler flags
 cc := g++
+override cpp +=
 cflags := -Wall -Wextra -Wno-unknown-pragmas -Wpedantic -fPIC -g
 cflags += $(addprefix -I, $(incl))
 cflags += -std=c++17
+cflags += $(addprefix -D, $(cpp))
 
 ifdef dbg
 cflags += -O0
