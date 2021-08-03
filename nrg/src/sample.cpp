@@ -4,29 +4,9 @@
 #include <nrg/reader.hpp>
 #include <nrg/sample.hpp>
 
-#include <cassert>
+#include <cstring>
 
 using namespace nrgprf;
-
-template<typename T, size_t sz>
-static void operator-=(std::array<T, sz>& lhs, const std::array<T, sz>& rhs)
-{
-    for (typename std::array<T, sz>::size_type ix = 0; ix < lhs.size(); ix++)
-    {
-        if (lhs[ix] > rhs[ix])
-            lhs[ix] -= rhs[ix];
-        else
-            lhs[ix] = 0;
-    }
-}
-
-template<typename T, size_t sz>
-static void operator+=(std::array<T, sz>& lhs, const std::array<T, sz>& rhs)
-{
-    for (typename std::array<T, sz>::size_type ix = 0; ix < lhs.size(); ix++)
-        lhs[ix] += rhs[ix];
-}
-
 
 sample::sample() :
     data{}
@@ -38,49 +18,14 @@ sample::sample(const reader& reader, error& e) :
     e = reader.read(*this);
 }
 
-#if defined(NRG_X86_64)
-
 bool sample::operator==(const sample& rhs) const
 {
-    return data.cpu == rhs.data.cpu && data.gpu == rhs.data.gpu;
+    return std::memcmp(this, &rhs, sizeof(rhs));
 }
-
-#elif defined(NRG_PPC64)
-
-bool sample::operator==(const sample& rhs) const
-{
-    return data.timestamps == rhs.data.timestamps && data.cpu == rhs.data.cpu && data.gpu == rhs.data.gpu;
-}
-
-#endif // defined(NRG_X86_64)
 
 bool sample::operator!=(const sample& rhs) const
 {
     return !(*this == rhs);
-}
-
-sample sample::operator+(const sample& rhs) const
-{
-    sample retval(*this);
-    return retval += rhs;
-}
-
-sample sample::operator-(const sample& rhs) const
-{
-    sample retval(*this);
-    return retval -= rhs;
-}
-
-sample sample::operator/(sample::value_type rhs) const
-{
-    sample retval(*this);
-    return retval /= rhs;
-}
-
-sample sample::operator*(sample::value_type rhs) const
-{
-    sample retval(*this);
-    return retval *= rhs;
 }
 
 sample::operator bool() const
@@ -88,84 +33,6 @@ sample::operator bool() const
     sample empty{};
     return *this != empty;
 }
-
-#if defined(NRG_X86_64)
-
-sample& sample::operator-=(const sample& rhs)
-{
-    data.cpu -= rhs.data.cpu;
-    data.gpu -= rhs.data.gpu;
-    return *this;
-}
-
-sample& sample::operator+=(const sample& rhs)
-{
-    data.cpu += rhs.data.cpu;
-    data.gpu += rhs.data.gpu;
-    return *this;
-}
-
-sample& sample::operator/=(sample::value_type rhs)
-{
-    assert(rhs);
-    for (auto& val : data.cpu)
-        val /= rhs;
-    for (auto& val : data.gpu)
-        val /= rhs;
-    return *this;
-}
-
-sample& sample::operator*=(sample::value_type rhs)
-{
-    for (auto& val : data.cpu)
-        val *= rhs;
-    for (auto& val : data.gpu)
-        val *= rhs;
-    return *this;
-}
-
-#elif defined(NRG_PPC64)
-
-sample& sample::operator-=(const sample& rhs)
-{
-    data.timestamps -= rhs.data.timestamps;
-    data.cpu -= rhs.data.cpu;
-    data.gpu -= rhs.data.gpu;
-    return *this;
-}
-
-sample& sample::operator+=(const sample& rhs)
-{
-    data.timestamps -= rhs.data.timestamps;
-    data.cpu += rhs.data.cpu;
-    data.gpu += rhs.data.gpu;
-    return *this;
-}
-
-sample& sample::operator/=(sample::value_type rhs)
-{
-    assert(rhs);
-    for (auto& val : data.timestamps)
-        val /= rhs;
-    for (auto& val : data.cpu)
-        val /= rhs;
-    for (auto& val : data.gpu)
-        val /= rhs;
-    return *this;
-}
-
-sample& sample::operator*=(sample::value_type rhs)
-{
-    for (auto& val : data.timestamps)
-        val /= rhs;
-    for (auto& val : data.cpu)
-        val *= rhs;
-    for (auto& val : data.gpu)
-        val *= rhs;
-    return *this;
-}
-
-#endif // defined(NRG_X86_64)
 
 timed_sample::timed_sample() :
     _timepoint{},

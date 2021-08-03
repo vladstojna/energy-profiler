@@ -35,16 +35,6 @@ namespace nrgprf
         bool operator==(const sample& rhs) const;
         bool operator!=(const sample& rhs) const;
 
-        sample operator+(const sample& rhs) const;
-        sample operator-(const sample& rhs) const;
-        sample operator/(value_type rhs) const;
-        sample operator*(value_type rhs) const;
-
-        sample& operator+=(const sample& rhs);
-        sample& operator-=(const sample& rhs);
-        sample& operator*=(value_type rhs);
-        sample& operator/=(value_type rhs);
-
         explicit operator bool() const;
     };
 
