@@ -39,7 +39,6 @@ namespace tep
 
             bool insert(addr_bounds bounds,
                 const reader_container& readers,
-                const idle_results& idle,
                 const config_data::section_group& group,
                 const config_data::section& sec);
 
@@ -53,7 +52,6 @@ namespace tep
         config_data _cd;
         reader_container _readers;
         registered_traps _traps;
-        idle_results _idle;
         output_mapping _output;
 
     public:

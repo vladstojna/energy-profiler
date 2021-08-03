@@ -19,149 +19,146 @@
 
 #include <util/concat.hpp>
 
-
 using namespace tep;
-
 
 // start helper functions
 
-template<typename T>
-static std::string to_string(const T& obj)
+namespace
 {
-    std::stringstream ss;
-    ss << obj;
-    return ss.str();
-}
-
-tracer_error no_return_addresses(const std::string& func_name)
-{
-    return tracer_error(tracer_errcode::UNSUPPORTED,
-        cmmn::concat("unsupported: function '", func_name,
-            "' has no return addresses, possibly optimized away"));
-}
-
-// inserts trap at 'addr'
-// returns either error or original word at address 'addr'
-tracer_expected<long> insert_trap(pid_t my_tid, pid_t pid, uintptr_t addr)
-{
-    ptrace_wrapper& pw = ptrace_wrapper::instance;
-    int error;
-    long word = pw.ptrace(error, PTRACE_PEEKDATA, pid, addr, 0);
-    if (error)
+    template<typename T>
+    std::string to_string(const T& obj)
     {
-        log(log_lvl::error, "[%d] error inserting trap @ 0x%" PRIxPTR, my_tid, addr);
-        return get_syserror(error, tracer_errcode::PTRACE_ERROR, my_tid, "insert_trap: PTRACE_PEEKDATA");
+        std::stringstream ss;
+        ss << obj;
+        return ss.str();
     }
-    long new_word = set_trap(word);
-    if (pw.ptrace(error, PTRACE_POKEDATA, pid, addr, new_word) < 0)
+
+    tracer_error no_return_addresses(const std::string& func_name)
     {
-        log(log_lvl::error, "[%d] error inserting trap @ 0x%" PRIxPTR, my_tid, addr);
-        return get_syserror(error, tracer_errcode::PTRACE_ERROR, my_tid, "insert_trap: PTRACE_POKEDATA");
+        return tracer_error(tracer_errcode::UNSUPPORTED,
+            cmmn::concat("unsupported: function '", func_name,
+                "' has no return addresses, possibly optimized away"));
     }
-    log(log_lvl::debug, "[%d] 0x%" PRIxPTR ": %lx -> %lx", my_tid, addr, word, new_word);
-    return word;
-}
 
-// instantiates a polymorphic sampler_creator from config section information
-sampler_creator creator_from_section(const reader_container& readers,
-    const config_data::section& section)
-{
-    const nrgprf::reader* reader = readers.find(section.targets());
-    const std::chrono::milliseconds& interval = section.interval();
-    size_t samples = section.samples();
-
-    assert(reader != nullptr);
-    switch (section.method())
+    // inserts trap at 'addr'
+    // returns either error or original word at address 'addr'
+    tracer_expected<long> insert_trap(pid_t my_tid, pid_t pid, uintptr_t addr)
     {
-    case config_data::profiling_method::energy_profile:
-    {
-        return [reader, interval, samples]()
+        ptrace_wrapper& pw = ptrace_wrapper::instance;
+        int error;
+        long word = pw.ptrace(error, PTRACE_PEEKDATA, pid, addr, 0);
+        if (error)
         {
-            return std::make_unique<unbounded_ps>(reader, samples, interval);
-        };
-    } break;
-    case config_data::profiling_method::energy_total:
-    {
-        return [reader, interval]()
+            log(log_lvl::error, "[%d] error inserting trap @ 0x%" PRIxPTR, my_tid, addr);
+            return get_syserror(error, tracer_errcode::PTRACE_ERROR, my_tid, "insert_trap: PTRACE_PEEKDATA");
+        }
+        long new_word = set_trap(word);
+        if (pw.ptrace(error, PTRACE_POKEDATA, pid, addr, new_word) < 0)
         {
-            return std::make_unique<bounded_ps>(reader, interval);
+            log(log_lvl::error, "[%d] error inserting trap @ 0x%" PRIxPTR, my_tid, addr);
+            return get_syserror(error, tracer_errcode::PTRACE_ERROR, my_tid, "insert_trap: PTRACE_POKEDATA");
+        }
+        log(log_lvl::debug, "[%d] 0x%" PRIxPTR ": %lx -> %lx", my_tid, addr, word, new_word);
+        return word;
+    }
+
+    // instantiates a polymorphic sampler_creator from config section information
+    sampler_creator creator_from_section(const reader_container& readers,
+        const config_data::section& section)
+    {
+        const nrgprf::reader* reader = readers.find(section.targets());
+        const std::chrono::milliseconds& interval = section.interval();
+        size_t samples = section.samples();
+
+        assert(reader != nullptr);
+        switch (section.method())
+        {
+        case config_data::profiling_method::energy_profile:
+        {
+            return [reader, interval, samples]()
+            {
+                return std::make_unique<unbounded_ps>(reader, samples, interval);
+            };
+        } break;
+        case config_data::profiling_method::energy_total:
+        {
+            return [reader, interval]()
+            {
+                return std::make_unique<bounded_ps>(reader, interval);
+            };
+        } break;
+        default:
+            assert(false);
+        }
+        return []() { return std::make_unique<null_async_sampler>(); };
+    }
+
+    // instantiates a polymorphic results holder from config target information
+    std::unique_ptr<readings_output> results_from_target(
+        const reader_container& readers,
+        config_data::target target)
+    {
+        switch (target)
+        {
+        case config_data::target::cpu:
+            return std::make_unique<readings_output_cpu>(readers.reader_rapl());
+        case config_data::target::gpu:
+            return std::make_unique<readings_output_gpu>(readers.reader_gpu());
+        default:
+            assert(false);
+        }
+        return {};
+    }
+
+    std::unique_ptr<readings_output> results_from_targets(
+        const reader_container& readers,
+        const config_data::section::target_cont& targets)
+    {
+        assert(!targets.empty());
+        if (targets.size() == 1)
+            return results_from_target(readers, *targets.begin());
+        std::unique_ptr<readings_output_holder> holder = std::make_unique<readings_output_holder>();
+        for (auto tgt : targets)
+            holder->push_back(results_from_target(readers, tgt));
+        return holder;
+    }
+
+    tracer_error sample_idle(const char* target, const nrgprf::reader* reader, timed_execution& into)
+    {
+        assert(target);
+        assert(reader);
+        constexpr static const std::chrono::milliseconds default_sleep(5000);
+        constexpr static const std::chrono::milliseconds default_period(40);
+        constexpr static const size_t initial_size = default_sleep / default_period + 100;
+
+        auto sleep_func = []()
+        {
+            log(log_lvl::info, "sleeping for %lu milliseconds", default_sleep.count());
+            std::this_thread::sleep_for(default_sleep);
         };
-    } break;
-    default:
-        assert(false);
+        log(log_lvl::info, "gathering idle readings for %s...", target);
+
+        // reserve enough initially in order to avoid future allocations
+        auto results = async_sampler_fn(
+            std::make_unique<unbounded_ps>(reader, initial_size, default_period), sleep_func)
+            .run();
+        if (!results)
+        {
+            log(log_lvl::error, "unsuccessfuly gathered %s idle readings: %s", target,
+                results.error().msg().c_str());
+            return { tracer_errcode::READER_ERROR, results.error().msg() };
+        }
+        log(log_lvl::success, "successfuly gathered %s idle readings", target);
+        into = std::move(results.value());
+        into.shrink_to_fit();
+        return tracer_error::success();
     }
-    return []() { return std::make_unique<null_async_sampler>(); };
-}
-
-// instantiates a polymorphic results holder from config target information
-std::unique_ptr<readings_output>
-results_from_target(const reader_container& readers,
-    const idle_results& idle_res,
-    config_data::target target)
-{
-    switch (target)
-    {
-    case config_data::target::cpu:
-        return std::make_unique<readings_output_cpu>(readers.reader_rapl(), idle_res.cpu_readings);
-    case config_data::target::gpu:
-        return std::make_unique<readings_output_gpu>(readers.reader_gpu(), idle_res.gpu_readings);
-    default:
-        assert(false);
-    }
-    return {};
-}
-
-std::unique_ptr<readings_output>
-results_from_targets(const reader_container& readers,
-    const idle_results& idle_res,
-    const config_data::section::target_cont& targets)
-{
-    assert(!targets.empty());
-    if (targets.size() == 1)
-        return results_from_target(readers, idle_res, *targets.begin());
-    std::unique_ptr<readings_output_holder> holder = std::make_unique<readings_output_holder>();
-    for (auto tgt : targets)
-        holder->push_back(results_from_target(readers, idle_res, tgt));
-    return holder;
-}
-
-tracer_error sample_idle(const char* target, const nrgprf::reader* reader, timed_execution& into)
-{
-    assert(target);
-    assert(reader);
-    constexpr static const std::chrono::milliseconds default_sleep(5000);
-    constexpr static const std::chrono::milliseconds default_period(40);
-    constexpr static const size_t initial_size = default_sleep / default_period + 100;
-
-    auto sleep_func = []()
-    {
-        log(log_lvl::info, "sleeping for %lu milliseconds", default_sleep.count());
-        std::this_thread::sleep_for(default_sleep);
-    };
-    log(log_lvl::info, "gathering idle readings for %s...", target);
-
-    // reserve enough initially in order to avoid future allocations
-    auto results = async_sampler_fn(
-        std::make_unique<unbounded_ps>(reader, initial_size, default_period), sleep_func)
-        .run();
-    if (!results)
-    {
-        log(log_lvl::error, "unsuccessfuly gathered %s idle readings: %s", target,
-            results.error().msg().c_str());
-        return { tracer_errcode::READER_ERROR, results.error().msg() };
-    }
-    log(log_lvl::success, "successfuly gathered %s idle readings", target);
-    into = std::move(results.value());
-    into.shrink_to_fit();
-    return tracer_error::success();
 }
 
 // end helper functions
 
-
 bool profiler::output_mapping::insert(addr_bounds bounds,
     const reader_container& readers,
-    const idle_results& idle,
     const config_data::section_group& group,
     const config_data::section& sec)
 {
@@ -182,7 +179,7 @@ bool profiler::output_mapping::insert(addr_bounds bounds,
     assert(grp_it != results.groups().end());
 
     grp_it->push_back({
-        results_from_targets(readers, idle, sec.targets()),
+        results_from_targets(readers, sec.targets()),
         sec.label(),
         sec.extra() });
 
@@ -412,12 +409,20 @@ tracer_error profiler::obtain_idle_results()
     assert(cpu || gpu);
     if (!cpu && !gpu)
         return tracer_error(tracer_errcode::UNKNOWN_ERROR, "no CPU or GPU sections found");
-    if (cpu)
-        if (tracer_error err = sample_idle("CPU", &_readers.reader_rapl(), _idle.cpu_readings))
+    if (timed_execution into; cpu)
+    {
+        if (tracer_error err = sample_idle("CPU", &_readers.reader_rapl(), into))
             return err;
-    if (gpu)
-        if (tracer_error err = sample_idle("GPU", &_readers.reader_gpu(), _idle.gpu_readings))
+        _output.results.idle().emplace_back(
+            std::make_unique<readings_output_cpu>(_readers.reader_rapl()), std::move(into));
+    }
+    if (timed_execution into; gpu)
+    {
+        if (tracer_error err = sample_idle("GPU", &_readers.reader_gpu(), into))
             return err;
+        _output.results.idle().emplace_back(
+            std::make_unique<readings_output_gpu>(_readers.reader_gpu()), std::move(into));
+    }
     return tracer_error::success();
 }
 
@@ -489,7 +494,7 @@ tracer_error profiler::insert_traps_function(
             return tracer_error(tracer_errcode::NO_TRAP,
                 cmmn::concat("Trap ", std::to_string(end.val()), " already exists"));
         }
-        if (!_output.insert({ start, end }, _readers, _idle, group, sec))
+        if (!_output.insert({ start, end }, _readers, group, sec))
             return tracer_error(tracer_errcode::NO_TRAP, "Trap address interval already exists");
     }
     return tracer_error::success();
@@ -581,7 +586,7 @@ tracer_error profiler::insert_traps_position_end(
         return tracer_error(tracer_errcode::NO_TRAP,
             cmmn::concat("Trap ", std::to_string(eaddr.val()), " already exists"));
     }
-    if (!_output.insert({ start, eaddr }, _readers, _idle, group, sec))
+    if (!_output.insert({ start, eaddr }, _readers, group, sec))
         return tracer_error(tracer_errcode::NO_TRAP, "Trap address interval already exists");
 
     log(log_lvl::debug, "[%d] line %s @ offset 0x%" PRIxPTR,

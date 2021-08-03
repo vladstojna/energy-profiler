@@ -20,12 +20,6 @@ namespace tep
         timed_execution exec;
     };
 
-    struct idle_results
-    {
-        timed_execution cpu_readings;
-        timed_execution gpu_readings;
-    };
-
     class readings_output
     {
     public:
@@ -49,12 +43,25 @@ namespace tep
     {
     private:
         Reader _reader;
-        timed_execution _idle;
 
     public:
-        readings_output_dev(const Reader& reader, const timed_execution& idle);
+        readings_output_dev(const Reader& reader);
 
         void output(detail::output_impl& os, const timed_execution& exec) const override;
+    };
+
+    class idle_output
+    {
+    private:
+        std::unique_ptr<readings_output> _rout;
+        timed_execution _exec;
+
+    public:
+        idle_output(std::unique_ptr<readings_output>&& rout, timed_execution&& exec);
+
+        timed_execution& exec();
+        const timed_execution& exec() const;
+        const readings_output& readings_out() const;
     };
 
     class section_output
@@ -114,10 +121,14 @@ namespace tep
         using container = std::vector<group_output>;
 
     private:
+        std::vector<idle_output> _idle;
         container _results;
 
     public:
         profiling_results() = default;
+
+        std::vector<idle_output>& idle();
+        const std::vector<idle_output>& idle() const;
 
         container& groups();
         const container& groups() const;
