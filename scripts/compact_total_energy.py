@@ -264,12 +264,16 @@ def write_device_readings(
                 duration = get_duration(sample_times, units_in["time"]).convert_to(
                     units_out["time"]
                 )
-                delta_energy = compute_delta(
-                    total_energy,
-                    duration,
-                    idle[readings[dev_type]][k],
-                    idle["duration"],
-                ).convert_to(units_out["energy"])
+                delta_energy = (
+                    compute_delta(
+                        total_energy,
+                        duration,
+                        idle[readings[dev_type]][k],
+                        idle["duration"],
+                    ).convert_to(units_out["energy"])
+                    if idle
+                    else None
+                )
 
                 current = readings_out[-1][k] = {}
                 current["total"] = total_energy.value
@@ -338,7 +342,7 @@ def main():
                             e["cpu"],
                             jexec["cpu"],
                             e["sample_times"],
-                            idle["cpu"],
+                            idle["cpu"] if idle else None,
                         )
 
                     if e.get("gpu") != None:
@@ -351,7 +355,7 @@ def main():
                             e["gpu"],
                             jexec["gpu"],
                             e["sample_times"],
-                            idle["gpu"],
+                            idle["gpu"] if idle else None,
                         )
 
                     jsec["executions"].append(jexec)
