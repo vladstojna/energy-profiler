@@ -29,19 +29,29 @@ namespace
     }
 
 #if defined NRG_X86_64
-    void format_output(nlohmann::json& j)
+    void cpu_format(nlohmann::json& j)
     {
-        j["cpu"].push_back("energy");
-        j["gpu"].push_back("power");
+        j.push_back("energy");
     }
 #elif defined NRG_PPC64
-    void format_output(nlohmann::json& j)
+    void cpu_format(nlohmann::json& j)
     {
-        j["cpu"].push_back("sensor_time");
-        j["cpu"].push_back("power");
-        j["gpu"].push_back("power");
+        j.push_back("sensor_time");
+        j.push_back("power");
     }
 #endif // defined NRG_X86_64
+
+    void gpu_format(nlohmann::json& j)
+    {
+        j.push_back("power");
+        j.push_back("energy");
+    }
+
+    void format_output(nlohmann::json& j)
+    {
+        cpu_format(j["cpu"] = nlohmann::json::array());
+        gpu_format(j["gpu"] = nlohmann::json::array());
+    }
 }
 
 namespace tep::detail
@@ -257,10 +267,13 @@ void readings_output_dev<nrgprf::reader_gpu>::output(detail::output_impl& os,
         readings["board"] = json::array();
         for (const auto& sample : exec)
         {
-            if (result<units_power> power = _reader.get_board_power(sample, dev))
+            result<units_power> power = _reader.get_board_power(sample, dev);
+            result<units_energy> energy = _reader.get_board_energy(sample, dev);
+            if (power || energy)
             {
                 json values;
-                values.push_back(unit_cast<watts<double>>(power.value()).count());
+                values.push_back(!power ? 0 : unit_cast<watts<double>>(power.value()).count());
+                values.push_back(!energy ? 0 : unit_cast<joules<double>>(energy.value()).count());
                 readings["board"].push_back(std::move(values));
             }
         }
