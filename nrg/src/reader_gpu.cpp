@@ -267,6 +267,8 @@ namespace
 
 lib_handle::lib_handle(error& ec)
 {
+    if (ec)
+        return;
     nvmlReturn_t result = nvmlInit();
     if (result != NVML_SUCCESS)
         ec = { error_code::READER_GPU, error_str("failed to initialise NVML", result) };
@@ -462,6 +464,8 @@ namespace
 
 lib_handle::lib_handle(error& ec)
 {
+    if (ec)
+        return;
     rsmi_status_t result = rsmi_init(0);
     if (result != RSMI_STATUS_SUCCESS)
         ec = { error_code::READER_GPU, error_str("failed to initialise ROCm SMI", result) };
