@@ -8,6 +8,7 @@
 #include <iostream>
 #include <cassert>
 #include <stdexcept>
+#include <sstream>
 
 #if defined(GPU_NONE)
 #undef GPU_NONE
@@ -57,6 +58,8 @@ std::string error_str(const char* prefix, rsmi_status_t result)
 
 struct lib_handle
 {
+    static result<lib_handle> create();
+
     lib_handle(error& ec);
     ~lib_handle();
 
@@ -70,6 +73,15 @@ struct lib_handle
 #endif // !defined(GPU_NONE)
 
 #if defined(GPU_NV)
+
+result<lib_handle> lib_handle::create()
+{
+    error err = error::success();
+    lib_handle lib(err);
+    if (err)
+        return err;
+    return lib;
+}
 
 lib_handle::lib_handle(error& ec)
 {
@@ -154,83 +166,232 @@ lib_handle& lib_handle::operator=(lib_handle&& other)
 
 // begin impl
 
+namespace
+{
+    template<typename T>
+    std::string to_string(const T& item)
+    {
+        std::ostringstream os;
+        os << item;
+        return os.str();
+    }
+
+    constexpr size_t bitpos(readings_type::type rt)
+    {
+        auto val = static_cast<std::underlying_type_t<readings_type::type>>(rt);
+        size_t pos = 0;
+        while ((val >>= 1) & 0x1)
+            pos++;
+        return pos;
+    }
+
+    std::ostream& operator<<(std::ostream& os, readings_type::type rt)
+    {
+        switch (rt)
+        {
+        case readings_type::power:
+            os << "power";
+            break;
+        case readings_type::energy:
+            os << "energy";
+            break;
+        }
+        return os;
+    }
+
+    error get_device_count(unsigned int& devcount)
+    {
+        nvmlReturn_t result = nvmlDeviceGetCount(&devcount);
+        if (result != NVML_SUCCESS)
+            return { error_code::READER_GPU, error_str("Failed to obtain device count", result) };
+        if (devcount > max_devices)
+            return { error_code::TOO_MANY_DEVICES, "Too many devices (a maximum of 8 is supported)" };
+        if (!devcount)
+            return { error_code::NO_DEVICES, "No devices found" };
+        return error::success();
+    }
+
+    std::string event_added(unsigned int dev, readings_type::type rt)
+    {
+        return fileline(cmmn::concat(
+            "added event: device ", std::to_string(dev), " ", to_string(rt), " query"
+        ));
+    }
+
+    std::string event_not_supported(unsigned int dev, readings_type::type rt)
+    {
+        return fileline(cmmn::concat(
+            "device ", std::to_string(dev),
+            " does not support ", to_string(rt),
+            " queries"));
+    }
+
+    std::string event_not_added(unsigned int dev, readings_type::type rt)
+    {
+        return fileline(cmmn::concat(
+            "device ", std::to_string(dev),
+            " supports ", to_string(rt),
+            " queries, but not adding event due to lack of support in previous device(s)"));
+    }
+}
+
 struct reader_gpu::impl
 {
-#if !defined(GPU_NONE)
-    int8_t event_map[max_devices];
-    lib_handle handle;
-#endif // !defined(GPU_NONE)
-#if defined(GPU_NV)
-    std::vector<nvmlDevice_t> active_handles;
-#elif defined(GPU_AMD)
-    std::vector<uint32_t> active_handles;
-#endif
+    struct event
+    {
+        nvmlDevice_t handle;
+        size_t stride;
+        error(*read_func)(sample&, size_t, nvmlDevice_t);
+    };
 
-    impl(device_mask dmask, error& ec);
+    static result<readings_type::type> support(device_mask devmask);
+
+    lib_handle handle;
+    std::array<std::array<int8_t, 2>, max_devices> event_map;
+    std::vector<event> events;
+
+    impl(readings_type::type rt, device_mask dmask, error& ec);
 
     error read(sample& s) const;
     error read(sample& s, uint8_t ev_idx) const;
 
-    int8_t event_idx(uint8_t device) const;
+    int8_t event_idx(readings_type::type rt, uint8_t device) const;
     size_t num_events() const;
 
     result<units_power> get_board_power(const sample& s, uint8_t dev) const;
+    result<units_energy> get_board_energy(const sample& s, uint8_t dev) const;
+
+private:
+    static result<readings_type::type> support(nvmlDevice_t handle);
+    static error read_energy(sample& s, size_t stride, nvmlDevice_t handle);
+    static error read_power(sample& s, size_t stride, nvmlDevice_t handle);
+
+    template<readings_type::type rt, typename UnitsRead, typename ToUnits, typename S>
+    result<ToUnits> get_value(const S& data, uint8_t dev) const;
+
+    constexpr static const std::array<
+        std::pair<readings_type::type, decltype(event::read_func)>, 2> type_array =
+    { {
+        { readings_type::power, read_power },
+        { readings_type::energy, read_energy }
+    } };
 };
 
 // constructor
 
 #if defined(GPU_NV)
 
-reader_gpu::impl::impl(device_mask dev_mask, error& ec) :
-    event_map(),
+reader_gpu::impl::impl(readings_type::type rt, device_mask dev_mask, error& ec) :
     handle(ec),
-    active_handles()
+    event_map(),
+    events()
 {
     // error constructing lib_handle
     if (ec)
         return;
+    if (dev_mask.none() && (ec = { error_code::NO_DEVICES, "No devices set in mask" }))
+        return;
+    for (auto& val : event_map)
+        val.fill(-1);
 
-    for (size_t ix = 0; ix < max_devices; ix++)
-        event_map[ix] = -1;
-
+    auto sup = support(dev_mask);
+    if (!sup && (ec = std::move(sup.error())))
+        return;
     unsigned int device_cnt;
-    nvmlReturn_t result = nvmlDeviceGetCount(&device_cnt);
-    if (result != NVML_SUCCESS)
-    {
-        ec = { error_code::READER_GPU, error_str("Failed to obtain device count", result) };
+    if (ec = get_device_count(device_cnt))
         return;
-    }
-    if (device_cnt > max_devices)
-    {
-        ec = { error_code::TOO_MANY_DEVICES, "Too many devices (a maximum of 8 is supported)" };
-        return;
-    }
     for (unsigned int i = 0; i < device_cnt; i++)
     {
-        nvmlDevice_t handle;
-        char name[NVML_DEVICE_NAME_BUFFER_SIZE];
-
         if (!dev_mask[i])
             continue;
 
-        result = nvmlDeviceGetHandleByIndex(i, &handle);
-        if (result != NVML_SUCCESS)
+        constexpr const size_t sz = NVML_DEVICE_NAME_BUFFER_SIZE;
+        char name[sz];
+        nvmlDevice_t handle = nullptr;
+        if (nvmlReturn_t res; (res = nvmlDeviceGetHandleByIndex(i, &handle)) != NVML_SUCCESS)
         {
-            ec = { error_code::READER_GPU, error_str("Failed to get device handle", result) };
+            ec = { error_code::READER_GPU, error_str("Failed to get device handle", res) };
             return;
         }
-        result = nvmlDeviceGetName(handle, name, NVML_DEVICE_NAME_BUFFER_SIZE);
-        if (result != NVML_SUCCESS)
+        if (nvmlReturn_t res; (res = nvmlDeviceGetName(handle, name, sz)) != NVML_SUCCESS)
         {
-            ec = { error_code::READER_GPU, error_str("Failed to get device name", result) };
+            ec = { error_code::READER_GPU, error_str("Failed to get device name", res) };
             return;
         }
-
         std::cout << fileline(cmmn::concat("device: ", std::to_string(i), ", name: ", name, "\n"));
-        event_map[i] = active_handles.size();
-        active_handles.push_back(handle);
+
+        auto sup_dev = support(handle);
+        if (!sup_dev && (ec = std::move(sup_dev.error())))
+            return;
+        for (const auto& elem : type_array)
+        {
+            if (!(elem.first & rt))
+                continue;
+            if (!(sup_dev.value() & elem.first))
+                std::cout << event_not_supported(i, elem.first) << "\n";
+            else if (!(sup.value() & elem.first))
+                std::cout << event_not_added(i, elem.first) << "\n";
+            else
+            {
+                event_map[i][bitpos(elem.first)] = events.size();
+                events.push_back({ handle, i, elem.second });
+                std::cout << event_added(i, elem.first) << "\n";
+            }
+        }
     }
-    assert(active_handles.size() == device_cnt);
+    if (events.empty())
+        ec = { error_code::SETUP_ERROR, "No events were added" };
+}
+
+result<readings_type::type> reader_gpu::impl::support(device_mask devmask)
+{
+    if (devmask.none())
+        return error(error_code::NO_DEVICES, "No devices set in mask");
+    auto lib = lib_handle::create();
+    if (!lib)
+        return std::move(lib.error());
+    unsigned int devcount;
+    if (error err = get_device_count(devcount))
+        return err;
+    readings_type::type retval = readings_type::all;
+    for (unsigned i = 0; i < devcount; i++)
+    {
+        nvmlDevice_t devhandle = nullptr;
+        if (!devmask[i])
+            continue;
+        if (nvmlReturn_t res; (res = nvmlDeviceGetHandleByIndex(i, &devhandle)) != NVML_SUCCESS)
+            return error(error_code::SETUP_ERROR, error_str("Failed to get device handle", res));
+        if (auto sup = support(devhandle))
+            retval = retval & sup.value();
+        else
+            return std::move(sup.error());
+    }
+    if (!retval)
+        return error(error_code::UNSUPPORTED, "Both power and energy are unsupported");
+    return retval;
+}
+
+result<readings_type::type> reader_gpu::impl::support(nvmlDevice_t handle)
+{
+    assert(handle);
+    nvmlReturn_t res;
+    readings_type::type rt = readings_type::all;
+    unsigned int power;
+    if ((res = nvmlDeviceGetPowerUsage(handle, &power)) == NVML_ERROR_NOT_SUPPORTED)
+        rt = rt ^ readings_type::power;
+    else if (res != NVML_SUCCESS)
+        return error(error_code::READER_GPU, error_str("Cannot query support", res));
+    unsigned long long energy;
+    if ((res = nvmlDeviceGetTotalEnergyConsumption(handle, &energy)) == NVML_ERROR_NOT_SUPPORTED)
+        rt = rt ^ readings_type::energy;
+    else if (res != NVML_SUCCESS)
+        return error(error_code::READER_GPU, error_str("Cannot query support", res));
+    return rt;
+}
+
+int8_t reader_gpu::impl::event_idx(readings_type::type rt, uint8_t device) const
+{
+    return event_map[device][bitpos(rt)];
 }
 
 #elif defined(GPU_AMD)
@@ -314,17 +475,6 @@ reader_gpu::impl::impl(device_mask, error&)
 
 #if !defined(GPU_NONE)
 
-error reader_gpu::impl::read(sample& s) const
-{
-    for (size_t idx = 0; idx < active_handles.size(); idx++)
-    {
-        error err = read(s, idx);
-        if (err)
-            return err;
-    }
-    return error::success();
-}
-
 #else
 
 error reader_gpu::impl::read(sample&) const
@@ -340,13 +490,69 @@ error reader_gpu::impl::read(sample&) const
 
 error reader_gpu::impl::read(sample& s, uint8_t ev_idx) const
 {
-    unsigned int power;
-    nvmlReturn_t result = nvmlDeviceGetPowerUsage(active_handles[ev_idx], &power);
+    const event& ev = events[ev_idx];
+    if (error err = ev.read_func(s, ev.stride, ev.handle))
+        return err;
+    return error::success();
+}
+
+error reader_gpu::impl::read(sample& s) const
+{
+    for (size_t idx = 0; idx < events.size(); idx++)
+        if (error err = read(s, idx))
+            return err;
+    return error::success();
+}
+
+error reader_gpu::impl::read_energy(sample& s, size_t stride, nvmlDevice_t handle)
+{
+    unsigned long long energy;
+    nvmlReturn_t result = nvmlDeviceGetTotalEnergyConsumption(handle, &energy);
     if (result != NVML_SUCCESS)
         return { error_code::READER_GPU, nvmlErrorString(result) };
-    // NVML returns milliwatts, multiply by 1000 to get microwatts
-    s.data.gpu[ev_idx] = power * 1000;
+    s.data.gpu_energy[stride] = energy;
     return error::success();
+}
+
+error reader_gpu::impl::read_power(sample& s, size_t stride, nvmlDevice_t handle)
+{
+    unsigned int power;
+    nvmlReturn_t result = nvmlDeviceGetPowerUsage(handle, &power);
+    if (result != NVML_SUCCESS)
+        return { error_code::READER_GPU, nvmlErrorString(result) };
+    s.data.gpu_power[stride] = power;
+    return error::success();
+}
+
+
+template<readings_type::type rt, typename UnitsRead, typename ToUnits, typename S>
+result<ToUnits> reader_gpu::impl::get_value(const S& data, uint8_t dev) const
+{
+    if (event_idx(rt, dev) < 0)
+        return error(error_code::NO_EVENT);
+    auto result = data[dev];
+    if (!result)
+        return error(error_code::NO_EVENT);
+    return UnitsRead(result);
+}
+
+
+result<units_power> reader_gpu::impl::get_board_power(const sample& s, uint8_t dev) const
+{
+    return get_value<
+        readings_type::power,
+        milliwatts<uint32_t>,
+        units_power
+    >(s.data.gpu_power, dev);
+}
+
+result<units_energy> reader_gpu::impl::get_board_energy(const sample& s, uint8_t dev) const
+{
+    return get_value<
+        readings_type::energy,
+        millijoules<uint32_t>,
+        units_energy
+    >(s.data.gpu_energy, dev);
 }
 
 #elif defined(GPU_AMD)
@@ -379,14 +585,9 @@ error reader_gpu::impl::read(sample&, uint8_t) const
 
 #if !defined(GPU_NONE)
 
-int8_t reader_gpu::impl::event_idx(uint8_t device) const
-{
-    return event_map[device];
-}
-
 size_t reader_gpu::impl::num_events() const
 {
-    return active_handles.size();
+    return events.size();
 }
 
 #else
@@ -405,17 +606,6 @@ size_t reader_gpu::impl::num_events() const
 
 #if !defined(GPU_NONE)
 
-result<units_power> reader_gpu::impl::get_board_power(const sample& s, uint8_t dev) const
-{
-    int8_t idx = event_idx(dev);
-    if (idx < 0)
-        return error(error_code::NO_EVENT);
-    result<sample::value_type> result = s.data.gpu[idx];
-    if (!result)
-        return std::move(result.error());
-    return result.value();
-}
-
 #else
 
 result<units_power> reader_gpu::impl::get_board_power(const sample&, uint8_t) const
@@ -428,13 +618,56 @@ result<units_power> reader_gpu::impl::get_board_power(const sample&, uint8_t) co
 
 // end impl
 
+readings_type::type readings_type::operator|(readings_type::type lhs, readings_type::type rhs)
+{
+    return static_cast<readings_type::type>(
+        static_cast<std::underlying_type_t<readings_type::type>>(lhs) |
+        static_cast<std::underlying_type_t<readings_type::type>>(rhs)
+        );
+}
+
+readings_type::type readings_type::operator&(readings_type::type lhs, readings_type::type rhs)
+{
+    return static_cast<readings_type::type>(
+        static_cast<std::underlying_type_t<readings_type::type>>(lhs) &
+        static_cast<std::underlying_type_t<readings_type::type>>(rhs)
+        );
+}
+
+readings_type::type readings_type::operator^(readings_type::type lhs, readings_type::type rhs)
+{
+    return static_cast<readings_type::type>(
+        static_cast<std::underlying_type_t<readings_type::type>>(lhs) ^
+        static_cast<std::underlying_type_t<readings_type::type>>(rhs)
+        );
+}
+
+const readings_type::type readings_type::all = readings_type::power | readings_type::energy;
+
+result<readings_type::type> reader_gpu::support(device_mask devmask)
+{
+    return impl::support(devmask);
+}
+
+result<readings_type::type> reader_gpu::support()
+{
+    return support(device_mask(0xff));
+}
+
+reader_gpu::reader_gpu(readings_type::type rt, device_mask dev_mask, error& ec) :
+    _impl(std::make_unique<reader_gpu::impl>(rt, dev_mask, ec))
+{}
+
+reader_gpu::reader_gpu(readings_type::type rt, error& ec) :
+    reader_gpu(rt, device_mask(0xff), ec)
+{}
 
 reader_gpu::reader_gpu(device_mask dev_mask, error& ec) :
-    _impl(std::make_unique<reader_gpu::impl>(dev_mask, ec))
+    reader_gpu(readings_type::all, dev_mask, ec)
 {}
 
 reader_gpu::reader_gpu(error& ec) :
-    reader_gpu(device_mask(0xff), ec)
+    reader_gpu(readings_type::all, device_mask(0xff), ec)
 {}
 
 reader_gpu::reader_gpu(const reader_gpu& other) :
@@ -461,9 +694,9 @@ error reader_gpu::read(sample & s, uint8_t ev_idx) const
     return pimpl()->read(s, ev_idx);
 }
 
-int8_t reader_gpu::event_idx(uint8_t device) const
+int8_t reader_gpu::event_idx(readings_type::type rt, uint8_t device) const
 {
-    return pimpl()->event_idx(device);
+    return pimpl()->event_idx(rt, device);
 }
 
 size_t reader_gpu::num_events() const
@@ -476,9 +709,15 @@ result<units_power> reader_gpu::get_board_power(const sample & s, uint8_t dev) c
     return pimpl()->get_board_power(s, dev);
 }
 
-std::vector<reader_gpu::dev_pwr> reader_gpu::get_board_power(const sample & s) const
+result<units_energy> reader_gpu::get_board_energy(const sample & s, uint8_t dev) const
 {
-    std::vector<reader_gpu::dev_pwr> retval;
+    return pimpl()->get_board_energy(s, dev);
+}
+
+std::vector<std::pair<uint32_t, units_power>>
+reader_gpu::get_board_power(const sample & s) const
+{
+    std::vector<std::pair<uint32_t, units_power>> retval;
     for (uint32_t d = 0; d < max_devices; d++)
     {
         auto pwr = get_board_power(s, d);
