@@ -134,11 +134,21 @@ struct lib_handle
     lib_handle(error& ec);
     ~lib_handle();
 
-    lib_handle(const lib_handle& other);
-    lib_handle(lib_handle&& other);
+    lib_handle(const lib_handle& other)
+    {
+        *this = other;
+    }
+
+    lib_handle(lib_handle&& other) :
+        lib_handle(other)
+    {}
 
     lib_handle& operator=(const lib_handle& other);
-    lib_handle& operator=(lib_handle&& other);
+
+    lib_handle& operator=(lib_handle&& other)
+    {
+        return *this = other;
+    }
 };
 
 struct reader_gpu::impl
@@ -158,11 +168,31 @@ struct reader_gpu::impl
 
     impl(readings_type::type rt, device_mask dmask, error& ec);
 
-    error read(sample& s) const;
-    error read(sample& s, uint8_t ev_idx) const;
+    error read(sample& s, uint8_t ev_idx) const
+    {
+        const event& ev = events[ev_idx];
+        if (error err = ev.read_func(s, ev.stride, ev.handle))
+            return err;
+        return error::success();
+    }
 
-    int8_t event_idx(readings_type::type rt, uint8_t device) const;
-    size_t num_events() const;
+    error read(sample& s) const
+    {
+        for (size_t idx = 0; idx < events.size(); idx++)
+            if (error err = read(s, idx))
+                return err;
+        return error::success();
+    }
+
+    int8_t event_idx(readings_type::type rt, uint8_t device) const
+    {
+        return event_map[device][bitpos(rt)];
+    }
+
+    size_t num_events() const
+    {
+        return events.size();
+    }
 
     result<units_power> get_board_power(const sample& s, uint8_t dev) const;
     result<units_energy> get_board_energy(const sample& s, uint8_t dev) const;
@@ -173,7 +203,15 @@ private:
     static error read_power(sample& s, size_t stride, gpu_handle handle);
 
     template<readings_type::type rt, typename UnitsRead, typename ToUnits, typename S>
-    result<ToUnits> get_value(const S& data, uint8_t dev) const;
+    result<ToUnits> get_value(const S& data, uint8_t dev) const
+    {
+        if (event_idx(rt, dev) < 0)
+            return error(error_code::NO_EVENT);
+        auto result = data[dev];
+        if (!result)
+            return error(error_code::NO_EVENT);
+        return UnitsRead(result);
+    }
 
     constexpr static const std::array<
         std::pair<readings_type::type, decltype(event::read_func)>, 2> type_array =
@@ -242,26 +280,12 @@ lib_handle::~lib_handle()
         std::cerr << error_str("failed to shutdown NVML", result) << std::endl;
 }
 
-lib_handle::lib_handle(const lib_handle& other)
-{
-    *this = other;
-}
-
-lib_handle::lib_handle(lib_handle&& other) :
-    lib_handle(other)
-{}
-
 lib_handle& lib_handle::operator=(const lib_handle&)
 {
     nvmlReturn_t result = nvmlInit();
     if (result != NVML_SUCCESS)
         throw std::runtime_error(error_str("failed to initialise NVML", result));
     return *this;
-}
-
-lib_handle& lib_handle::operator=(lib_handle&& other)
-{
-    return *this = other;
 }
 
 reader_gpu::impl::impl(readings_type::type rt, device_mask dev_mask, error& ec) :
@@ -372,32 +396,6 @@ result<readings_type::type> reader_gpu::impl::support(nvmlDevice_t handle)
     return rt;
 }
 
-int8_t reader_gpu::impl::event_idx(readings_type::type rt, uint8_t device) const
-{
-    return event_map[device][bitpos(rt)];
-}
-
-size_t reader_gpu::impl::num_events() const
-{
-    return events.size();
-}
-
-error reader_gpu::impl::read(sample& s, uint8_t ev_idx) const
-{
-    const event& ev = events[ev_idx];
-    if (error err = ev.read_func(s, ev.stride, ev.handle))
-        return err;
-    return error::success();
-}
-
-error reader_gpu::impl::read(sample& s) const
-{
-    for (size_t idx = 0; idx < events.size(); idx++)
-        if (error err = read(s, idx))
-            return err;
-    return error::success();
-}
-
 error reader_gpu::impl::read_energy(sample& s, size_t stride, nvmlDevice_t handle)
 {
     unsigned long long energy;
@@ -416,17 +414,6 @@ error reader_gpu::impl::read_power(sample& s, size_t stride, nvmlDevice_t handle
         return { error_code::READER_GPU, nvmlErrorString(result) };
     s.data.gpu_power[stride] = power;
     return error::success();
-}
-
-template<readings_type::type rt, typename UnitsRead, typename ToUnits, typename S>
-result<ToUnits> reader_gpu::impl::get_value(const S& data, uint8_t dev) const
-{
-    if (event_idx(rt, dev) < 0)
-        return error(error_code::NO_EVENT);
-    auto result = data[dev];
-    if (!result)
-        return error(error_code::NO_EVENT);
-    return UnitsRead(result);
 }
 
 result<units_power> reader_gpu::impl::get_board_power(const sample& s, uint8_t dev) const
@@ -488,26 +475,12 @@ lib_handle::~lib_handle()
         std::cerr << error_str("failed to shutdown ROCm SMI", result) << std::endl;
 }
 
-lib_handle::lib_handle(const lib_handle& other)
-{
-    *this = other;
-}
-
-lib_handle::lib_handle(lib_handle&& other) :
-    lib_handle(other)
-{}
-
 lib_handle& lib_handle::operator=(const lib_handle&)
 {
     rsmi_status_t result = rsmi_init(0);
     if (result != RSMI_STATUS_SUCCESS)
         throw std::runtime_error(error_str("failed to initialise ROCm SMI", result));
     return *this;
-}
-
-lib_handle& lib_handle::operator=(lib_handle&& other)
-{
-    return *this = other;
 }
 
 reader_gpu::impl::impl(readings_type::type rt, device_mask dev_mask, error& ec) :
@@ -622,32 +595,6 @@ result<readings_type::type> reader_gpu::impl::support(gpu_handle h)
     return rt ^ readings_type::energy;
 }
 
-int8_t reader_gpu::impl::event_idx(readings_type::type rt, uint8_t device) const
-{
-    return event_map[device][bitpos(rt)];
-}
-
-size_t reader_gpu::impl::num_events() const
-{
-    return events.size();
-}
-
-error reader_gpu::impl::read(sample& s, uint8_t ev_idx) const
-{
-    const event& ev = events[ev_idx];
-    if (error err = ev.read_func(s, ev.stride, ev.handle))
-        return err;
-    return error::success();
-}
-
-error reader_gpu::impl::read(sample& s) const
-{
-    for (size_t idx = 0; idx < events.size(); idx++)
-        if (error err = read(s, idx))
-            return err;
-    return error::success();
-}
-
 error reader_gpu::impl::read_energy(sample&, size_t, gpu_handle)
 {
     return error(error_code::UNSUPPORTED, "Energy readings are not supported");
@@ -665,17 +612,6 @@ error reader_gpu::impl::read_power(sample& s, size_t stride, gpu_handle handle)
     }
     s.data.gpu_power[stride] = power;
     return error::success();
-}
-
-template<readings_type::type rt, typename UnitsRead, typename ToUnits, typename S>
-result<ToUnits> reader_gpu::impl::get_value(const S& data, uint8_t dev) const
-{
-    if (event_idx(rt, dev) < 0)
-        return error(error_code::NO_EVENT);
-    auto result = data[dev];
-    if (!result)
-        return error(error_code::NO_EVENT);
-    return UnitsRead(result);
 }
 
 result<units_power> reader_gpu::impl::get_board_power(const sample& s, uint8_t dev) const
