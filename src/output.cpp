@@ -43,8 +43,16 @@ namespace
 
     void gpu_format(nlohmann::json& j)
     {
-        j.push_back("power");
-        j.push_back("energy");
+        using namespace nrgprf;
+        auto support = reader_gpu::support();
+        assert(support);
+        if (support)
+        {
+            if (support.value() & readings_type::energy)
+                j.push_back("energy");
+            else if (support.value() & readings_type::power)
+                j.push_back("power");
+        }
     }
 
     void format_output(nlohmann::json& j)
@@ -267,15 +275,12 @@ void readings_output_dev<nrgprf::reader_gpu>::output(detail::output_impl& os,
         readings["board"] = json::array();
         for (const auto& sample : exec)
         {
-            result<units_power> power = _reader.get_board_power(sample, dev);
-            result<units_energy> energy = _reader.get_board_energy(sample, dev);
-            if (power || energy)
-            {
-                json values;
-                values.push_back(!power ? 0 : unit_cast<watts<double>>(power.value()).count());
-                values.push_back(!energy ? 0 : unit_cast<joules<double>>(energy.value()).count());
-                readings["board"].push_back(std::move(values));
-            }
+            if (result<units_energy> energy = _reader.get_board_energy(sample, dev))
+                readings["board"].push_back(
+                    json::array({ unit_cast<joules<double>>(energy.value()).count() }));
+            else if (result<units_power> power = _reader.get_board_power(sample, dev))
+                readings["board"].push_back(
+                    json::array({ unit_cast<watts<double>>(power.value()).count() }));
         }
         if (!readings["board"].empty())
             os.json()["gpu"].push_back(std::move(readings));
