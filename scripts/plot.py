@@ -4,6 +4,8 @@ import csv
 import sys
 import argparse
 import distutils.util
+import matplotlib
+import matplotlib.pyplot as plt
 
 
 class bool_key_pair:
@@ -118,23 +120,43 @@ def add_arguments(parser):
     )
 
 
+def convert_input(fields, data) -> dict:
+    retval = {f: [] for f in fields}
+    first_row = None
+    for row in data:
+        if not first_row:
+            first_row = row
+        for k, v in row.items():
+            if k in fields:
+                retval[k].append(
+                    float(v) - float(first_row[k]) if fields[k] else float(v)
+                )
+    return retval
+
+
 def main():
     parser = argparse.ArgumentParser(description="Generate plot from CSV file")
     add_arguments(parser)
     args = parser.parse_args()
     with read_from(args.source_file) as f, output_to(args.output) as o:
         csvrdr = csv.DictReader(row for row in f if not row.startswith("#"))
-
         if args.x.key not in csvrdr.fieldnames:
             raise ValueError("'{}' is not a valid column".format(args.x.key))
         for y in args.y:
             if y not in csvrdr.fieldnames:
                 raise ValueError("'{}' is not a valid column".format(y))
+        converted = convert_input({args.x.key: args.x.sub, **args.y}, csvrdr)
 
-        writer = csv.DictWriter(o, [args.x.key, *args.y], extrasaction="ignore")
-        writer.writeheader()
-        for row in csvrdr:
-            writer.writerow(row)
+        matplotlib.use("agg")
+        with plt.ioff():
+            fig, ax = plt.subplots()
+            ax.set_title(f.name)
+            ax.set_xlabel(args.x.key)
+            for y in args.y:
+                (line,) = ax.plot(converted[args.x.key], converted[y])
+                line.set_label(y)
+            ax.legend()
+            plt.savefig(o)
 
 
 if __name__ == "__main__":
