@@ -18,6 +18,13 @@ static tracer_error handle_reader_error(const char* comment, const nrgprf::error
     return tracer_error(tracer_errcode::READER_ERROR, e.msg());
 }
 
+static nrgprf::readings_type::type
+effective_readings_type(nrgprf::readings_type::type rt)
+{
+    return rt & nrgprf::readings_type::energy ?
+        nrgprf::readings_type::energy : nrgprf::readings_type::power;
+}
+
 static nrgprf::reader_rapl
 create_cpu_reader(const config_data::params& params, tracer_error& err)
 {
@@ -37,8 +44,13 @@ static nrgprf::reader_gpu
 create_gpu_reader(const config_data::params& params, tracer_error& err)
 {
     nrgprf::error error = nrgprf::error::success();
+    auto devmask = nrgprf::device_mask(params.device_mask());
+    auto support = nrgprf::reader_gpu::support(devmask);
+    if (!support)
+        error = std::move(support.error());
     nrgprf::reader_gpu reader(
-        nrgprf::device_mask(params.device_mask()),
+        effective_readings_type(support ? support.value() : nrgprf::readings_type::all),
+        devmask,
         error);
     if (error)
         err = handle_reader_error(__func__, error);

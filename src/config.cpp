@@ -354,15 +354,12 @@ static cfg_expected<config_data::bounds> get_bounds(const pugi::xml_node& bounds
     return cfg_error(cfg_error_code::BOUNDS_EMPTY);
 }
 
-static cfg_expected<config_data::profiling_method> get_method(const pugi::xml_node& nsection,
-    const config_data::section::target_cont& tgts)
+static cfg_expected<config_data::profiling_method> get_method(const pugi::xml_node& nsection)
 {
     using namespace pugi;
 
     config_data::profiling_method method = defaults::method;
     // <method></method> - optional
-    // no effect when target is 'gpu' due to the
-    // nature of the power/energy reading interface
     xml_node nmethod = nsection.child("method");
     if (nmethod)
     {
@@ -374,8 +371,6 @@ static cfg_expected<config_data::profiling_method> get_method(const pugi::xml_no
         else
             return cfg_error(cfg_error_code::SEC_INVALID_METHOD);
     }
-    if (tgts.find(config_data::target::gpu) != tgts.end())
-        method = config_data::profiling_method::energy_profile;
     return method;
 }
 
@@ -396,7 +391,7 @@ static cfg_expected<config_data::section> get_section(const pugi::xml_node& nsec
     if (nxtra && !*nxtra.child_value())
         return cfg_error(cfg_error_code::SEC_INVALID_EXTRA);
 
-    cfg_expected<config_data::profiling_method> method = get_method(nsection, targets.value());
+    cfg_expected<config_data::profiling_method> method = get_method(nsection);
     if (!method)
         return std::move(method.error());
 

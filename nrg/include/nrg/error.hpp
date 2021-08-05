@@ -23,10 +23,12 @@ namespace nrgprf
         READER_GPU,
         READER_CPU,
         NO_SOCKETS,
+        NO_DEVICES,
         TOO_MANY_SOCKETS,
         TOO_MANY_DEVICES,
         FORMAT_ERROR,
         INVALID_DOMAIN_NAME,
+        UNSUPPORTED,
         UNKNOWN_ERROR,
     };
 
