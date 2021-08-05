@@ -66,6 +66,15 @@ def add_arguments(parser):
         default=0,
     )
     parser.add_argument(
+        "-l",
+        "--location",
+        action="store",
+        help="sensor location",
+        required=False,
+        type=str,
+        default=None,
+    )
+    parser.add_argument(
         "source_file",
         action="store",
         help="file to extract from",
@@ -128,6 +137,9 @@ def main():
             args.target,
             dev_key,
         )
+        if args.location and not sensors.get(args.location):
+            raise ValueError("Location {} does not exist".format(args.location))
+
         sample_times = execution["sample_times"]
         sample_format = json_in["format"][args.target]
 
@@ -137,7 +149,13 @@ def main():
 
         value_list = [[ix, sample_times[ix]] for ix in range(len(sample_times))]
         for loc, samples in sorted(
-            {k: v for k, v in sensors.items() if k != dev_key and v}.items()
+            {
+                k: v
+                for k, v in sensors.items()
+                if k != dev_key
+                and v
+                and (k == args.location if args.location else True)
+            }.items()
         ):
             if len(value_list) != len(samples):
                 raise AssertionError("'sample_times' length != '{}' length".format(loc))
