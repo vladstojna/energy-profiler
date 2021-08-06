@@ -3,6 +3,7 @@
 import json
 import sys
 import argparse
+from typing import Iterable, Union
 
 
 class intlist_or_all(argparse.Action):
@@ -87,13 +88,13 @@ def add_arguments(parser):
     )
     parser.add_argument(
         "-d",
-        "--dev",
-        "--device",
-        action="store",
-        help="device/socket index",
+        "--devs",
+        "--devices",
+        action=intlist_or_all,
+        help="device/socket index(es) or 'all'",
         required=True,
-        type=int,
-        default=0,
+        nargs="+",
+        default=[],
     )
     parser.add_argument(
         "-l",
@@ -151,6 +152,19 @@ def get_executions(execs, idxs):
         raise ValueError("Execution with index '{}' does not exist".format(ix))
 
 
+def find_devices(
+    readings: Iterable, to_find: Union[Iterable, str], dev_key: str
+) -> list:
+    retval = sorted(
+        [x[dev_key] for x in readings if to_find == "all" or x[dev_key] in to_find]
+    )
+    if to_find != "all":
+        for d in to_find:
+            if d not in retval:
+                raise ValueError("{} {} does not exist in readings".format(dev_key, d))
+    return retval
+
+
 def main():
     parser = argparse.ArgumentParser(
         description="Extract execution values in CSV format"
@@ -180,47 +194,44 @@ def main():
         accum_sample = 0
         dev_key = "socket" if args.target == "cpu" else "device"
         for execution, idx in zip(execs, args.execs):
-            sensors = find(
-                execution,
-                args.dev,
-                args.target,
-                dev_key,
-            )
-            if args.location and sensors.get(args.location) == None:
-                raise ValueError("Location '{}' does not exist".format(args.location))
             sample_times = execution["sample_times"]
-            exec_row.append(tuple((idx, accum_sample, len(sample_times))))
+            args.devs = find_devices(execution[args.target], args.devs, dev_key)
             value_list = [
                 [accum_sample + ix, sample_times[ix]] for ix in range(len(sample_times))
             ]
+            exec_row.append(tuple((idx, accum_sample, len(sample_times))))
             accum_sample += len(sample_times)
-            for loc, samples in sorted(
-                {
-                    k: v
-                    for k, v in sensors.items()
-                    if k != dev_key
-                    and v
-                    and (k == args.location if args.location else True)
-                }.items()
-            ):
-                if len(value_list) != len(samples):
-                    raise AssertionError(
-                        "'sample_times' length != '{}' length".format(loc)
+            for dev in args.devs:
+                sensors = find(execution, dev, args.target, dev_key)
+                if args.location and sensors.get(args.location) == None:
+                    raise ValueError(
+                        "Location '{}' does not exist".format(args.location)
                     )
-                for dt in sample_format:
-                    entry = "{}_{}".format(dt, loc)
-                    if entry not in format_row:
-                        format_row.append(entry)
-                for lst, smp in zip(value_list, samples):
-                    if len(smp) != len(sample_format):
-                        raise AssertionError("format length != sample length")
-                    for value in smp:
-                        lst.append(value)
-            result.append(value_list)
+                for loc, samples in sorted(
+                    {
+                        k: v
+                        for k, v in sensors.items()
+                        if k != dev_key
+                        and v
+                        and (k == args.location if args.location else True)
+                    }.items()
+                ):
+                    if len(sample_times) != len(samples):
+                        raise AssertionError(
+                            "'sample_times' length != '{}' length".format(loc)
+                        )
+                    for dt in sample_format:
+                        entry = "{}_{}_{}{!s}".format(dt, loc, dev_key, dev)
+                        if entry not in format_row:
+                            format_row.append(entry)
+                    for lst, smp in zip(value_list, samples):
+                        if len(smp) != len(sample_format):
+                            raise AssertionError("format length != sample length")
+                        for value in smp:
+                            lst.append(value)
+                result.append(value_list)
 
         with output_to(args.output) as o:
-            print(f"#{args.target}", file=o)
-            print(f"#{dev_key} {args.dev}", file=o)
             print(f"#{args.group}", file=o)
             print(f"#{args.section}", file=o)
 
