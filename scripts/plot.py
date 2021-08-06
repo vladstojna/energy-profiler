@@ -3,40 +3,10 @@
 import csv
 import sys
 import argparse
+import itertools
 import distutils.util
 import matplotlib
 import matplotlib.pyplot as plt
-
-
-class bool_key_pair:
-    def __init__(self, key: str, value: bool) -> None:
-        self.key = key
-        self.sub = value
-
-    def __str__(self) -> str:
-        return "key={}, sub={}".format(self.key, self.sub)
-
-
-class store_bool_key_pair(argparse.Action):
-    def __init__(self, option_strings, **kwargs) -> None:
-        super().__init__(option_strings, **kwargs)
-
-    def __call__(
-        self,
-        parser,
-        namespace,
-        values,
-        option_string,
-    ) -> None:
-        k, *rest = values.split("=")
-        if not k:
-            raise ValueError("Key cannot be empty")
-        if len(rest) > 1:
-            raise ValueError("Only one value is permitted")
-        retval = bool_key_pair(
-            k, False if not rest else bool(distutils.util.strtobool(rest[0]))
-        )
-        setattr(namespace, self.dest, retval)
 
 
 class store_bool_key_pairs(argparse.Action):
@@ -95,21 +65,22 @@ def add_arguments(parser):
     )
     parser.add_argument(
         "-x",
-        "--x-axis",
-        action=store_bool_key_pair,
-        help="""column to use as the x-axis as key,
-            with a boolean as value that indicates whether
-            to subtract the first x value from the rest""",
+        "--x-plots",
+        action=store_bool_key_pairs,
+        help="""column(s) to use as the x values as keys,
+            with booleans as values that indicate whether to subtract
+            the first x value of the corresponding column from the rest""",
         required=True,
+        nargs="+",
         metavar="NAME=BOOL",
         default=None,
         dest="x",
     )
     parser.add_argument(
         "-y",
-        "--y-axis",
+        "--y-plots",
         action=store_bool_key_pairs,
-        help="""column(s) to use as the y-axis(es) as keys,
+        help="""column(s) to use as the y values as keys,
             with booleans as values that indicate whether to subtract
             the first y value of the corresponding column from the rest""",
         required=True,
@@ -134,29 +105,45 @@ def convert_input(fields, data) -> dict:
     return retval
 
 
+def assert_key_pairs(kps, fieldnames):
+    for k in kps:
+        if k not in fieldnames:
+            raise ValueError("'{}' is not a valid column".format(k))
+
+
+def set_legend(line, x, y):
+    line.set_label("{}({})".format(y, x))
+
+
 def main():
     parser = argparse.ArgumentParser(description="Generate plot from CSV file")
     add_arguments(parser)
     args = parser.parse_args()
+    if len(args.x) > 1 and len(args.y) > 1 and len(args.x) != len(args.y):
+        raise ValueError("if more than one X, then number must match Y count")
     with read_from(args.source_file) as f, output_to(args.output) as o:
         csvrdr = csv.DictReader(row for row in f if not row.startswith("#"))
-        if args.x.key not in csvrdr.fieldnames:
-            raise ValueError("'{}' is not a valid column".format(args.x.key))
-        for y in args.y:
-            if y not in csvrdr.fieldnames:
-                raise ValueError("'{}' is not a valid column".format(y))
-        converted = convert_input({args.x.key: args.x.sub, **args.y}, csvrdr)
+        assert_key_pairs(args.x, csvrdr.fieldnames)
+        assert_key_pairs(args.y, csvrdr.fieldnames)
+        converted = convert_input({**args.x, **args.y}, csvrdr)
 
         matplotlib.use("agg")
         with plt.ioff():
             fig, ax = plt.subplots()
             ax.set_title(f.name)
-            ax.set_xlabel(args.x.key)
-            for y in args.y:
-                (line,) = ax.plot(converted[args.x.key], converted[y])
-                line.set_label(y)
-            ax.legend()
-            plt.savefig(o)
+            for x, y in itertools.zip_longest(
+                args.x, args.y, fillvalue=next(iter(args.x))
+            ):
+                (line,) = ax.plot(converted[x], converted[y])
+                set_legend(line, x, y)
+            legend = ax.legend(
+                bbox_to_anchor=(0.0, 1.1, 1.0, 0.1),
+                loc="lower left",
+                ncol=1,
+                mode="expand",
+                borderaxespad=0.0,
+            )
+            plt.savefig(o, bbox_extra_artists=(legend,), bbox_inches="tight")
 
 
 if __name__ == "__main__":
