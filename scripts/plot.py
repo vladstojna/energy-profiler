@@ -131,6 +131,7 @@ def main():
         with plt.ioff():
             fig, ax = plt.subplots()
             ax.set_title(f.name)
+            ax.minorticks_on()
             for x, y in itertools.zip_longest(
                 args.x, args.y, fillvalue=next(iter(args.x))
             ):
@@ -143,6 +144,7 @@ def main():
                 mode="expand",
                 borderaxespad=0.0,
             )
+            plt.grid(which="major", axis="both", linestyle="dotted", alpha=0.5)
             plt.savefig(o, bbox_extra_artists=(legend,), bbox_inches="tight")
 
 
