@@ -24,9 +24,9 @@ class store_bool_key_pairs(argparse.Action):
         for kv in values:
             k, *rest = kv.split("=")
             if not k:
-                raise ValueError("Key cannot be empty")
+                raise argparse.ArgumentError(self, "Key cannot be empty")
             if len(rest) > 1:
-                raise ValueError("Only one value is permitted")
+                raise argparse.ArgumentError(self, "Only one value is permitted")
             retval[k] = False if not rest else bool(distutils.util.strtobool(rest[0]))
         setattr(namespace, self.dest, retval)
 
@@ -89,6 +89,15 @@ def add_arguments(parser):
         default=None,
         dest="y",
     )
+    parser.add_argument(
+        "-t",
+        "--title",
+        action="store",
+        help="plot title",
+        required=False,
+        type=str,
+        default=None,
+    )
 
 
 def convert_input(fields, data) -> dict:
@@ -130,7 +139,7 @@ def main():
         matplotlib.use("agg")
         with plt.ioff():
             fig, ax = plt.subplots()
-            ax.set_title(f.name)
+            ax.set_title(args.title if args.title else f.name)
             ax.minorticks_on()
             for x, y in itertools.zip_longest(
                 args.x, args.y, fillvalue=next(iter(args.x))
