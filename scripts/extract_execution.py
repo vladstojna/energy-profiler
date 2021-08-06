@@ -235,7 +235,7 @@ def main():
                             raise AssertionError("format length != sample length")
                         for value in smp:
                             lst.append(value)
-                result.append(value_list)
+            result.append(value_list)
 
         with output_to(args.output) as o:
             print("#group,{}".format(args.group), file=o)
