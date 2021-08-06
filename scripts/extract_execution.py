@@ -195,6 +195,8 @@ def main():
         dev_key = "socket" if args.target == "cpu" else "device"
         for execution, idx in zip(execs, args.execs):
             sample_times = execution["sample_times"]
+            if execution.get(args.target) == None:
+                raise ValueError("Target '{}' does not exist".format(args.target))
             args.devs = find_devices(execution[args.target], args.devs, dev_key)
             value_list = [
                 [accum_sample + ix, sample_times[ix]] for ix in range(len(sample_times))
@@ -221,7 +223,11 @@ def main():
                             "'sample_times' length != '{}' length".format(loc)
                         )
                     for dt in sample_format:
-                        entry = "{}_{}_{}{!s}".format(dt, loc, dev_key, dev)
+                        entry = (
+                            "{}_{}_{}{!s}".format(dt, loc, dev_key, dev)
+                            if len(args.devs) > 1
+                            else "{}_{}".format(dt, loc)
+                        )
                         if entry not in format_row:
                             format_row.append(entry)
                     for lst, smp in zip(value_list, samples):
@@ -232,9 +238,15 @@ def main():
                 result.append(value_list)
 
         with output_to(args.output) as o:
-            print(f"#{args.group}", file=o)
-            print(f"#{args.section}", file=o)
-
+            print("#group,{}".format(args.group), file=o)
+            print("#section,{}".format(args.section), file=o)
+            print(
+                "#devices,{}".format(
+                    ",".join(
+                        "{}_{}={!s}".format(args.target, dev_key, d) for d in args.devs
+                    )
+                )
+            )
             print(
                 "#units,{}".format(
                     ",".join("{}={}".format(k, v) for k, v in unit_row.items())
