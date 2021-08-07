@@ -2,6 +2,7 @@
 
 import json
 import sys
+import csv
 import argparse
 from typing import Iterable, Union
 
@@ -72,10 +73,10 @@ def add_arguments(parser):
         "--execs",
         "--executions",
         action=intlist_or_all,
-        help="execution index(es) or 'all'",
+        help="execution index(es) or 'all' (default: all)",
         required=False,
         nargs="+",
-        default=[],
+        default="all",
     )
     parser.add_argument(
         "-t",
@@ -85,22 +86,23 @@ def add_arguments(parser):
         required=True,
         type=str,
         choices=["cpu", "gpu"],
+        default=None,
     )
     parser.add_argument(
         "-d",
         "--devs",
         "--devices",
         action=intlist_or_all,
-        help="device/socket index(es) or 'all'",
-        required=True,
+        help="device/socket index(es) or 'all' (default: all)",
+        required=False,
         nargs="+",
-        default=[],
+        default="all",
     )
     parser.add_argument(
         "-l",
         "--location",
         action="store",
-        help="sensor location",
+        help="sensor location (default: all)",
         required=False,
         type=str,
         default=None,
@@ -235,36 +237,28 @@ def main():
                             raise AssertionError("format length != sample length")
                         for value in smp:
                             lst.append(value)
-            result.append(value_list)
+            result.extend(value_list)
 
         with output_to(args.output) as o:
-            print("#group,{}".format(args.group), file=o)
-            print("#section,{}".format(args.section), file=o)
-            print(
-                "#devices,{}".format(
-                    ",".join(
-                        "{}_{}={!s}".format(args.target, dev_key, d) for d in args.devs
-                    )
-                )
+            wrt = csv.writer(o)
+            wrt.writerow(["#group", args.group])
+            wrt.writerow(["#section", args.section])
+            wrt.writerow(
+                ["#devices"]
+                + ["{}_{}={!s}".format(args.target, dev_key, d) for d in args.devs]
             )
-            print(
-                "#units,{}".format(
-                    ",".join("{}={}".format(k, v) for k, v in unit_row.items())
-                )
+            wrt.writerow(
+                ["#units"] + ["{}={}".format(k, v) for k, v in unit_row.items()]
             )
-            print(
-                "#executions,{}".format(
-                    ",".join(
-                        "i={!s}|start={!s}|size={!s}".format(i, s, sz)
-                        for i, s, sz in exec_row
-                    )
-                ),
-                file=o,
+            wrt.writerow(
+                ["#executions"]
+                + [
+                    "i={!s}|start={!s}|size={!s}".format(i, s, sz)
+                    for i, s, sz in exec_row
+                ]
             )
-            print(",".join(format_row), file=o)
-            for vl in result:
-                for values in vl:
-                    print(",".join(str(e) for e in values), file=o)
+            wrt.writerow(format_row)
+            wrt.writerows(result)
 
 
 if __name__ == "__main__":
