@@ -7,6 +7,9 @@ import argparse
 from typing import Iterable, Union
 
 
+target_choices = ["cpu", "gpu"]
+
+
 class intlist_or_all(argparse.Action):
     def __init__(
         self,
@@ -82,10 +85,10 @@ def add_arguments(parser):
         "-t",
         "--target",
         action="store",
-        help="hardware device target",
-        required=True,
+        help="hardware device target (default: first found)",
+        required=False,
         type=str,
-        choices=["cpu", "gpu"],
+        choices=target_choices,
         default=None,
     )
     parser.add_argument(
@@ -183,10 +186,18 @@ def main():
         if not args.execs:
             args.execs.append(0)
         execs = get_executions(section["executions"], args.execs)
+        if not execs:
+            raise AssertionError("execs has no elements")
         if args.execs == "all":
             args.execs = [x for x in range(len(execs))]
         if len(execs) != len(args.execs):
             raise AssertionError("exec count != indices requested")
+
+        if not args.target:
+            for k in next(iter(execs)):
+                if k in target_choices:
+                    args.target = k
+                    break
 
         sample_format = json_in["format"][args.target]
         unit_row = {k: v for k, v in json_in["units"].items()}
