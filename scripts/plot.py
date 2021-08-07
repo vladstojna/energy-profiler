@@ -5,29 +5,48 @@ import sys
 import argparse
 import itertools
 import distutils.util
+from typing import Dict, Iterable
 import matplotlib
 import matplotlib.pyplot as plt
 
 
-class store_bool_key_pairs(argparse.Action):
-    def __init__(self, option_strings, dest=None, nargs=None, **kwargs) -> None:
+def str_as_bool(s=None) -> bool:
+    return False if not s else bool(distutils.util.strtobool(s))
+
+
+def raise_empty_value() -> None:
+    raise ValueError("Value cannot be empty")
+
+
+class store_key_pairs(argparse.Action):
+    def __init__(
+        self,
+        option_strings,
+        dest=None,
+        nargs=None,
+        store_as=str,
+        empty_val=None,
+        **kwargs
+    ) -> None:
+        self.store_as = store_as
+        self.empty_val = empty_val
         super().__init__(option_strings, dest, nargs, **kwargs)
 
-    def __call__(
-        self,
-        parser,
-        namespace,
-        values,
-        option_string=None,
-    ) -> None:
+    def __call__(self, parser, namespace, values, option_string) -> None:
         retval = {}
         for kv in values:
-            k, *rest = kv.split("=")
+            k, *v = kv.split("=", 1)
             if not k:
                 raise argparse.ArgumentError(self, "Key cannot be empty")
-            if len(rest) > 1:
-                raise argparse.ArgumentError(self, "Only one value is permitted")
-            retval[k] = False if not rest else bool(distutils.util.strtobool(rest[0]))
+            try:
+                if not v or not v[0]:
+                    retval[k] = self.empty_val()
+                else:
+                    retval[k] = self.store_as(v[0])
+            except ValueError as err:
+                raise argparse.ArgumentError(
+                    self, err.args[0] if err.args else "<empty>"
+                )
         setattr(namespace, self.dest, retval)
 
 
@@ -42,7 +61,7 @@ def output_to(path):
     if not path:
         return sys.stdout
     else:
-        return open(path, "w")
+        return open(path, "wb")
 
 
 def add_arguments(parser):
@@ -66,7 +85,9 @@ def add_arguments(parser):
     parser.add_argument(
         "-x",
         "--x-plots",
-        action=store_bool_key_pairs,
+        action=store_key_pairs,
+        store_as=str_as_bool,
+        empty_val=str_as_bool,
         help="""column(s) to use as the x values as keys,
             with booleans as values that indicate whether to subtract
             the first x value of the corresponding column from the rest""",
@@ -79,7 +100,9 @@ def add_arguments(parser):
     parser.add_argument(
         "-y",
         "--y-plots",
-        action=store_bool_key_pairs,
+        action=store_key_pairs,
+        store_as=str_as_bool,
+        empty_val=str_as_bool,
         help="""column(s) to use as the y values as keys,
             with booleans as values that indicate whether to subtract
             the first y value of the corresponding column from the rest""",
@@ -97,6 +120,18 @@ def add_arguments(parser):
         required=False,
         type=str,
         default=None,
+    )
+    parser.add_argument(
+        "-u",
+        "--units",
+        action=store_key_pairs,
+        store_as=str,
+        empty_val=raise_empty_value,
+        help="plot units",
+        required=False,
+        nargs="*",
+        metavar="NAME=UNIT",
+        default={},
     )
 
 
@@ -120,8 +155,24 @@ def assert_key_pairs(kps, fieldnames):
             raise ValueError("'{}' is not a valid column".format(k))
 
 
+def unique_units(plots: Iterable[str], units: Dict[str, str]):
+    units = {v for k, v in units.items() if k in plots}
+    return len(units) <= 1
+
+
 def set_legend(line, x, y):
     line.set_label("{}({})".format(y, x))
+
+
+def get_label(plots: Iterable[str], units: Dict[str, str]):
+    if len(plots) == 1:
+        p = next(iter(plots))
+        if not units:
+            return p
+        else:
+            u = units.get(p, None)
+            return "{} ({})".format(p, u) if not u is None else p
+    return " / ".join({units[p] for p in plots if p in units}) if units else ""
 
 
 def main():
@@ -130,6 +181,9 @@ def main():
     args = parser.parse_args()
     if len(args.x) > 1 and len(args.y) > 1 and len(args.x) != len(args.y):
         raise ValueError("if more than one X, then number must match Y count")
+    if not unique_units(args.x, args.units):
+        raise ValueError("units for x plots must be the same")
+
     with read_from(args.source_file) as f, output_to(args.output) as o:
         csvrdr = csv.DictReader(row for row in f if not row.startswith("#"))
         assert_key_pairs(args.x, csvrdr.fieldnames)
@@ -141,6 +195,8 @@ def main():
             fig, ax = plt.subplots()
             ax.set_title(args.title if args.title else f.name)
             ax.minorticks_on()
+            ax.set_xlabel(get_label(args.x, args.units))
+            ax.set_ylabel(get_label(args.y, args.units))
             for x, y in itertools.zip_longest(
                 args.x, args.y, fillvalue=next(iter(args.x))
             ):
