@@ -133,6 +133,16 @@ def add_arguments(parser):
         metavar="NAME=UNIT",
         default={},
     )
+    parser.add_argument(
+        "-b",
+        "--backend",
+        action="store",
+        type=str,
+        help="backend to use when generating plot",
+        required=False,
+        choices=["agg", "pdf", "svg"],
+        default="agg",
+    )
 
 
 def convert_input(fields, data) -> dict:
@@ -190,7 +200,7 @@ def main():
         assert_key_pairs(args.y, csvrdr.fieldnames)
         converted = convert_input({**args.x, **args.y}, csvrdr)
 
-        matplotlib.use("agg")
+        matplotlib.use(args.backend)
         with plt.ioff():
             fig, ax = plt.subplots()
             ax.set_title(args.title if args.title else f.name)
