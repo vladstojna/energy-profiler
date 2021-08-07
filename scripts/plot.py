@@ -35,15 +35,12 @@ class store_key_pairs(argparse.Action):
     def __call__(self, parser, namespace, values, option_string) -> None:
         retval = {}
         for kv in values:
-            k, *v = kv.split("=", 1)
+            k, _, v = kv.partition("=")
             if not k:
                 raise argparse.ArgumentError(self, "Key cannot be empty")
             try:
-                if not v or not v[0]:
-                    retval[k] = self.empty_val()
-                else:
-                    retval[k] = self.store_as(v[0])
-            except ValueError as err:
+                retval[k] = self.store_as(v) if v else self.empty_val()
+            except (ValueError, TypeError, argparse.ArgumentTypeError) as err:
                 raise argparse.ArgumentError(
                     self, err.args[0] if err.args else "<empty>"
                 )
