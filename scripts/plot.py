@@ -4,8 +4,9 @@ import csv
 import sys
 import argparse
 import itertools
+import fnmatch
 import distutils.util
-from typing import Dict, Iterable
+from typing import Dict, Iterable, Sequence, Union
 import matplotlib
 import matplotlib.pyplot as plt
 
@@ -59,6 +60,14 @@ def output_to(path):
         return sys.stdout
     else:
         return open(path, "wb")
+
+
+def match_pattern(patterns: Dict[str, Union[bool, str]], fieldnames: Sequence[str]):
+    retval = {}
+    for k, v in patterns.items():
+        for m in fnmatch.filter(fieldnames, k):
+            retval[m] = v
+    return retval
 
 
 def add_arguments(parser):
@@ -186,15 +195,30 @@ def main():
     parser = argparse.ArgumentParser(description="Generate plot from CSV file")
     add_arguments(parser)
     args = parser.parse_args()
-    if len(args.x) > 1 and len(args.y) > 1 and len(args.x) != len(args.y):
-        raise ValueError("if more than one X, then number must match Y count")
-    if not unique_units(args.x, args.units):
-        raise ValueError("units for x plots must be the same")
-
     with read_from(args.source_file) as f, output_to(args.output) as o:
         csvrdr = csv.DictReader(row for row in f if not row.startswith("#"))
+        if not csvrdr.fieldnames:
+            raise AssertionError("Fieldnames cannot be empty or None")
+        args.x = match_pattern(args.x, csvrdr.fieldnames)
+        if not args.x:
+            raise parser.error("Pattern matching for x plots: no matches found")
         assert_key_pairs(args.x, csvrdr.fieldnames)
+        args.y = match_pattern(args.y, csvrdr.fieldnames)
+        if not args.y:
+            raise parser.error("Pattern matching for y plots: no matches found")
         assert_key_pairs(args.y, csvrdr.fieldnames)
+        if len(args.x) > 1 and len(args.y) > 1 and len(args.x) != len(args.y):
+            raise parser.error(
+                "x plot count does not match y plot count, found {} and {}".format(
+                    len(args.x), len(args.y)
+                )
+            )
+        args.units = match_pattern(args.units, csvrdr.fieldnames)
+        if not args.units:
+            raise parser.error("Pattern matching for units: no matches found")
+        if not unique_units(args.x, args.units):
+            raise parser.error("units for x plots must be the same")
+
         converted = convert_input({**args.x, **args.y}, csvrdr)
 
         matplotlib.use(args.backend)
