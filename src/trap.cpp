@@ -119,7 +119,7 @@ namespace tep::pos
         return os;
     }
 
-    std::ostream& operator<<(std::ostream& os, const simple_pos& sp)
+    std::ostream& operator<<(std::ostream& os, const named_pos& sp)
     {
         std::visit([&os](auto&& p)
             {

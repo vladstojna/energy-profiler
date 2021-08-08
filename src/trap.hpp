@@ -44,15 +44,15 @@ namespace tep
             uintptr_t at;
         };
 
-        using simple_pos = std::variant<none, line, function, function_full, address>;
+        using named_pos = std::variant<line, function, function_full>;
 
         struct offset
         {
-            simple_pos start;
+            named_pos start;
             uintptr_t off;
         };
 
-        using single_pos = std::variant<simple_pos, offset>;
+        using single_pos = std::variant<address, named_pos, offset>;
 
         struct interval
         {
@@ -60,17 +60,17 @@ namespace tep
             single_pos end;
         };
 
-        using any = std::variant<single_pos, interval>;
+        using any = std::variant<none, single_pos, interval>;
 
         std::ostream& operator<<(std::ostream& os, const none&);
         std::ostream& operator<<(std::ostream& os, const line&);
         std::ostream& operator<<(std::ostream& os, const function&);
         std::ostream& operator<<(std::ostream& os, const function_full&);
         std::ostream& operator<<(std::ostream& os, const address&);
-        std::ostream& operator<<(std::ostream& os, const simple_pos&);
+        std::ostream& operator<<(std::ostream& os, const named_pos&);
         std::ostream& operator<<(std::ostream& os, const offset&);
-        std::ostream& operator<<(std::ostream& os, const interval&);
         std::ostream& operator<<(std::ostream& os, const single_pos&);
+        std::ostream& operator<<(std::ostream& os, const interval&);
         std::ostream& operator<<(std::ostream& os, const any&);
     }
 
