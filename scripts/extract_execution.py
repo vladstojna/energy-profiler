@@ -180,6 +180,10 @@ def main():
         json_in = json.load(f)
         group = find(json_in, args.group, "groups", "label")
         section = find(group, args.section, "sections", "label")
+        if not args.group:
+            args.group = group["label"]
+        if not args.section:
+            args.section = section["label"]
 
         if not section["executions"]:
             raise ValueError("Execution is empty")
