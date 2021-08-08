@@ -130,9 +130,12 @@ namespace nlohmann
 
 namespace tep
 {
-    static void to_json(nlohmann::json& j, const position_interval& interval)
+    namespace pos
     {
-        j = { { "start", to_string(interval.start()) }, { "end", to_string(interval.end()) } };
+        static void to_json(nlohmann::json& j, const pos::interval& interval)
+        {
+            j = { { "start", to_string(interval.start) }, { "end", to_string(interval.end) } };
+        }
     }
 
     static void to_json(nlohmann::json& j, const idle_output& io)
@@ -163,7 +166,7 @@ namespace tep
         for (const auto& pe : so.executions())
         {
             json exec;
-            exec["range"] = *pe.interval;
+            exec["range"] = pe.interval;
             exec["sample_times"] = pe.exec;
             detail::output_impl impl(exec);
             so.readings_out().output(impl, pe.exec);

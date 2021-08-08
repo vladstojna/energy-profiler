@@ -83,160 +83,80 @@ bool tep::operator!=(start_addr lhs, start_addr rhs)
     return !(lhs == rhs);
 }
 
-
-
-position_line::position_line(const std::filesystem::path& f, uint32_t line) :
-    _file(f),
-    _line(line)
-{}
-
-position_line::position_line(std::filesystem::path&& f, uint32_t line) :
-    _file(std::move(f)),
-    _line(line)
-{}
-
-std::filesystem::path position_line::filename() const
+namespace tep::pos
 {
-    return _file.filename();
-}
 
-const std::filesystem::path& position_line::path() const
-{
-    return _file;
-}
+    std::filesystem::path line::filename() const
+    {
+        return path.filename();
+    }
 
-uint32_t position_line::lineno() const
-{
-    return _line;
-}
+    std::ostream& operator<<(std::ostream& os, const none&)
+    {
+        return os << "<none>";
+    }
 
-void position_line::print(std::ostream& os) const
-{
-    os << filename().string() << ":" << lineno();
-}
+    std::ostream& operator<<(std::ostream& os, const line& l)
+    {
+        return os << l.filename().string() << ":" << l.line;
+    }
 
+    std::ostream& operator<<(std::ostream& os, const function& f)
+    {
+        return os << f.name;
+    }
 
+    std::ostream& operator<<(std::ostream& os, const function_full& ff)
+    {
+        return os << ff.at << ":" << ff.name;
+    }
 
-position_func::position_func(const std::string& name) :
-    _name(name)
-{}
+    std::ostream& operator<<(std::ostream& os, const address& a)
+    {
+        std::ios::fmtflags flags(os.flags());
+        os << "0x" << std::hex << a.at;
+        os.flags(flags);
+        return os;
+    }
 
-position_func::position_func(std::string&& name) :
-    _name(std::move(name))
-{}
+    std::ostream& operator<<(std::ostream& os, const simple_pos& sp)
+    {
+        std::visit([&os](auto&& p)
+            {
+                os << p;
+            }, sp);
+        return os;
+    }
 
-const std::string& position_func::name() const
-{
-    return _name;
-}
+    std::ostream& operator<<(std::ostream& os, const interval& i)
+    {
+        os << i.start << " - " << i.end;
+        return os;
+    }
 
-void position_func::print(std::ostream& os) const
-{
-    os << name();
-}
+    std::ostream& operator<<(std::ostream& os, const offset& o)
+    {
+        os << o.start << "+" << address{ o.off };
+        return os;
+    }
 
+    std::ostream& operator<<(std::ostream& os, const single_pos& sp)
+    {
+        std::visit([&os](auto&& p)
+            {
+                os << p;
+            }, sp);
+        return os;
+    }
 
-
-position_func_full::position_func_full(const std::string& name, const position_line& pl) :
-    position_func(name),
-    _pos(pl)
-{}
-
-position_func_full::position_func_full(const std::string& name, position_line&& pl) :
-    position_func(name),
-    _pos(std::move(pl))
-{}
-
-position_func_full::position_func_full(std::string&& name, const position_line& pl) :
-    position_func(std::move(name)),
-    _pos(pl)
-{}
-
-position_func_full::position_func_full(std::string&& name, position_line&& pl) :
-    position_func(std::move(name)),
-    _pos(std::move(pl))
-{}
-
-const position_line& position_func_full::line() const
-{
-    return _pos;
-}
-
-void position_func_full::print(std::ostream& os) const
-{
-    os << line() << ":" << name();
-}
-
-
-
-position_offset::position_offset(std::unique_ptr<position_single>&& pos, uintptr_t offset) :
-    _pos(std::move(pos)),
-    _offset(offset)
-{}
-
-const position_single& position_offset::pos() const
-{
-    assert(_pos);
-    return *_pos;
-}
-
-uintptr_t position_offset::offset() const
-{
-    return _offset;
-}
-
-void position_offset::print(std::ostream& os) const
-{
-    os << pos() << "+";
-    print_uintptr(os, offset());
-}
-
-
-
-position_addr::position_addr(uintptr_t addr) :
-    _addr(addr)
-{}
-
-uintptr_t position_addr::addr() const
-{
-    return _addr;
-}
-
-void position_addr::print(std::ostream& os) const
-{
-    print_uintptr(os, addr());
-}
-
-
-
-position_interval::position_interval(
-    std::unique_ptr<position_single>&& p1,
-    std::unique_ptr<position_single>&& p2) :
-    _interval{ std::move(p1), std::move(p2) }
-{}
-
-const position_single& position_interval::start() const
-{
-    assert(_interval[0]);
-    return *_interval[0];
-}
-
-const position_single& position_interval::end() const
-{
-    assert(_interval[1]);
-    return *_interval[1];
-}
-
-void position_interval::print(std::ostream& os) const
-{
-    os << start() << " - " << end();
-}
-
-
-std::ostream& tep::operator<<(std::ostream& os, const position_interface& pi)
-{
-    pi.print(os);
-    return os;
+    std::ostream& operator<<(std::ostream& os, const any& a)
+    {
+        std::visit([&os](auto&& p)
+            {
+                os << p;
+            }, a);
+        return os;
+    }
 }
 
 std::ostream& tep::operator<<(std::ostream& os, const trap& t)
@@ -244,8 +164,12 @@ std::ostream& tep::operator<<(std::ostream& os, const trap& t)
     return t.print(os);
 }
 
+trap::trap(long origword, const pos::single_pos& at) :
+    _origword(origword),
+    _at(at)
+{}
 
-trap::trap(long origword, std::unique_ptr<position_single>&& at) :
+trap::trap(long origword, pos::single_pos&& at) :
     _origword(origword),
     _at(std::move(at))
 {}
@@ -255,19 +179,14 @@ long trap::origword() const
     return _origword;
 }
 
-position_single& trap::at()&
+pos::single_pos& trap::at()
 {
-    return *_at;
+    return _at;
 }
 
-const position_single& trap::at() const&
+const pos::single_pos& trap::at() const
 {
-    return *_at;
-}
-
-std::unique_ptr<position_single>&& trap::at()&&
-{
-    return std::move(_at);
+    return _at;
 }
 
 std::ostream& trap::print(std::ostream& os) const
@@ -280,7 +199,6 @@ std::ostream& trap::print(std::ostream& os) const
     return os;
 }
 
-
 bool start_trap::allow_concurrency() const
 {
     return _allow_concurrency;
@@ -291,10 +209,14 @@ std::unique_ptr<async_sampler> start_trap::create_sampler() const
     return _creator();
 }
 
-
-end_trap::end_trap(long origword, std::unique_ptr<position_single>&& at, start_addr sa) :
+end_trap::end_trap(long origword, pos::single_pos&& at, start_addr addr) :
     trap(origword, std::move(at)),
-    _start(sa)
+    _start(addr)
+{}
+
+end_trap::end_trap(long origword, const pos::single_pos& at, start_addr addr) :
+    trap(origword, at),
+    _start(addr)
 {}
 
 start_addr end_trap::associated_with() const
@@ -308,8 +230,6 @@ std::ostream& end_trap::print(std::ostream& os) const
     os << " <-> " << associated_with();
     return os;
 }
-
-
 
 std::pair<const start_trap*, bool> registered_traps::insert(start_addr a, start_trap&& st)
 {

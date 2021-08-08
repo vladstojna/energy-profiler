@@ -379,11 +379,8 @@ tracer_expected<profiling_results> profiler::run()
         if (sec_out == nullptr)
             return tracer_error(tracer_errcode::NO_TRAP, "Address bounds not found");
 
-        std::shared_ptr<position_interval> interval =
-            std::make_shared<position_interval>(
-                std::move(*strap).at(), std::move(*etrap).at());
-        std::string interval_str = to_string(*interval);
-
+        pos::interval interval{ std::move(strap->at()), std::move(etrap->at()) };
+        std::string interval_str = to_string(interval);
         for (auto& exec : execs)
         {
             if (!exec)
@@ -442,8 +439,8 @@ tracer_error profiler::insert_traps_function(
     const function& func = *func_res.value();
     const function_bounds& fbnds = func.bounds();
 
-    std::unique_ptr<position_func> pf = std::make_unique<position_func>(func.name());
-    std::string pos_func_str = to_string(*pf);
+    pos::function pf{ func.name() };
+    std::string pos_func_str = to_string(pf);
 
     log(log_lvl::success, "[%d] found function: %s", _tid, pos_func_str.c_str());
 
@@ -474,10 +471,9 @@ tracer_error profiler::insert_traps_function(
     for (uintptr_t ret : fbnds.returns())
     {
         uintptr_t offset = ret - fbnds.start();
-        std::unique_ptr<position_offset> pf_off = std::make_unique<position_offset>(
-            std::make_unique<position_func>(func.name()),
-            offset);
-        pos_func_str = to_string(*pf_off);
+
+        pos::offset pf_off{ pos::function{func.name()}, offset };
+        pos_func_str = to_string(pf_off);
 
         end_addr end = entrypoint + ret;
         origw = insert_trap(_tid, _child, end.val());
@@ -486,7 +482,9 @@ tracer_error profiler::insert_traps_function(
         log(log_lvl::info, "[%d] inserted trap at function return @ %s",
             _tid, pos_func_str.c_str());
 
-        auto insert_res = _traps.insert(end, end_trap(origw.value(), std::move(pf_off), start));
+        auto insert_res = _traps.insert(
+            end,
+            end_trap(origw.value(), pos::single_pos{ std::move(pf_off) }, start));
         if (!insert_res.second)
         {
             log(log_lvl::error, "[%d] trap @ 0x%" PRIxPTR " (offset 0x%" PRIxPTR ") already exists",
@@ -519,9 +517,8 @@ cmmn::expected<start_addr, tracer_error> profiler::insert_traps_position_start(
         return tracer_error(tracer_errcode::NO_SYMBOL, std::move(line_addr.error().message));
     }
 
-    std::unique_ptr<position_line> posline = std::make_unique<position_line>(
-        ul.value()->name(), line_addr.value().first);
-    std::string pstr = to_string(*posline);
+    pos::line posline{ ul.value()->name(), line_addr.value().first };
+    std::string pstr = to_string(posline);
 
     start_addr eaddr = entrypoint + line_addr.value().second;
     tracer_expected<long> origw = insert_trap(_tid, _child, eaddr.val());
@@ -567,9 +564,8 @@ tracer_error profiler::insert_traps_position_end(
         return tracer_error(tracer_errcode::NO_SYMBOL, std::move(line_addr.error().message));
     }
 
-    std::unique_ptr<position_line> posline = std::make_unique<position_line>(
-        ul.value()->name(), line_addr.value().first);
-    std::string pstr = to_string(*posline);
+    pos::line posline = { ul.value()->name(), line_addr.value().first };
+    std::string pstr = to_string(posline);
 
     end_addr eaddr = entrypoint + line_addr.value().second;
     tracer_expected<long> origw = insert_trap(_tid, _child, eaddr.val());
