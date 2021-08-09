@@ -24,7 +24,7 @@ _generic_units = [
 ]
 
 
-def _generate_map(suffix: str) -> Dict[str, fractions.Fraction]:
+def _generate_map(suffix: str) -> Dict[fractions.Fraction, str]:
     return {frac: pref + suffix for pref, frac in _generic_units}
 
 
