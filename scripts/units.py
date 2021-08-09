@@ -11,6 +11,8 @@ kilo = fractions.Fraction(1000, 1)
 mega = fractions.Fraction(1000000, 1)
 giga = fractions.Fraction(1000000000, 1)
 
+Fraction = fractions.Fraction
+
 _generic_units = [
     ("n", nano),
     ("u", micro),
