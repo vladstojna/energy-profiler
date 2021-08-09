@@ -71,7 +71,7 @@ class _scalar_unit:
         return self
 
 
-class Timestamp(_scalar_unit):
+class Time(_scalar_unit):
     units = _generate_map("s")
 
     def __init__(self, value, fraction=base):
@@ -82,25 +82,21 @@ class Timestamp(_scalar_unit):
     def __add__(self, other):
         _assert_types(self, type(other), "can only add two timestamps")
         common = _common_unit(self, other)
-        return Timestamp(
-            self.copy_as(common).value + other.copy_as(common).value, common
-        )
+        return Time(self.copy_as(common).value + other.copy_as(common).value, common)
 
     def __sub__(self, other):
         _assert_types(self, type(other), "can only sub two timestamps")
         common = _common_unit(self, other)
-        return Timestamp(
-            self.copy_as(common).value - other.copy_as(common).value, common
-        )
+        return Time(self.copy_as(common).value - other.copy_as(common).value, common)
 
     def __floordiv__(self, scalar):
-        return Timestamp(self.value // scalar, self.fraction)
+        return Time(self.value // scalar, self.fraction)
 
     def __truediv__(self, scalar):
-        return Timestamp(self.value / scalar, self.fraction)
+        return Time(self.value / scalar, self.fraction)
 
     def __mul__(self, scalar):
-        return Timestamp(self.value * scalar, self.fraction)
+        return Time(self.value * scalar, self.fraction)
 
     def __iadd__(self, other):
         _assert_types(self, type(other), "can only add two timestamps")
@@ -121,7 +117,7 @@ class Timestamp(_scalar_unit):
         return self
 
     def copy_as(self, to_unit):
-        copy = Timestamp(self.value, self.fraction)
+        copy = Time(self.value, self.fraction)
         _convert(copy, to_unit)
         return copy
 
@@ -228,18 +224,18 @@ class Power(_scalar_unit):
         return copy
 
 
-def div(energy: Energy, time: Timestamp) -> Power:
+def div(energy: Energy, time: Time) -> Power:
     _assert_types(energy, Energy, "can only divide energy by time")
-    _assert_types(time, Timestamp, "can only divide energy by time")
+    _assert_types(time, Time, "can only divide energy by time")
     fraction = energy.fraction / time.fraction
     if fraction in Energy.units:
         return Power(energy.value * time.value, fraction)
     raise invalid_unit("Cannot divide '{}' by '{}', unsupported".format(energy, time))
 
 
-def mul(power: Power, time: Timestamp) -> Energy:
+def mul(power: Power, time: Time) -> Energy:
     _assert_types(power, Power, "can only multiply power by time")
-    _assert_types(time, Timestamp, "can only power power by time")
+    _assert_types(time, Time, "can only power power by time")
     fraction = power.fraction * time.fraction
     if fraction in Energy.units:
         return Energy(power.value * time.value, fraction)
@@ -247,7 +243,7 @@ def mul(power: Power, time: Timestamp) -> Energy:
 
 
 def integrate_power_series(
-    series: Iterable[Tuple[Power, Timestamp]], to_unit: fractions.Fraction = base
+    series: Iterable[Tuple[Power, Time]], to_unit: fractions.Fraction = base
 ) -> Energy:
     result = Energy(0, to_unit)
     for ix, (p, t) in enumerate(series[1:], start=1):
@@ -261,7 +257,7 @@ def integrate_power_series(
 def main():
     import random
 
-    series = [(Power(random.randint(0, 100)), Timestamp(i)) for i in range(50)]
+    series = [(Power(random.randint(0, 100)), Time(i)) for i in range(50)]
     print(integrate_power_series(series))
 
 
