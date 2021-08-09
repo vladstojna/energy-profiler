@@ -4,21 +4,15 @@ import json
 import sys
 import copy
 import argparse
+from units import units
+from typing import Dict, Iterable, List, Tuple, Union
 
 
-def convert_units(from_unit, to_unit):
-    if from_unit.unit_string == to_unit:
-        return
-    if from_unit.units.get(to_unit) == None:
-        raise invalid_unit("Unit not supported")
-    from_unit.value *= from_unit.multiplier / from_unit.units.get(to_unit)
-    from_unit.multiplier = from_unit.units.get(to_unit)
-    from_unit.unit_string = to_unit
-
-
-class invalid_unit(Exception):
-    def __init__(self, message) -> None:
-        self.message = message
+FormatType = Dict[str, List[str]]
+UnitDictType = Dict[str, units.Fraction]
+SampleTimes = List[int]
+Sample = List[Union[int, float]]
+ReadingsType = List[Dict[str, Union[List[Sample], int]]]
 
 
 class data_type_not_found(Exception):
@@ -26,82 +20,56 @@ class data_type_not_found(Exception):
         self.message = message
 
 
-class scalar_unit:
-    def __init__(self, value, multiplier, unit_string):
-        self.value = value
-        self.multiplier = multiplier
-        self.unit_string = unit_string
-
-    def __bool__(self):
-        return self.value != 0
-
-    def __str__(self):
-        return str(self.value) + " " + self.unit_string
-
-    def convert_to(self, to_unit):
-        convert_units(self, to_unit)
-        return self
-
-
-class timestamp(scalar_unit):
-    units = {"ns": 1e-9, "us": 1e-6, "ms": 1e-3, "s": 1}
-
-    def __init__(self, value, units):
-        if self.units.get(units) == None:
-            raise invalid_unit("Unsupported unit " + units)
-        super().__init__(value, self.units[units], units)
-
-
-class energy(scalar_unit):
-    units = {"nJ": 1e-9, "uJ": 1e-6, "mJ": 1e-3, "J": 1}
-
-    def __init__(self, value, units):
-        if self.units.get(units) == None:
-            raise invalid_unit("Unsupported unit " + units)
-        super().__init__(value, self.units[units], units)
-
-
-class power(scalar_unit):
-    units = {"nW": 1e-9, "uW": 1e-6, "mW": 1e-3, "W": 1}
-
-    def __init__(self, value, units):
-        if self.units.get(units) == None:
-            raise invalid_unit("Unsupported unit " + units)
-        super().__init__(value, self.units[units], units)
-
-
 class data_idx:
-    def __init__(self, type, idx):
-        self.type = type
+    def __init__(self, tp, idx):
+        self.type = tp
         self.idx = idx
 
     def __bool__(self):
         return self.idx != -1
 
     def __str__(self):
-        return "(" + str(self.type) + "," + str(self.idx) + ")"
+        return "({},{})".format(self.type, self.idx)
+
+
+def _as_series(
+    values: Iterable[Tuple[int, Union[int, float]]],
+    time_units: units.Fraction,
+    power_units: units.Fraction,
+) -> Iterable[Tuple[units.Power, units.Time]]:
+    return [(units.Power(p, power_units), units.Time(t, time_units)) for t, p in values]
 
 
 def read_from(path):
-    if not path:
-        return sys.stdin
-    else:
-        return open(path, "r")
+    return sys.stdin if not path else open(path, "r")
+
+
+def output_to(path):
+    return sys.stdout if not path else open(path, "w")
 
 
 def add_arguments(parser):
     parser.add_argument(
         "source_file",
         action="store",
-        help="file to compact",
+        help="file to compact (default: stdin)",
         nargs="?",
+        type=str,
+        default=None,
+    )
+    parser.add_argument(
+        "-o",
+        "--output",
+        action="store",
+        help="destination file (default: stdout)",
+        required=False,
         type=str,
         default=None,
     )
 
 
-def get_duration(sample_times, time_units):
-    return timestamp(sample_times[-1] - sample_times[0], time_units)
+def get_duration(sample_times: List[int], as_unit: units.Fraction = units.base):
+    return units.Time(float(sample_times[-1] - sample_times[0]), as_unit)
 
 
 def format_index_of(fmt, data_type):
@@ -119,51 +87,66 @@ def find_data_idx(fmt, to_find):
     return data_idx(None, -1)
 
 
-def get_total_from_accumulated_energy(samples, idx, energy_units):
-    return energy(samples[-1][idx] - samples[0][idx], energy_units)
+def get_total_from_accumulated_energy(
+    samples: List[List[Union[int, float]]],
+    idx: int,
+    as_unit: units.Fraction = units.base,
+):
+    return units.Energy(float(samples[-1][idx] - samples[0][idx]), as_unit)
 
 
-def get_total_from_power_samples(timestamps, samples, idx, units_in, units_out):
+def get_total_from_power_samples(
+    timestamps: List[int],
+    samples: List[List[Union[int, float]]],
+    idx: int,
+    units_in: Tuple[units.Fraction, units.Fraction],
+    units_out: units.Fraction,
+):
     if len(timestamps) != len(samples):
-        raise AssertionError("Length of samples and timestamps differ")
-    energy_total = energy(0.0, units_out["energy"])
-    for ix in range(1, len(timestamps)):
-        avg_pwr = power(
-            (samples[ix][idx] + samples[ix - 1][idx]) / 2, units_in["power"]
-        ).convert_to(units_out["power"])
-        duration = timestamp(
-            timestamps[ix] - timestamps[ix - 1], units_in["time"]
-        ).convert_to(units_out["time"])
-
-        energy_total.value += avg_pwr.value * duration.value
-    return energy_total
+        raise AssertionError("Different lengths of samples and timestamps")
+    return units.integrate_power_series(
+        _as_series(
+            ((t, float(lst[idx])) for t, lst in zip(timestamps, samples)),
+            units_in[0],
+            units_in[1],
+        ),
+        units_out,
+    )
 
 
 def get_total_from_timed_power_samples(
-    samples, idx_time, idx_power, units_in, units_out
+    samples: List[List[Union[int, float]]],
+    idx_time: int,
+    idx_power: int,
+    units_in: Tuple[units.Fraction, units.Fraction],
+    units_out: units.Fraction,
 ):
-    energy_total = energy(0.0, units_out["energy"])
-    for ix in range(1, len(samples)):
-        avg_pwr = power(
-            (samples[ix][idx_power] + samples[ix - 1][idx_power]) / 2, units_in["power"]
-        ).convert_to(units_out["power"])
-        duration = timestamp(
-            samples[ix][idx_time] - samples[ix - 1][idx_time], units_in["time"]
-        ).convert_to(units_out["time"])
-
-        energy_total.value += avg_pwr.value * duration.value
-    return energy_total
+    return units.integrate_power_series(
+        _as_series(
+            ((lst[idx_time], float(lst[idx_power])) for lst in samples),
+            units_in[0],
+            units_in[1],
+        ),
+        units_out,
+    )
 
 
-def compute_idle(fmt, dev_type, timestamps, readings, units_in, units_out):
+def compute_idle(
+    fmt: FormatType,
+    dev_type: str,
+    timestamps: List[int],
+    readings: ReadingsType,
+    units_in: UnitDictType,
+    units_out: UnitDictType,
+) -> Dict:
     data_idx = find_data_idx(fmt, ["energy", "power"])
     if not data_idx:
         raise data_type_not_found(
-            "No element of " + str(["energy", "power"]) + " found in format " + str(fmt)
+            "No element of {} found in format {}".format(["energy", "power"], fmt)
         )
 
     retval = {}
-    retval["duration"] = get_duration(timestamps, units_in["time"]).convert_to(
+    retval["duration"] = get_duration(timestamps, units_in["time"]).convert(
         units_out["time"]
     )
 
@@ -178,52 +161,66 @@ def compute_idle(fmt, dev_type, timestamps, readings, units_in, units_out):
                 if data_idx.type == "energy":
                     idle_readings[loc] = get_total_from_accumulated_energy(
                         samples, data_idx.idx, units_in[data_idx.type]
-                    ).convert_to(units_out[data_idx.type])
+                    ).convert(units_out[data_idx.type])
                 elif data_idx.type == "power":
                     time_idx = find_data_idx(fmt, ["sensor_time"])
                     if not time_idx:
                         print(
-                            "IDLE: found power without sensor timestamps data",
+                            "IDLE: found power without sensor timestamps data ({})".format(
+                                loc
+                            ),
                             file=sys.stderr,
                         )
                         idle_readings[loc] = get_total_from_power_samples(
                             timestamps,
                             samples,
                             data_idx.idx,
-                            units_in,
-                            units_out,
-                        ).convert_to(units_out["energy"])
+                            (units_in["time"], units_in["power"]),
+                            units_out["energy"],
+                        )
                     else:
                         print(
-                            "IDLE: found power with sensor timestamps data",
+                            "IDLE: found power with sensor timestamps data ({})".format(
+                                loc
+                            ),
                             file=sys.stderr,
                         )
                         idle_readings[loc] = get_total_from_timed_power_samples(
                             samples,
                             time_idx.idx,
                             data_idx.idx,
-                            units_in,
-                            units_out,
-                        ).convert_to(units_out["energy"])
+                            (units_in["time"], units_in["power"]),
+                            units_out["energy"],
+                        )
     return retval
 
 
-def compute_delta(total_energy, total_duration, idle_energy, idle_duration):
-    if total_energy.unit_string != idle_energy.unit_string:
-        idle_energy.convert_to(total_energy.unit_string)
-    norm = idle_energy.value * (total_duration.value / idle_duration.value)
-    if total_energy.value <= norm:
-        return energy(0, total_energy.unit_string)
-    return energy(total_energy.value - norm, total_energy.unit_string)
+def compute_delta(
+    total_energy: units.Energy,
+    total_duration: units.Time,
+    idle_energy: units.Energy,
+    idle_duration: units.Time,
+) -> units.Energy:
+    norm = idle_energy * (total_duration / idle_duration)
+    if total_energy <= norm:
+        return units.Energy(0)
+    return total_energy - norm
 
 
 def write_device_readings(
-    fmt, dev_type, units_in, units_out, readings_in, readings_out, sample_times, idle
+    fmt: FormatType,
+    dev_type: str,
+    units_in: UnitDictType,
+    units_out: UnitDictType,
+    readings_in,
+    readings_out,
+    sample_times: SampleTimes,
+    idle,
 ):
     data_idx = find_data_idx(fmt, ["energy", "power"])
     if not data_idx:
         raise data_type_not_found(
-            "No element of " + str(["energy", "power"]) + " found in format " + str(fmt)
+            "No element of {} found in format {}".format(["energy", "power"], fmt)
         )
     for readings in readings_in:
         readings_out.append({})
@@ -235,33 +232,39 @@ def write_device_readings(
             else:
                 total_energy = None
                 if data_idx.type == "energy":
-                    print("found energy data", file=sys.stderr)
+                    print("found energy data ({})".format(k), file=sys.stderr)
                     total_energy = get_total_from_accumulated_energy(
                         v, data_idx.idx, units_in["energy"]
-                    ).convert_to(units_out["energy"])
+                    ).convert(units_out["energy"])
                 elif data_idx.type == "power":
                     time_idx = find_data_idx(fmt, ["sensor_time"])
                     if not time_idx:
-                        print("found power without sensor time data", file=sys.stderr)
+                        print(
+                            "found power without sensor time data ({})".format(k),
+                            file=sys.stderr,
+                        )
                         total_energy = get_total_from_power_samples(
                             sample_times,
                             v,
                             data_idx.idx,
-                            units_in,
-                            units_out,
-                        ).convert_to(units_out["energy"])
+                            (units_in["time"], units_in["power"]),
+                            units_out["energy"],
+                        )
                     else:
-                        print("found power with sensor time data", file=sys.stderr)
+                        print(
+                            "found power with sensor time data ({})".format(k),
+                            file=sys.stderr,
+                        )
                         total_energy = get_total_from_timed_power_samples(
                             v,
                             time_idx.idx,
                             data_idx.idx,
-                            units_in,
-                            units_out,
-                        ).convert_to(units_out["energy"])
+                            (units_in["time"], units_in["power"]),
+                            units_out["energy"],
+                        )
                 else:
                     raise AssertionError("Data is not 'energy' or 'power'")
-                duration = get_duration(sample_times, units_in["time"]).convert_to(
+                duration = get_duration(sample_times, units_in["time"]).convert(
                     units_out["time"]
                 )
                 delta_energy = (
@@ -270,7 +273,7 @@ def write_device_readings(
                         duration,
                         idle[readings[dev_type]][k],
                         idle["duration"],
-                    ).convert_to(units_out["energy"])
+                    ).convert(units_out["energy"])
                     if idle
                     else None
                 )
@@ -278,6 +281,26 @@ def write_device_readings(
                 current = readings_out[-1][k] = {}
                 current["total"] = total_energy.value
                 current["delta"] = delta_energy.value if delta_energy else None
+
+
+def _str_to_frac(sym: str, fracs: Dict[units.Fraction, str]) -> units.Fraction:
+    for k, v in fracs.items():
+        if v == sym:
+            return k
+    raise ValueError("Unsupported units found")
+
+
+def get_units(raw: Dict[str, str]) -> UnitDictType:
+    retval = {}
+    type_map = {"energy": units.Energy, "power": units.Power, "time": units.Time}
+    for utype, usym in raw.items():
+        retval[utype] = _str_to_frac(usym, type_map[utype].units)
+    return retval
+
+
+def serialize_units(to_write: UnitDictType) -> Dict[str, str]:
+    type_map = {"energy": units.Energy, "power": units.Power, "time": units.Time}
+    return {utype: type_map[utype].units[frac] for utype, frac in to_write.items()}
 
 
 def main():
@@ -288,28 +311,23 @@ def main():
     args = parser.parse_args()
     with read_from(args.source_file) as f:
         json_in = json.load(f)
-        units = json_in["units"]
-        units_out = copy.deepcopy(units)
-        units_out["time"] = "s"
+
+        units_in = get_units(json_in["units"])
+        units_out = copy.deepcopy(units_in)
+        units_out["time"] = units.base
 
         idle = {}
+        dev_keys = {"cpu": "socket", "gpu": "device"}
         for i in json_in["idle"]:
-            if i.get("cpu") != None:
-                idle["cpu"] = compute_idle(
-                    json_in["format"]["cpu"],
-                    "socket",
+            for tgt, readings, dev_key in (
+                (k, i[k], v) for k, v in dev_keys.items() if i.get(k)
+            ):
+                idle[tgt] = compute_idle(
+                    json_in["format"][tgt],
+                    dev_key,
                     i["sample_times"],
-                    i["cpu"],
-                    units,
-                    units_out,
-                )
-            if i.get("gpu") != None:
-                idle["gpu"] = compute_idle(
-                    json_in["format"]["gpu"],
-                    "device",
-                    i["sample_times"],
-                    i["gpu"],
-                    units,
+                    readings,
+                    units_in,
                     units_out,
                 )
 
@@ -328,42 +346,32 @@ def main():
                     jexec = {}
                     jexec["range"] = e["range"]
                     jexec["time"] = (
-                        get_duration(e["sample_times"], units["time"])
-                        .convert_to(units_out["time"])
+                        get_duration(e["sample_times"], units_in["time"])
+                        .convert(units_out["time"])
                         .value
                     )
-                    if e.get("cpu") != None:
-                        jexec["cpu"] = []
+                    for tgt, readings, dev_key in (
+                        (k, e[k], v) for k, v in dev_keys.items() if e.get(k)
+                    ):
+                        jexec[tgt] = []
                         write_device_readings(
-                            json_in["format"]["cpu"],
-                            "socket",
-                            units,
+                            json_in["format"][tgt],
+                            dev_key,
+                            units_in,
                             units_out,
-                            e["cpu"],
-                            jexec["cpu"],
+                            readings,
+                            jexec[tgt],
                             e["sample_times"],
-                            idle["cpu"] if idle else None,
+                            idle[tgt] if idle else None,
                         )
-
-                    if e.get("gpu") != None:
-                        jexec["gpu"] = []
-                        write_device_readings(
-                            json_in["format"]["gpu"],
-                            "device",
-                            units,
-                            units_out,
-                            e["gpu"],
-                            jexec["gpu"],
-                            e["sample_times"],
-                            idle["gpu"] if idle else None,
-                        )
-
                     jsec["executions"].append(jexec)
                 jgroup["sections"].append(jsec)
             json_out["groups"].append(jgroup)
         del units_out["power"]
-        json_out["units"] = units_out
-        json.dump(json_out, sys.stdout)
+        json_out["units"] = serialize_units(units_out)
+
+        with output_to(args.output) as of:
+            json.dump(json_out, of)
 
 
 if __name__ == "__main__":
