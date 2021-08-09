@@ -40,7 +40,12 @@ def _convert(from_unit, to_unit):
         raise invalid_unit("Unit not supported")
     tmp = from_unit.fraction / to_unit
     from_unit.value *= tmp.numerator
-    from_unit.value /= tmp.denominator
+    if isinstance(from_unit.value, float):
+        from_unit.value /= tmp.denominator
+    elif isinstance(from_unit.value, int):
+        from_unit.value //= tmp.denominator
+    else:
+        raise TypeError("Unit values not int or float")
     from_unit.fraction = to_unit
 
 
@@ -91,11 +96,17 @@ class Time(_scalar_unit):
         common = _common_unit(self, other)
         return Time(self.copy_as(common).value - other.copy_as(common).value, common)
 
-    def __floordiv__(self, scalar):
-        return Time(self.value // scalar, self.fraction)
+    def __floordiv__(self, other):
+        if isinstance(other, Time):
+            common = _common_unit(self, other)
+            return self.copy_as(common).value // other.copy_as(common).value
+        return Time(self.value // other, self.fraction)
 
-    def __truediv__(self, scalar):
-        return Time(self.value / scalar, self.fraction)
+    def __truediv__(self, other):
+        if isinstance(other, Time):
+            common = _common_unit(self, other)
+            return self.copy_as(common).value / other.copy_as(common).value
+        return Time(self.value / other, self.fraction)
 
     def __mul__(self, scalar):
         return Time(self.value * scalar, self.fraction)
@@ -110,13 +121,38 @@ class Time(_scalar_unit):
         self.value -= other.copy_as(self.fraction).value
         return self
 
-    def __idiv__(self, scalar):
+    def __ifloordiv__(self, scalar):
+        self.value //= scalar
+        return self
+
+    def __itruediv__(self, scalar):
         self.value /= scalar
         return self
 
     def __imul__(self, scalar):
         self.value *= scalar
         return self
+
+    def __lt__(self, other):
+        _assert_types(self, type(other), "can only compare two Time instances")
+        return self.value < other.copy_as(self.fraction).value
+
+    def __le__(self, other):
+        _assert_types(self, type(other), "can only compare two Time instances")
+        return self.value <= other.copy_as(self.fraction).value
+
+    def __eq__(self, other):
+        _assert_types(self, type(other), "can only compare two Time instances")
+        return self.value == other.copy_as(self.fraction).value
+
+    def __ne__(self, other):
+        return not self.__eq__(self, other)
+
+    def __gt__(self, other):
+        return not self.__le__(self, other)
+
+    def __ge__(self, other):
+        return not self.__lt__(self, other)
 
     def copy_as(self, to_unit):
         copy = Time(self.value, self.fraction)
@@ -142,11 +178,17 @@ class Energy(_scalar_unit):
         common = _common_unit(self, other)
         return Energy(self.copy_as(common).value - other.copy_as(common).value, common)
 
-    def __floordiv__(self, scalar):
-        return Energy(self.value // scalar, self.fraction)
+    def __floordiv__(self, other):
+        if isinstance(other, Energy):
+            common = _common_unit(self, other)
+            return self.copy_as(common).value // other.copy_as(common).value
+        return Energy(self.value // other, self.fraction)
 
-    def __truediv__(self, scalar):
-        return Energy(self.value / scalar, self.fraction)
+    def __truediv__(self, other):
+        if isinstance(other, Energy):
+            common = _common_unit(self, other)
+            return self.copy_as(common).value / other.copy_as(common).value
+        return Energy(self.value / other, self.fraction)
 
     def __mul__(self, scalar):
         return Energy(self.value * scalar, self.fraction)
@@ -161,13 +203,38 @@ class Energy(_scalar_unit):
         self.value -= other.copy_as(self.fraction).value
         return self
 
-    def __idiv__(self, scalar):
+    def __ifloordiv__(self, scalar):
+        self.value //= scalar
+        return self
+
+    def __itruediv__(self, scalar):
         self.value /= scalar
         return self
 
     def __imul__(self, scalar):
         self.value *= scalar
         return self
+
+    def __lt__(self, other):
+        _assert_types(self, type(other), "can only compare two Energy instances")
+        return self.value < other.copy_as(self.fraction).value
+
+    def __le__(self, other):
+        _assert_types(self, type(other), "can only compare two Energy instances")
+        return self.value <= other.copy_as(self.fraction).value
+
+    def __eq__(self, other):
+        _assert_types(self, type(other), "can only compare two Energy instances")
+        return self.value == other.copy_as(self.fraction).value
+
+    def __ne__(self, other):
+        return not self.__eq__(self, other)
+
+    def __gt__(self, other):
+        return not self.__le__(self, other)
+
+    def __ge__(self, other):
+        return not self.__lt__(self, other)
 
     def copy_as(self, to_unit):
         copy = Energy(self.value, self.fraction)
@@ -193,11 +260,17 @@ class Power(_scalar_unit):
         common = _common_unit(self, other)
         return Power(self.copy_as(common).value - other.copy_as(common).value, common)
 
-    def __floordiv__(self, scalar):
-        return Power(self.value // scalar, self.fraction)
+    def __floordiv__(self, other):
+        if isinstance(other, Power):
+            common = _common_unit(self, other)
+            return self.copy_as(common).value // other.copy_as(common).value
+        return Power(self.value // other, self.fraction)
 
-    def __truediv__(self, scalar):
-        return Power(self.value / scalar, self.fraction)
+    def __truediv__(self, other):
+        if isinstance(other, Power):
+            common = _common_unit(self, other)
+            return self.copy_as(common).value / other.copy_as(common).value
+        return Power(self.value / other, self.fraction)
 
     def __mul__(self, scalar):
         return Power(self.value * scalar, self.fraction)
@@ -212,13 +285,38 @@ class Power(_scalar_unit):
         self.value -= other.copy_as(self.fraction).value
         return self
 
-    def __idiv__(self, scalar):
+    def __ifloordiv__(self, scalar):
+        self.value //= scalar
+        return self
+
+    def __itruediv__(self, scalar):
         self.value /= scalar
         return self
 
     def __imul__(self, scalar):
         self.value *= scalar
         return self
+
+    def __lt__(self, other):
+        _assert_types(self, type(other), "can only compare two Power instances")
+        return self.value < other.copy_as(self.fraction).value
+
+    def __le__(self, other):
+        _assert_types(self, type(other), "can only compare two Power instances")
+        return self.value <= other.copy_as(self.fraction).value
+
+    def __eq__(self, other):
+        _assert_types(self, type(other), "can only compare two Power instances")
+        return self.value == other.copy_as(self.fraction).value
+
+    def __ne__(self, other):
+        return not self.__eq__(self, other)
+
+    def __gt__(self, other):
+        return not self.__le__(self, other)
+
+    def __ge__(self, other):
+        return not self.__lt__(self, other)
 
     def copy_as(self, to_unit):
         copy = Power(self.value, self.fraction)
