@@ -32,14 +32,6 @@ class data_idx:
         return "({},{})".format(self.type, self.idx)
 
 
-def _as_series(
-    values: Iterable[Tuple[int, Union[int, float]]],
-    time_units: units.Fraction,
-    power_units: units.Fraction,
-) -> Iterable[Tuple[units.Power, units.Time]]:
-    return [(units.Power(p, power_units), units.Time(t, time_units)) for t, p in values]
-
-
 def read_from(path):
     return sys.stdin if not path else open(path, "r")
 
@@ -65,6 +57,13 @@ def add_arguments(parser):
         required=False,
         type=str,
         default=None,
+    )
+    parser.add_argument(
+        "--no-delta",
+        action="store_false",
+        dest="delta",
+        help="whether to not compute delta energy",
+        required=False,
     )
 
 
@@ -93,6 +92,14 @@ def get_total_from_accumulated_energy(
     as_unit: units.Fraction = units.base,
 ):
     return units.Energy(float(samples[-1][idx] - samples[0][idx]), as_unit)
+
+
+def _as_series(
+    values: Iterable[Tuple[int, Union[int, float]]],
+    time_units: units.Fraction,
+    power_units: units.Fraction,
+) -> Iterable[Tuple[units.Power, units.Time]]:
+    return [(units.Power(p, power_units), units.Time(t, time_units)) for t, p in values]
 
 
 def get_total_from_power_samples(
@@ -316,20 +323,22 @@ def main():
         units_out = copy.deepcopy(units_in)
         units_out["time"] = units.base
 
-        idle = {}
         dev_keys = {"cpu": "socket", "gpu": "device"}
-        for i in json_in["idle"]:
-            for tgt, readings, dev_key in (
-                (k, i[k], v) for k, v in dev_keys.items() if i.get(k)
-            ):
-                idle[tgt] = compute_idle(
-                    json_in["format"][tgt],
-                    dev_key,
-                    i["sample_times"],
-                    readings,
-                    units_in,
-                    units_out,
-                )
+
+        idle = {}
+        if args.delta:
+            for i in json_in["idle"]:
+                for tgt, readings, dev_key in (
+                    (k, i[k], v) for k, v in dev_keys.items() if i.get(k)
+                ):
+                    idle[tgt] = compute_idle(
+                        json_in["format"][tgt],
+                        dev_key,
+                        i["sample_times"],
+                        readings,
+                        units_in,
+                        units_out,
+                    )
 
         json_out = {"groups": []}
         for g in json_in["groups"]:
