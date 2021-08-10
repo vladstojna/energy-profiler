@@ -26,7 +26,6 @@ namespace nrgprf
 
     namespace detail
     {
-
         template<intmax_t a, intmax_t b>
         struct gcd
         {
@@ -85,6 +84,26 @@ namespace nrgprf
                 ));
         }
 
+        template<typename... Cond>
+        using _or = std::disjunction<Cond...>;
+
+        template<typename... Cond>
+        using _and = std::conjunction<Cond...>;
+
+        template<typename Cond>
+        using _not = std::negation<Cond>;
+
+        template<typename... Cond>
+        using require = std::enable_if_t<_and<Cond...>::value, bool>;
+
+        template<typename Rep>
+        struct is_float : std::is_floating_point<Rep> {};
+
+        template<typename Ratio1, typename Ratio2>
+        struct is_divisible
+        {
+            constexpr inline static bool value = std::ratio_divide<Ratio1, Ratio2>::den == 1;
+        };
     }
 
 
@@ -147,9 +166,19 @@ namespace nrgprf
             scalar_unit<energy_unit, Rep, Ratio>(count)
         {}
 
-        template<typename Rep2, typename Ratio2>
-        constexpr energy_unit(const energy_unit<Rep2, Ratio2>& other) :
-            energy_unit(nrgprf::unit_cast<energy_unit<Rep, Ratio>>(other))
+        template<
+            typename Rep2,
+            typename Ratio2,
+            detail::require<
+            std::is_convertible<const Rep2&, Rep>,
+            detail::_or<
+            detail::is_float<Rep>,
+            detail::_and<
+            detail::is_divisible<Ratio2, Ratio>,
+            detail::_not<detail::is_float<Rep2>
+            >>>> = true>
+            constexpr energy_unit(const energy_unit<Rep2, Ratio2>& other) :
+            energy_unit(nrgprf::unit_cast<energy_unit>(other).count())
         {}
     };
 
@@ -162,9 +191,19 @@ namespace nrgprf
             scalar_unit<power_unit, Rep, Ratio>(count)
         {}
 
-        template<typename Rep2, typename Ratio2>
-        constexpr power_unit(const power_unit<Rep2, Ratio2>& other) :
-            power_unit(nrgprf::unit_cast<power_unit<Rep, Ratio>>(other))
+        template<
+            typename Rep2,
+            typename Ratio2,
+            detail::require<
+            std::is_convertible<const Rep2&, Rep>,
+            detail::_or<
+            detail::is_float<Rep>,
+            detail::_and<
+            detail::is_divisible<Ratio2, Ratio>,
+            detail::_not<detail::is_float<Rep2>
+            >>>> = true>
+            constexpr power_unit(const power_unit<Rep2, Ratio2>& other) :
+            power_unit(nrgprf::unit_cast<power_unit>(other).count())
         {}
     };
 
