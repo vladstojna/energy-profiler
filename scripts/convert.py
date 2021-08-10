@@ -190,7 +190,6 @@ def main():
         json_in = json.load(f)
         units_in = deserialize_units(json_in["units"])
         fmt: FormatType = json_in["format"]
-
         conversions: ConversionMap = {}
         for tgt in targets:
             di = find_data_idx(fmt[tgt], choices)
@@ -199,24 +198,25 @@ def main():
                     "{} not found in format".format(" or ".join(choices))
                 )
             if di.type != args.to:
-                log("{}:{}->{}".format(tgt, di.type, args.to))
-                conversions[tgt] = di, find_data_idx(fmt[tgt], ("sensor_time",))
-
+                st = find_data_idx(fmt[tgt], ("sensor_time",))
+                conversions[tgt] = di, st
+                for ix in range(len(fmt[tgt])):
+                    if fmt[tgt][ix] == di.type:
+                        fmt[tgt][ix] = args.to
+                log(
+                    "{}:{}->{} (sensor_time={})".format(tgt, di.type, args.to, bool(st))
+                )
         if not conversions:
             log("No data found to convert to {}".format(args.to))
             with output_to(args.output) as of:
                 json.dump(json_in, of)
                 return
-        for tgt, (di, st) in conversions.items():
-            log("{}: {} has sensor times? {}".format(tgt, di, bool(st)))
-
         for i in json_in["idle"]:
             for tgt, dev_key in ((k, v) for k, v in targets.items() if i.get(k)):
                 di, st = conversions[tgt]
                 convert_execution(
                     i["sample_times"], i[tgt], dev_key, di, st, units_in, args.to
                 )
-
         for g in json_in["groups"]:
             for s in g["sections"]:
                 for e in s["executions"]:
@@ -233,7 +233,6 @@ def main():
                             units_in,
                             args.to,
                         )
-
         with output_to(args.output) as of:
             json.dump(json_in, of)
 
