@@ -337,7 +337,7 @@ def div(energy: Energy, time: Time) -> Power:
     _assert_types(time, Time, "can only divide energy by time")
     fraction = energy.fraction / time.fraction
     if fraction in Energy.units:
-        return Power(energy.value * time.value, fraction)
+        return Power(energy.value / time.value, fraction)
     raise invalid_unit("Cannot divide '{}' by '{}', unsupported".format(energy, time))
 
 
