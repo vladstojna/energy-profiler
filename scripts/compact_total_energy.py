@@ -68,7 +68,7 @@ def add_arguments(parser):
 
 
 def get_duration(sample_times: List[int], as_unit: units.Fraction = units.base):
-    return units.Time(float(sample_times[-1] - sample_times[0]), as_unit)
+    return units.Time(sample_times[-1] - sample_times[0], as_unit).as_float()
 
 
 def format_index_of(fmt, data_type):

@@ -73,6 +73,14 @@ class _scalar_unit:
     def __str__(self):
         return "{} {}".format(self.value, self.units[self.fraction])
 
+    def as_float(self):
+        self.value = float(self.value)
+        return self
+
+    def as_int(self):
+        self.value = int(self.value)
+        return self
+
     def convert(self, to_frac):
         _convert(self, to_frac)
         return self
