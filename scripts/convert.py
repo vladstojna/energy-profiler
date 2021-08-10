@@ -109,15 +109,33 @@ def main():
         value_idx: int,
         dev_key: str,
         units_in: UnitDictType,
-    ):
+    ) -> None:
+        def generator(
+            times: SampleTimes, samples: List[Sample], idx: int, u: UnitDictType
+        ):
+            return (
+                (
+                    units.div(
+                        units.Energy(s[idx] - samples[ix - 1][idx], u["energy"]),
+                        units.Time(t - times[ix - 1], u["time"]),
+                    ).convert(u["power"]),
+                    ix,
+                )
+                for s, t, ix in zip(samples[1:], times[1:], range(1, len(samples)))
+            )
+
         for sensors in readings:
-            for loc, samples in (
-                (k, v) for k, v in sensors.items() if k != dev_key and v
-            ):
+            for samples in (v for k, v in sensors.items() if k != dev_key and v):
                 assert len(samples) == len(times)
                 if len(samples) != len(times):
                     raise AssertionError("len(samples) != len(sample_times)")
-                log(loc)
+                val = units.Power(0.0)
+                for p, ix in generator(times, samples, value_idx, units_in):
+                    samples[ix - 1][value_idx] = val.value
+                    val = p
+                samples[-1][value_idx] = val.value
+        for ix, t in enumerate(times[1:]):
+            times[ix + 1] = (t + times[ix]) // 2
 
     def power2energy(
         times: SampleTimes,
@@ -125,8 +143,8 @@ def main():
         value_idx: int,
         dev_key: str,
         units_in: UnitDictType,
-    ):
-        pass
+    ) -> None:
+        raise NotImplementedError("power2energy not implemented")
 
     def power2energy_with_times(
         times: SampleTimes,
@@ -135,8 +153,8 @@ def main():
         value_idx: int,
         dev_key: str,
         units_int: UnitDictType,
-    ):
-        pass
+    ) -> None:
+        raise NotImplementedError("power2energy_with_times not implemented")
 
     def convert_execution(
         times: SampleTimes,
@@ -146,7 +164,7 @@ def main():
         sensor_times: data_idx,
         units_in: UnitDictType,
         convert_to: str,
-    ):
+    ) -> None:
         if stored.type == "energy":
             assert convert_to == "power"
             if sensor_times:
@@ -198,6 +216,26 @@ def main():
                 convert_execution(
                     i["sample_times"], i[tgt], dev_key, di, st, units_in, args.to
                 )
+
+        for g in json_in["groups"]:
+            for s in g["sections"]:
+                for e in s["executions"]:
+                    for tgt, dev_key in (
+                        (k, v) for k, v in targets.items() if e.get(k)
+                    ):
+                        di, st = conversions[tgt]
+                        convert_execution(
+                            e["sample_times"],
+                            e[tgt],
+                            dev_key,
+                            di,
+                            st,
+                            units_in,
+                            args.to,
+                        )
+
+        with output_to(args.output) as of:
+            json.dump(json_in, of)
 
 
 if __name__ == "__main__":
