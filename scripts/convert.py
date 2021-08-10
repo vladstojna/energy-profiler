@@ -144,7 +144,30 @@ def main():
         dev_key: str,
         units_in: UnitDictType,
     ) -> None:
-        raise NotImplementedError("power2energy not implemented")
+        def generator(
+            times: SampleTimes, samples: List[Sample], idx: int, u: UnitDictType
+        ):
+            return (
+                (
+                    units.mul(
+                        units.Power((s[idx] + samples[ix - 1][idx]) / 2, u["power"]),
+                        units.Time(t - times[ix - 1], u["time"]),
+                    ).convert(u["energy"]),
+                    ix,
+                )
+                for s, t, ix in zip(samples[1:], times[1:], range(1, len(samples)))
+            )
+
+        for sensors in readings:
+            for samples in (v for k, v in sensors.items() if k != dev_key and v):
+                assert len(samples) == len(times)
+                if len(samples) != len(times):
+                    raise AssertionError("len(samples) != len(sample_times)")
+                val = units.Energy(0.0)
+                for e, ix in generator(times, samples, value_idx, units_in):
+                    samples[ix - 1][value_idx] = val.value
+                    val += e
+                samples[-1][value_idx] = val.value
 
     def power2energy_with_times(
         times: SampleTimes,
@@ -152,9 +175,30 @@ def main():
         time_idx: int,
         value_idx: int,
         dev_key: str,
-        units_int: UnitDictType,
+        units_in: UnitDictType,
     ) -> None:
-        raise NotImplementedError("power2energy_with_times not implemented")
+        def generator(samples: List[Sample], tidx: int, vidx: int, u: UnitDictType):
+            return (
+                (
+                    units.mul(
+                        units.Power((s[vidx] + samples[ix - 1][vidx]) / 2, u["power"]),
+                        units.Time(s[tidx] - samples[ix - 1][tidx], u["time"]),
+                    ).convert(u["energy"]),
+                    ix,
+                )
+                for ix, s in enumerate(samples[1:], start=1)
+            )
+
+        for sensors in readings:
+            for samples in (v for k, v in sensors.items() if k != dev_key and v):
+                assert len(samples) == len(times)
+                if len(samples) != len(times):
+                    raise AssertionError("len(samples) != len(sample_times)")
+                val = units.Energy(0.0)
+                for e, ix in generator(samples, time_idx, value_idx, units_in):
+                    samples[ix - 1][value_idx] = val.value
+                    val += e
+                samples[-1][value_idx] = val.value
 
     def convert_execution(
         times: SampleTimes,
