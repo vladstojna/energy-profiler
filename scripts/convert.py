@@ -70,7 +70,6 @@ def main():
             action="store",
             help="what type of data to convert to",
             required=True,
-            metavar="TYPE",
             type=str,
             default=None,
             choices=choices,
