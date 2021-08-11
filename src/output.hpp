@@ -3,6 +3,7 @@
 #pragma once
 
 #include "sampler.hpp"
+#include "trap.hpp"
 
 namespace tep
 {
@@ -12,11 +13,9 @@ namespace tep
         class output_impl;
     }
 
-    class position_interval;
-
     struct position_exec
     {
-        std::shared_ptr<position_interval> interval;
+        pos::interval interval;
         timed_execution exec;
     };
 

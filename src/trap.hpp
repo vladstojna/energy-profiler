@@ -8,6 +8,7 @@
 #include <functional>
 #include <memory>
 #include <unordered_map>
+#include <variant>
 
 namespace tep
 {
@@ -16,116 +17,62 @@ namespace tep
 
     using sampler_creator = std::function<std::unique_ptr<async_sampler>()>;
 
-    // position related hierarchy
-
-    class position_interface
+    namespace pos
     {
-    public:
-        virtual ~position_interface() = default;
+        struct none
+        {};
 
-        friend std::ostream& operator<<(std::ostream&, const position_interface&);
+        struct line
+        {
+            std::filesystem::path path;
+            uint32_t line;
+            std::filesystem::path filename() const;
+        };
 
-    private:
-        virtual void print(std::ostream& os) const = 0;
-    };
+        struct function
+        {
+            std::string name;
+        };
 
-    class position_single : public position_interface
-    {};
+        struct function_full : function
+        {
+            line at;
+        };
 
-    class position_line : public position_single
-    {
-    private:
-        std::filesystem::path _file;
-        uint32_t _line;
+        struct address
+        {
+            uintptr_t at;
+        };
 
-    public:
-        position_line(const std::filesystem::path& f, uint32_t line);
-        position_line(std::filesystem::path&& f, uint32_t line);
+        using named_pos = std::variant<line, function, function_full>;
 
-        std::filesystem::path filename() const;
-        const std::filesystem::path& path() const;
-        uint32_t lineno() const;
+        struct offset
+        {
+            named_pos start;
+            uintptr_t off;
+        };
 
-    private:
-        void print(std::ostream& os) const override;
-    };
+        using single_pos = std::variant<address, named_pos, offset>;
 
-    class position_func : public position_single
-    {
-    private:
-        std::string _name;
+        struct interval
+        {
+            single_pos start;
+            single_pos end;
+        };
 
-    public:
-        position_func(const std::string& name);
-        position_func(std::string&& name);
+        using any = std::variant<none, single_pos, interval>;
 
-        const std::string& name() const;
-
-    private:
-        void print(std::ostream& os) const override;
-    };
-
-    class position_func_full : public position_func
-    {
-    private:
-        position_line _pos;
-
-    public:
-        position_func_full(const std::string& name, const position_line& pl);
-        position_func_full(const std::string& name, position_line&& pl);
-        position_func_full(std::string&& name, const position_line& pl);
-        position_func_full(std::string&& name, position_line&& pl);
-
-        const position_line& line() const;
-
-    private:
-        void print(std::ostream& os) const override;
-    };
-
-    class position_offset : public position_single
-    {
-    private:
-        std::unique_ptr<position_single> _pos;
-        uintptr_t _offset;
-
-    public:
-        position_offset(std::unique_ptr<position_single>&& pos, uintptr_t offset);
-
-        const position_single& pos() const;
-        uintptr_t offset() const;
-
-    private:
-        void print(std::ostream& os) const override;
-    };
-
-    class position_addr : public position_single
-    {
-    private:
-        uintptr_t _addr;
-
-    public:
-        position_addr(uintptr_t addr);
-
-        uintptr_t addr() const;
-
-    private:
-        void print(std::ostream& os) const override;
-    };
-
-    class position_interval : public position_interface
-    {
-    private:
-        std::array<std::unique_ptr<position_single>, 2> _interval;
-
-    public:
-        position_interval(std::unique_ptr<position_single>&& p1, std::unique_ptr<position_single>&& p2);
-
-        const position_single& start() const;
-        const position_single& end() const;
-
-    private:
-        void print(std::ostream& os) const override;
-    };
+        std::ostream& operator<<(std::ostream& os, const none&);
+        std::ostream& operator<<(std::ostream& os, const line&);
+        std::ostream& operator<<(std::ostream& os, const function&);
+        std::ostream& operator<<(std::ostream& os, const function_full&);
+        std::ostream& operator<<(std::ostream& os, const address&);
+        std::ostream& operator<<(std::ostream& os, const named_pos&);
+        std::ostream& operator<<(std::ostream& os, const offset&);
+        std::ostream& operator<<(std::ostream& os, const single_pos&);
+        std::ostream& operator<<(std::ostream& os, const interval&);
+        std::ostream& operator<<(std::ostream& os, const any&);
+    }
 
     // trap related classes
 
@@ -172,21 +119,21 @@ namespace tep
     {
     private:
         long _origword;
-        std::unique_ptr<position_single> _at;
+        pos::single_pos _at;
 
     protected:
         ~trap() = default;
 
     public:
-        trap(long origword, std::unique_ptr<position_single>&& at);
+        trap(long origword, const pos::single_pos& at);
+        trap(long origword, pos::single_pos&& at);
 
         trap(trap&& other) = default;
         trap& operator=(trap&& other) = default;
 
         long origword() const;
-        position_single& at()&;
-        const position_single& at() const&;
-        std::unique_ptr<position_single>&& at()&&;
+        pos::single_pos& at();
+        const pos::single_pos& at() const;
 
         friend std::ostream& operator<<(std::ostream&, const trap&);
 
@@ -202,9 +149,25 @@ namespace tep
 
     public:
         template<typename Creator>
-        start_trap(long origword, std::unique_ptr<position_single>&& at,
-            bool allow_concurrency, Creator&& callable) :
+        start_trap(
+            long origword,
+            pos::single_pos&& at,
+            bool allow_concurrency,
+            Creator&& callable)
+            :
             trap(origword, std::move(at)),
+            _allow_concurrency(allow_concurrency),
+            _creator(std::forward<Creator>(callable))
+        {}
+
+        template<typename Creator>
+        start_trap(
+            long origword,
+            const pos::single_pos& at,
+            bool allow_concurrency,
+            Creator&& callable)
+            :
+            trap(origword, at),
             _allow_concurrency(allow_concurrency),
             _creator(std::forward<Creator>(callable))
         {}
@@ -219,7 +182,8 @@ namespace tep
         start_addr _start;
 
     public:
-        end_trap(long origword, std::unique_ptr<position_single>&& at, start_addr);
+        end_trap(long origword, pos::single_pos&&, start_addr);
+        end_trap(long origword, const pos::single_pos&, start_addr);
 
         start_addr associated_with() const;
 
@@ -271,7 +235,6 @@ namespace tep
     bool operator==(end_addr lhs, end_addr rhs);
     bool operator!=(end_addr lhs, end_addr rhs);
 
-    std::ostream& operator<<(std::ostream&, const position_interface&);
     std::ostream& operator<<(std::ostream&, const trap&);
 
 }
