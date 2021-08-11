@@ -24,11 +24,9 @@ cpu ?=
 ifneq ($(shell command -v nvcc),)
 gpu := GPU_NV
 else
-    ifneq ($(shell command -v hipcc),)
-        gpu := GPU_AMD
-    else
-        gpu := GPU_NONE
-    endif
+ifneq ($(shell command -v hipcc),)
+gpu := GPU_AMD
+endif
 endif
 
 # linker flags
