@@ -195,7 +195,7 @@ def main():
     parser = argparse.ArgumentParser(description="Generate plot from CSV file")
     add_arguments(parser)
     args = parser.parse_args()
-    with read_from(args.source_file) as f, output_to(args.output) as o:
+    with read_from(args.source_file) as f:
         csvrdr = csv.DictReader(row for row in f if not row.startswith("#"))
         if not csvrdr.fieldnames:
             raise AssertionError("Fieldnames cannot be empty or None")
@@ -241,7 +241,8 @@ def main():
                 borderaxespad=0.0,
             )
             plt.grid(which="major", axis="both", linestyle="dotted", alpha=0.5)
-            plt.savefig(o, bbox_extra_artists=(legend,), bbox_inches="tight")
+            with output_to(args.output) as of:
+                plt.savefig(of, bbox_extra_artists=(legend,), bbox_inches="tight")
 
 
 if __name__ == "__main__":
