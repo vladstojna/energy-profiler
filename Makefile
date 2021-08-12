@@ -34,7 +34,7 @@ cc := g++
 std := c++17
 override cpp +=
 
-cflags := -Wall -Wextra -Wno-unknown-pragmas -Wpedantic -fPIE -g
+cflags := -Wall -Wextra -Wno-unknown-pragmas -Wpedantic -fPIE -g -pthread
 cflags += $(addprefix -I, $(extlibs_incl))
 cflags += $(addprefix -I, include nrg/include)
 cflags += -std=$(std)
