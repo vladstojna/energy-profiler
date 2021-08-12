@@ -7,14 +7,10 @@
 #include <fstream>
 #include <iosfwd>
 #include <string>
-
-#include <util/expected.hpp>
+#include <optional>
 
 namespace tep
 {
-    struct arg_error
-    {};
-
     class optional_output_file
     {
         std::ofstream _file;
@@ -37,11 +33,18 @@ namespace tep
         friend std::ostream& operator<<(std::ostream&, const optional_input_file&);
     };
 
+    struct log_args
+    {
+        bool quiet;
+        std::string path;
+    };
+
     struct arguments
     {
         flags profiler_flags;
         optional_input_file config;
         optional_output_file output;
+        log_args logargs;
         std::string target;
         char* const* argv;
     };
@@ -50,6 +53,5 @@ namespace tep
     std::ostream& operator<<(std::ostream& os, const optional_input_file& f);
     std::ostream& operator<<(std::ostream& os, const arguments& a);
 
-    cmmn::expected<arguments, arg_error> parse_arguments(int argc, char* const argv[]);
-
+    std::optional<arguments> parse_arguments(int argc, char* const argv[]);
 }
