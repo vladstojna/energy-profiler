@@ -1,7 +1,7 @@
 // target.cpp
 
 #include "target.hpp"
-#include "util.hpp"
+#include "log.hpp"
 
 #include <cstring>
 #include <cerrno>
@@ -42,22 +42,20 @@ int disable_aslr(pid_t pid)
 
 void tep::run_target(char* const argv[])
 {
+    using namespace tep;
     pid_t pid = getpid();
-    tep::log(log_lvl::info, "[%d] running target: %s", pid, argv[0]);
+    log::logline(log::info, "[%d] running target: %s", pid, argv[0]);
     for (size_t ix = 1; argv[ix] != NULL; ix++)
-        tep::log(log_lvl::info, "[%d] argument %zu: %s", pid, ix, argv[ix]);
-
+        log::logline(log::info, "[%d] argument %zu: %s", pid, ix, argv[ix]);
     // set target process to be traced
     if (ptrace(PTRACE_TRACEME, 0, 0, 0) == -1)
     {
-        tep::log(log_lvl::error, "[%d] PTRACE_TRACEME: %s", pid, strerror(errno));
+        log::logline(log::error, "[%d] PTRACE_TRACEME: %s", pid, strerror(errno));
         return;
     }
-
     if (disable_aslr(pid))
         return;
-
     // execute target executable
     if (execv(argv[0], argv) == -1)
-        tep::log(log_lvl::error, "[%d] execv error: %s", pid, strerror(errno));
+        log::logline(log::error, "[%d] execv error: %s", pid, strerror(errno));
 }

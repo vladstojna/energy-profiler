@@ -16,25 +16,8 @@ inline pid_t gettid()
 }
 #endif
 
-#define log(lvl, fmt, ...) \
-    log__(__FILE__, __LINE__, lvl, fmt, __VA_ARGS__)
-
 namespace tep
 {
-
-    enum class log_lvl
-    {
-        debug,
-        info,
-        success,
-        warning,
-        error
-    };
-
-
-    void log__(const char* file, int line, log_lvl lvl, const char* fmt, ...);
-    bool timestamp(char* buff, size_t sz);
-
     int get_entrypoint_addr(pid_t pid, uintptr_t& addr);
 
     long set_trap(long word);
@@ -49,5 +32,4 @@ namespace tep
     const char* sig_str(int signal);
 
     int get_ptrace_opts(bool trace_children);
-
 }

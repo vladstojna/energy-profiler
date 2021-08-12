@@ -1,7 +1,7 @@
 // sampler.cpp
 
 #include "sampler.hpp"
-#include "util.hpp"
+#include "log.hpp"
 
 #include <cassert>
 
@@ -53,7 +53,7 @@ sampler_expected sync_sampler::results()
     nrgprf::timed_sample s1(*reader(), error);
     if (error)
     {
-        log(log_lvl::error, "%s: error when reading counters: %s",
+        log::logline(log::error, "%s: error when reading counters: %s",
             __func__, error.msg().c_str());
         return error;
     }
@@ -63,7 +63,7 @@ sampler_expected sync_sampler::results()
     nrgprf::timed_sample s2(*reader(), error);
     if (error)
     {
-        log(log_lvl::error, "%s: error when reading counters: %s",
+        log::logline(log::error, "%s: error when reading counters: %s",
             __func__, error.msg().c_str());
         return error;
     }
@@ -209,14 +209,14 @@ bounded_ps::bounded_ps(const nrgprf::reader* r, const std::chrono::milliseconds&
 sampler_expected bounded_ps::async_work()
 {
     nrgprf::error error = nrgprf::error::success();
-    log(log_lvl::debug, "%s: waiting to start", __func__);
+    log::logline(log::debug, "%s: waiting to start", __func__);
     sig().wait();
 
     nrgprf::timed_sample first(*reader(), error);
     nrgprf::timed_sample last = first;
     if (error)
     {
-        log(log_lvl::error, "%s: error when reading counters: %s",
+        log::logline(log::error, "%s: error when reading counters: %s",
             __func__, error.msg().c_str());
         return error;
     }
@@ -226,12 +226,12 @@ sampler_expected bounded_ps::async_work()
         last = nrgprf::timed_sample(*reader(), error);
         if (error)
         {
-            log(log_lvl::error, "%s: error when reading counters: %s",
+            log::logline(log::error, "%s: error when reading counters: %s",
                 __func__, error.msg().c_str());
             return error;
         }
     };
-    log(log_lvl::success, "%s: finished evaluation with %zu samples",
+    log::logline(log::success, "%s: finished evaluation with %zu samples",
         __func__, 2);
     return timed_execution{ std::move(first), std::move(last) };
 }
@@ -252,7 +252,7 @@ sampler_expected unbounded_ps::async_work()
     timed_execution exec;
     exec.reserve(_initial_size);
 
-    log(log_lvl::debug, "%s: waiting to start", __func__);
+    log::logline(log::debug, "%s: waiting to start", __func__);
     sig().wait();
 
     do
@@ -260,7 +260,7 @@ sampler_expected unbounded_ps::async_work()
         exec.emplace_back(*reader(), error);
         if (error)
         {
-            log(log_lvl::error, "%s: error when reading counters: %s",
+            log::logline(log::error, "%s: error when reading counters: %s",
                 __func__, error.msg().c_str());
             return error;
         }
@@ -270,12 +270,12 @@ sampler_expected unbounded_ps::async_work()
     exec.emplace_back(*reader(), error);
     if (error)
     {
-        log(log_lvl::error, "%s: error when reading counters: %s",
+        log::logline(log::error, "%s: error when reading counters: %s",
             __func__, error.msg().c_str());
         return error;
     }
 
-    log(log_lvl::success, "%s: finished evaluation with %zu samples",
+    log::logline(log::success, "%s: finished evaluation with %zu samples",
         __func__, exec.size());
 
     return exec;
