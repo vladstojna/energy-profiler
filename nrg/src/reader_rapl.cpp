@@ -124,7 +124,7 @@ public:
 
 reader_rapl::impl::impl(location_mask, socket_mask, error&)
 {
-    std::cout << fileline("No-op CPU reader\n");
+    std::cerr << fileline("No-op CPU reader\n");
 }
 
 error reader_rapl::impl::read(sample&) const
@@ -368,12 +368,12 @@ reader_rapl::impl::impl(location_mask dmask, socket_mask skt_mask, error& ec) :
         ec = std::move(num_skts.error());
         return;
     }
-    std::cout << fileline(cmmn::concat("found ", std::to_string(num_skts.value()), " sockets\n"));
+    std::cerr << fileline(cmmn::concat("found ", std::to_string(num_skts.value()), " sockets\n"));
     for (uint8_t skt = 0; skt < num_skts.value(); skt++)
     {
         if (!skt_mask[skt])
             continue;
-        std::cout << fileline(cmmn::concat("registered socket: ", std::to_string(skt), "\n"));
+        std::cerr << fileline(cmmn::concat("registered socket: ", std::to_string(skt), "\n"));
 
         char base[96];
         int written = snprintf(base, sizeof(base), "/sys/class/powercap/intel-rapl/intel-rapl:%u", skt);
@@ -419,7 +419,7 @@ error reader_rapl::impl::read(sample& s, uint8_t ev_idx) const
         return { error_code::SYSTEM, system_error_str("Error reading counters") };
     if (curr < _active_events[ev_idx].prev)
     {
-        std::cout << fileline("reader_rapl: detected wraparound\n");
+        std::cerr << fileline("reader_rapl: detected wraparound\n");
         _active_events[ev_idx].curr_max += _active_events[ev_idx].max;
     }
     _active_events[ev_idx].prev = curr;
@@ -483,7 +483,7 @@ error reader_rapl::impl::add_event(const char* base, location_mask dmask, uint8_
         result<event_data> event_data = get_event_data(base);
         if (!event_data)
             return std::move(event_data.error());
-        std::cout << fileline(cmmn::concat("added event: ", base, "\n"));
+        std::cerr << fileline(cmmn::concat("added event: ", base, "\n"));
         _event_map[skt][didx.value()] = _active_events.size();
         _active_events.push_back(std::move(event_data.value()));
     }
@@ -1474,12 +1474,12 @@ reader_rapl::impl::impl(location_mask lmask, socket_mask smask, error& err) :
         err = std::move(sockets.error());
         return;
     }
-    std::cout << fileline(cmmn::concat("Found ", std::to_string(sockets.value()), " sockets\n"));
+    std::cerr << fileline(cmmn::concat("Found ", std::to_string(sockets.value()), " sockets\n"));
     for (uint32_t occ_num = 0; occ_num < sockets.value(); occ_num++)
     {
         if (!smask[occ_num])
             continue;
-        std::cout << fileline(cmmn::concat("Registered socket: ", std::to_string(occ_num), "\n"));
+        std::cerr << fileline(cmmn::concat("Registered socket: ", std::to_string(occ_num), "\n"));
 
         occ::sensor_data_header_block hb{};
         if (err = get_header(*_file, occ_num, hb))
@@ -1543,7 +1543,7 @@ error reader_rapl::impl::add_event(const std::vector<occ::sensor_names_entry>& e
             if (entry.structure_version != 1)
                 return { error_code::NOT_IMPL, "Unsupported structure version" };
             active_entries.push_back(entry);
-            std::cout << fileline("added event - idx=") << +idxref
+            std::cerr << fileline("added event - idx=") << +idxref
                 << " OCC=" << occ_num << " " << entry << "\n";
         }
     }
