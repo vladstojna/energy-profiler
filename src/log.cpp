@@ -118,7 +118,7 @@ namespace
         return os;
     }
 
-    void write_single(std::ostream& os, log::level lvl, const log::content& cnt, log::loc at)
+    void write_single(log::level lvl, const log::content& cnt, log::loc at, std::ostream& os)
     {
         auto ts = timestamp{};
         if (ts && cnt)
@@ -131,38 +131,18 @@ namespace
     void write_multiple(log::level lvl, const log::content& cnt, log::loc at, Args&... streams)
     {
         std::ostringstream oss;
-        write_single(oss, lvl, cnt, at);
-
+        write_single(lvl, cnt, at, oss);
         std::string str = oss.str();
-        auto print = [](std::ostream& os, const std::string& str)
-        {
-            os << str;
-        };
-        (print(streams, str), ...);
+        ((streams << str), ...);
     }
 
-    template<log::level lvl, bool to_file = false, bool duplicate = false>
+    template<log::level lvl, auto& os, auto&... other>
     void write_impl(const log::content& cnt, log::loc at)
     {
-        static_assert(to_file || !duplicate,
-            "If not writing to file, cannot duplicate to std* stream");
-
-        if constexpr (lvl == log::error || lvl == log::warning)
-        {
-            if constexpr (to_file)
-            {
-                if constexpr (lvl == log::error && duplicate)
-                    write_multiple(lvl, cnt, at, _stream, std::cerr);
-                else
-                    write_single(_stream, lvl, cnt, at);
-            }
-            else
-                write_single(std::cerr, lvl, cnt, at);
-        }
-        else if constexpr (to_file)
-            write_single(_stream, lvl, cnt, at);
+        if constexpr (!sizeof...(other))
+            write_single(lvl, cnt, at, os);
         else
-            write_single(std::cout, lvl, cnt, at);
+            write_multiple(lvl, cnt, at, os, other...);
     }
 
     void do_nothing(const log::content&, log::loc) {}
@@ -176,18 +156,10 @@ namespace
         do_nothing
     };
 
-    template<bool to_file, bool dup, log::level... lvl>
-    void set_funcs(std::array<write_func_ptr, 5>& funcs)
+    template<auto& os, log::level... lvl>
+    void set_funcs()
     {
-        static_assert(to_file || !dup,
-            "If not writing to file, cannot duplicate to std* stream");
-
-        if constexpr (to_file && dup)
-            ((funcs[lvl] = write_impl<lvl, true, true>), ...);
-        else if constexpr (to_file)
-            ((funcs[lvl] = write_impl<lvl, true>), ...);
-        else
-            ((funcs[lvl] = write_impl<lvl>), ...);
+        ((funcs[lvl] = write_impl<lvl, os>), ...);
     }
 
     std::string error_opening_file(const std::string& file)
@@ -254,12 +226,13 @@ namespace tep
                     {
                         _stream.setstate(std::ios::badbit);
                         stream_getter = get_fstream;
-                        set_funcs<false, false, error>(funcs);
+                        set_funcs<std::cerr, error>();
                     }
                     else if (path.empty())
                     {
                         stream_getter = get_default_stream;
-                        set_funcs<false, false, debug, info, success, warning, error>(funcs);
+                        set_funcs<std::cout, debug, info, success>();
+                        set_funcs<std::cerr, warning, error>();
                     }
                     else
                     {
@@ -267,8 +240,7 @@ namespace tep
                         if (!_stream)
                             throw std::runtime_error(error_opening_file(path));
                         stream_getter = get_fstream;
-                        set_funcs<true, false, debug, info, success, warning>(funcs);
-                        set_funcs<true, true, error>(funcs);
+                        set_funcs<_stream, debug, info, success, warning, error>();
                     }
                 }, quiet, path);
         }
