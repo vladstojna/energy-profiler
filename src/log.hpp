@@ -39,7 +39,7 @@ namespace tep
 
         static std::mutex& mutex();
 
-        static std::ostream& stream();
+        static std::ostream& stream(level lvl = info);
 
         static void write(level lvl, const content& cnt, loc at);
 

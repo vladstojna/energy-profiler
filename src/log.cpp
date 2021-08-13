@@ -54,7 +54,6 @@ namespace
 
     std::mutex _logmtx;
     std::ofstream _stream;
-    stream_getter_ptr stream_getter = nullptr;
 
     class timestamp
     {
@@ -145,21 +144,27 @@ namespace
             write_multiple(lvl, cnt, at, os, other...);
     }
 
+    template<auto& os>
+    std::ostream& getter_impl()
+    {
+        return os;
+    }
+
     void do_nothing(const log::content&, log::loc) {}
 
-    std::array<write_func_ptr, 5> funcs =
+    std::array<std::pair<write_func_ptr, stream_getter_ptr>, 5> funcs =
     {
-        do_nothing,
-        do_nothing,
-        do_nothing,
-        do_nothing,
-        do_nothing
+        std::pair{ do_nothing, getter_impl<_stream> },
+        std::pair{ do_nothing, getter_impl<_stream> },
+        std::pair{ do_nothing, getter_impl<_stream> },
+        std::pair{ do_nothing, getter_impl<_stream> },
+        std::pair{ do_nothing, getter_impl<_stream> }
     };
 
     template<auto& os, log::level... lvl>
     void set_funcs()
     {
-        ((funcs[lvl] = write_impl<lvl, os>), ...);
+        ((funcs[lvl] = { write_impl<lvl, os>, getter_impl<os> }), ...);
     }
 
     std::string error_opening_file(const std::string& file)
@@ -167,16 +172,6 @@ namespace
         std::string msg("Error opening file ");
         msg.append(file).append(": ").append(std::strerror(errno));
         return msg;
-    }
-
-    std::ostream& get_default_stream()
-    {
-        return std::cout;
-    }
-
-    std::ostream& get_fstream()
-    {
-        return _stream;
     }
 
     static_assert(funcs.size() == log::error + 1);
@@ -223,14 +218,9 @@ namespace tep
             std::call_once(oflag, [](bool quiet, const std::string& path)
                 {
                     if (quiet)
-                    {
-                        _stream.setstate(std::ios::badbit);
-                        stream_getter = get_fstream;
                         set_funcs<std::cerr, error>();
-                    }
                     else if (path.empty())
                     {
-                        stream_getter = get_default_stream;
                         set_funcs<std::cout, debug, info, success>();
                         set_funcs<std::cerr, warning, error>();
                     }
@@ -239,7 +229,6 @@ namespace tep
                         _stream.open(path);
                         if (!_stream)
                             throw std::runtime_error(error_opening_file(path));
-                        stream_getter = get_fstream;
                         set_funcs<_stream, debug, info, success, warning, error>();
                     }
                 }, quiet, path);
@@ -255,14 +244,14 @@ namespace tep
         return _logmtx;
     }
 
-    std::ostream& log::stream()
+    std::ostream& log::stream(level lvl)
     {
-        return (*stream_getter)();
+        return (*funcs[lvl].second)();
     }
 
     void log::write(level lvl, const content& cnt, loc at)
     {
         std::scoped_lock lock(_logmtx);
-        (*funcs[lvl])(cnt, at);
+        (*funcs[lvl].first)(cnt, at);
     }
 }
