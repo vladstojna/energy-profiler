@@ -1,7 +1,7 @@
 // error.cpp
 
 #include "error.hpp"
-#include "util.hpp"
+#include "log.hpp"
 
 #include <cstring>
 #include <iostream>
@@ -76,6 +76,10 @@ tracer_error tep::get_syserror__(const char* file, int line, int errnum,
 {
     char error_msg[256];
     char* msg = strerror_r(errnum, error_msg, sizeof(error_msg));
-    log__(file, line, log_lvl::error, "[%d] %s: %s", tid, comment, msg);
+    log::write(
+        log::error,
+        { "[%d] %s: %s", tid, comment, msg },
+        { file, line }
+    );
     return { code, msg };
 }

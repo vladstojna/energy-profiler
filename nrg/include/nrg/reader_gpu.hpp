@@ -5,6 +5,7 @@
 #include <nrg/reader.hpp>
 #include <nrg/types.hpp>
 
+#include <iostream>
 #include <memory>
 #include <vector>
 
@@ -40,10 +41,10 @@ namespace nrgprf
         static result<readings_type::type> support();
 
     public:
-        reader_gpu(readings_type::type, device_mask, error&);
-        reader_gpu(readings_type::type, error&);
-        reader_gpu(device_mask, error&);
-        reader_gpu(error&);
+        reader_gpu(readings_type::type, device_mask, error&, std::ostream & = std::cout);
+        reader_gpu(readings_type::type, error&, std::ostream & = std::cout);
+        reader_gpu(device_mask, error&, std::ostream & = std::cout);
+        reader_gpu(error&, std::ostream & = std::cout);
 
         reader_gpu(const reader_gpu& other);
         reader_gpu& operator=(const reader_gpu& other);

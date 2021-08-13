@@ -3,6 +3,7 @@
 #include "ptrace_restarter.hpp"
 #include "ptrace_wrapper.hpp"
 #include "error.hpp"
+#include "log.hpp"
 #include "util.hpp"
 #include "registers.hpp"
 
@@ -49,7 +50,7 @@ tep::ptrace_restarter::ptrace_restarter(pid_t tid, pid_t tracee, ptrace_wrapper&
         return;
     }
 
-    log(log_lvl::warning, "[%d] PTRACE_CONT failed with ESRCH: waiting for tracee %d",
+    log::logline(log::warning, "[%d] PTRACE_CONT failed with ESRCH: waiting for tracee %d",
         tid, tracee);
     int wait_status;
     pid_t waited_pid = waitpid(tracee, &wait_status, 0);
@@ -65,7 +66,7 @@ tep::ptrace_restarter::ptrace_restarter(pid_t tid, pid_t tracee, ptrace_wrapper&
     if (err)
         return;
 
-    log(log_lvl::warning, "[%d] waited for tracee %d with signal: %s (status 0x%x),"
+    log::logline(log::warning, "[%d] waited for tracee %d with signal: %s (status 0x%x),"
         " rip @ 0x%" PRIxPTR, tid, tracee,
         sig_str(WSTOPSIG(wait_status)), wait_status, regs.get_ip());
 

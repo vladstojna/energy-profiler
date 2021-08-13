@@ -166,7 +166,7 @@ struct reader_gpu::impl
     std::array<std::array<int8_t, 2>, max_devices> event_map;
     std::vector<event> events;
 
-    impl(readings_type::type rt, device_mask dmask, error& ec);
+    impl(readings_type::type rt, device_mask dmask, error& ec, std::ostream& os);
 
     error read(sample& s, uint8_t ev_idx) const
     {
@@ -227,7 +227,7 @@ struct reader_gpu::impl
 {
     static result<readings_type::type> support(device_mask devmask);
 
-    impl(readings_type::type rt, device_mask dmask, error& ec);
+    impl(readings_type::type rt, device_mask dmask, error& ec, std::ostream& os);
 
     error read(sample& s) const;
     error read(sample& s, uint8_t ev_idx) const;
@@ -290,7 +290,7 @@ lib_handle& lib_handle::operator=(const lib_handle&)
     return *this;
 }
 
-reader_gpu::impl::impl(readings_type::type rt, device_mask dev_mask, error& ec) :
+reader_gpu::impl::impl(readings_type::type rt, device_mask dev_mask, error& ec, std::ostream& os) :
     handle(ec),
     event_map(),
     events()
@@ -327,7 +327,7 @@ reader_gpu::impl::impl(readings_type::type rt, device_mask dev_mask, error& ec) 
             ec = { error_code::READER_GPU, error_str("Failed to get device name", res) };
             return;
         }
-        std::cout << fileline(cmmn::concat("device: ", std::to_string(i), ", name: ", name, "\n"));
+        os << fileline(cmmn::concat("device: ", std::to_string(i), ", name: ", name, "\n"));
 
         auto sup_dev = support(handle);
         if (!sup_dev && (ec = std::move(sup_dev.error())))
@@ -337,14 +337,14 @@ reader_gpu::impl::impl(readings_type::type rt, device_mask dev_mask, error& ec) 
             if (!(elem.first & rt))
                 continue;
             if (!(sup_dev.value() & elem.first))
-                std::cout << event_not_supported(i, elem.first) << "\n";
+                os << event_not_supported(i, elem.first) << "\n";
             else if (!(sup.value() & elem.first))
-                std::cout << event_not_added(i, elem.first) << "\n";
+                os << event_not_added(i, elem.first) << "\n";
             else
             {
                 event_map[i][bitpos(elem.first)] = events.size();
                 events.push_back({ handle, i, elem.second });
-                std::cout << event_added(i, elem.first) << "\n";
+                os << event_added(i, elem.first) << "\n";
             }
         }
     }
@@ -487,7 +487,7 @@ lib_handle& lib_handle::operator=(const lib_handle&)
     return *this;
 }
 
-reader_gpu::impl::impl(readings_type::type rt, device_mask dev_mask, error& ec) :
+reader_gpu::impl::impl(readings_type::type rt, device_mask dev_mask, error& ec, std::ostream& os) :
     handle(ec),
     event_map(),
     events()
@@ -507,8 +507,8 @@ reader_gpu::impl::impl(readings_type::type rt, device_mask dev_mask, error& ec) 
         return;
     }
 
-    std::cout << fileline("ROCm SMI version info: ");
-    std::cout << "major: " << version.major << ", minor: " << version.minor
+    os << fileline("ROCm SMI version info: ");
+    os << "major: " << version.major << ", minor: " << version.minor
         << ", patch: " << version.patch << ", build: " << version.build << "\n";
 
     auto sup = support(dev_mask);
@@ -535,7 +535,7 @@ reader_gpu::impl::impl(readings_type::type rt, device_mask dev_mask, error& ec) 
             ec = { error_code::READER_GPU, error_str("Failed to get device name", res) };
             return;
         }
-        std::cout << fileline("")
+        os << fileline("")
             << "idx: " << dev_idx
             << ", PCI id: " << pciid
             << ", name: " << name << "\n";
@@ -548,14 +548,14 @@ reader_gpu::impl::impl(readings_type::type rt, device_mask dev_mask, error& ec) 
             if (!(elem.first & rt))
                 continue;
             if (!(sup_dev.value() & elem.first))
-                std::cout << event_not_supported(dev_idx, elem.first) << "\n";
+                os << event_not_supported(dev_idx, elem.first) << "\n";
             else if (!(sup.value() & elem.first))
-                std::cout << event_not_added(dev_idx, elem.first) << "\n";
+                os << event_not_added(dev_idx, elem.first) << "\n";
             else
             {
                 event_map[dev_idx][bitpos(elem.first)] = events.size();
                 events.push_back({ dev_idx, dev_idx, elem.second });
-                std::cout << event_added(dev_idx, elem.first) << "\n";
+                os << event_added(dev_idx, elem.first) << "\n";
             }
         }
     }
@@ -634,9 +634,9 @@ result<units_energy> reader_gpu::impl::get_board_energy(const sample&, uint8_t) 
 
 #else // GPU_NONE
 
-reader_gpu::impl::impl(readings_type::type, device_mask, error&)
+reader_gpu::impl::impl(readings_type::type, device_mask, error&, std::ostream& os)
 {
-    std::cout << fileline("No-op GPU reader\n");
+    os << fileline("No-op GPU reader\n");
 }
 
 int8_t reader_gpu::impl::event_idx(readings_type::type, uint8_t) const
@@ -713,20 +713,20 @@ result<readings_type::type> reader_gpu::support()
     return support(device_mask(0xff));
 }
 
-reader_gpu::reader_gpu(readings_type::type rt, device_mask dev_mask, error& ec) :
-    _impl(std::make_unique<reader_gpu::impl>(rt, dev_mask, ec))
+reader_gpu::reader_gpu(readings_type::type rt, device_mask dev_mask, error& ec, std::ostream& os) :
+    _impl(std::make_unique<reader_gpu::impl>(rt, dev_mask, ec, os))
 {}
 
-reader_gpu::reader_gpu(readings_type::type rt, error& ec) :
-    reader_gpu(rt, device_mask(0xff), ec)
+reader_gpu::reader_gpu(readings_type::type rt, error& ec, std::ostream& os) :
+    reader_gpu(rt, device_mask(0xff), ec, os)
 {}
 
-reader_gpu::reader_gpu(device_mask dev_mask, error& ec) :
-    reader_gpu(readings_type::all, dev_mask, ec)
+reader_gpu::reader_gpu(device_mask dev_mask, error& ec, std::ostream& os) :
+    reader_gpu(readings_type::all, dev_mask, ec, os)
 {}
 
-reader_gpu::reader_gpu(error& ec) :
-    reader_gpu(readings_type::all, device_mask(0xff), ec)
+reader_gpu::reader_gpu(error& ec, std::ostream& os) :
+    reader_gpu(readings_type::all, device_mask(0xff), ec, os)
 {}
 
 reader_gpu::reader_gpu(const reader_gpu& other) :

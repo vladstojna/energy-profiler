@@ -109,7 +109,7 @@ namespace
 class reader_rapl::impl
 {
 public:
-    impl(location_mask, socket_mask, error&);
+    impl(location_mask, socket_mask, error&, std::ostream&);
 
     error read(sample&) const;
     error read(sample&, uint8_t) const;
@@ -122,9 +122,9 @@ public:
     result<sensor_value> value(const sample&, uint8_t) const;
 };
 
-reader_rapl::impl::impl(location_mask, socket_mask, error&)
+reader_rapl::impl::impl(location_mask, socket_mask, error&, std::ostream& os)
 {
-    std::cout << fileline("No-op CPU reader\n");
+    os << fileline("No-op CPU reader\n");
 }
 
 error reader_rapl::impl::read(sample&) const
@@ -339,7 +339,7 @@ class reader_rapl::impl
     std::vector<event_data> _active_events;
 
 public:
-    impl(location_mask, socket_mask, error&);
+    impl(location_mask, socket_mask, error&, std::ostream&);
 
     error read(sample&) const;
     error read(sample&, uint8_t) const;
@@ -352,10 +352,10 @@ public:
     result<sensor_value> value(const sample& s, uint8_t) const;
 
 private:
-    error add_event(const char* base, location_mask dmask, uint8_t skt);
+    error add_event(const char* base, location_mask dmask, uint8_t skt, std::ostream& os);
 };
 
-reader_rapl::impl::impl(location_mask dmask, socket_mask skt_mask, error& ec) :
+reader_rapl::impl::impl(location_mask dmask, socket_mask skt_mask, error& ec, std::ostream& os) :
     _event_map(),
     _active_events()
 {
@@ -368,16 +368,16 @@ reader_rapl::impl::impl(location_mask dmask, socket_mask skt_mask, error& ec) :
         ec = std::move(num_skts.error());
         return;
     }
-    std::cout << fileline(cmmn::concat("found ", std::to_string(num_skts.value()), " sockets\n"));
+    os << fileline(cmmn::concat("found ", std::to_string(num_skts.value()), " sockets\n"));
     for (uint8_t skt = 0; skt < num_skts.value(); skt++)
     {
         if (!skt_mask[skt])
             continue;
-        std::cout << fileline(cmmn::concat("registered socket: ", std::to_string(skt), "\n"));
+        os << fileline(cmmn::concat("registered socket: ", std::to_string(skt), "\n"));
 
         char base[96];
         int written = snprintf(base, sizeof(base), "/sys/class/powercap/intel-rapl/intel-rapl:%u", skt);
-        error err = add_event(base, dmask, skt);
+        error err = add_event(base, dmask, skt, os);
         if (err)
         {
             ec = std::move(err);
@@ -390,7 +390,7 @@ reader_rapl::impl::impl(location_mask dmask, socket_mask skt_mask, error& ec) :
             // only consider the domain if the file exists
             if (access(base, F_OK) != -1)
             {
-                err = add_event(base, dmask, skt);
+                err = add_event(base, dmask, skt, os);
                 if (err)
                 {
                     ec = std::move(err);
@@ -419,7 +419,7 @@ error reader_rapl::impl::read(sample& s, uint8_t ev_idx) const
         return { error_code::SYSTEM, system_error_str("Error reading counters") };
     if (curr < _active_events[ev_idx].prev)
     {
-        std::cout << fileline("reader_rapl: detected wraparound\n");
+        std::cerr << fileline("detected wraparound\n");
         _active_events[ev_idx].curr_max += _active_events[ev_idx].max;
     }
     _active_events[ev_idx].prev = curr;
@@ -473,7 +473,9 @@ result<sensor_value> reader_rapl::impl::value<loc::gpu>(const sample&, uint8_t) 
     return error(error_code::NO_EVENT);
 }
 
-error reader_rapl::impl::add_event(const char* base, location_mask dmask, uint8_t skt)
+error
+reader_rapl::impl::add_event(
+    const char* base, location_mask dmask, uint8_t skt, std::ostream& os)
 {
     result<int32_t> didx = get_domain_idx(base);
     if (!didx)
@@ -483,7 +485,7 @@ error reader_rapl::impl::add_event(const char* base, location_mask dmask, uint8_
         result<event_data> event_data = get_event_data(base);
         if (!event_data)
             return std::move(event_data.error());
-        std::cout << fileline(cmmn::concat("added event: ", base, "\n"));
+        os << fileline(cmmn::concat("added event: ", base, "\n"));
         _event_map[skt][didx.value()] = _active_events.size();
         _active_events.push_back(std::move(event_data.value()));
     }
@@ -1431,7 +1433,7 @@ class reader_rapl::impl
     std::vector<event_data> _active_events;
 
 public:
-    impl(location_mask, socket_mask, error&);
+    impl(location_mask, socket_mask, error&, std::ostream&);
 
     error read(sample&) const;
     error read(sample&, uint8_t) const;
@@ -1444,16 +1446,18 @@ public:
     result<sensor_value> value(const sample& s, uint8_t) const;
 
 private:
-    error add_event(const std::vector<occ::sensor_names_entry>& entries,
+    error add_event(
+        const std::vector<occ::sensor_names_entry>& entries,
         uint32_t occ_num,
-        uint32_t location);
+        uint32_t location,
+        std::ostream& os);
 
     error read_single_occ(const event_data& ed,
         occ::sensor_buffers& sbuffs,
         sample& s) const;
 };
 
-reader_rapl::impl::impl(location_mask lmask, socket_mask smask, error& err) :
+reader_rapl::impl::impl(location_mask lmask, socket_mask smask, error& err, std::ostream& os) :
     _file(std::make_shared<std::ifstream>(sensors_file, std::ios::in | std::ios::binary)),
     _event_map(),
     _active_events()
@@ -1474,12 +1478,12 @@ reader_rapl::impl::impl(location_mask lmask, socket_mask smask, error& err) :
         err = std::move(sockets.error());
         return;
     }
-    std::cout << fileline(cmmn::concat("Found ", std::to_string(sockets.value()), " sockets\n"));
+    os << fileline(cmmn::concat("Found ", std::to_string(sockets.value()), " sockets\n"));
     for (uint32_t occ_num = 0; occ_num < sockets.value(); occ_num++)
     {
         if (!smask[occ_num])
             continue;
-        std::cout << fileline(cmmn::concat("Registered socket: ", std::to_string(occ_num), "\n"));
+        os << fileline(cmmn::concat("Registered socket: ", std::to_string(occ_num), "\n"));
 
         occ::sensor_data_header_block hb{};
         if (err = get_header(*_file, occ_num, hb))
@@ -1505,7 +1509,7 @@ reader_rapl::impl::impl(location_mask lmask, socket_mask smask, error& err) :
             // the system power sensor only exists in the master OCC which is OCC 0
             if (occ_num != 0 && bit_to_sensor_data[loc].gsid == gsid_pwrsys)
                 continue;
-            add_event(entries, occ_num, loc);
+            add_event(entries, occ_num, loc, os);
         }
     }
 
@@ -1513,9 +1517,12 @@ reader_rapl::impl::impl(location_mask lmask, socket_mask smask, error& err) :
         err = { error_code::SETUP_ERROR, "No events were added" };
 }
 
-error reader_rapl::impl::add_event(const std::vector<occ::sensor_names_entry>& entries,
+error
+reader_rapl::impl::add_event(
+    const std::vector<occ::sensor_names_entry>& entries,
     uint32_t occ_num,
-    uint32_t loc)
+    uint32_t loc,
+    std::ostream& os)
 {
     int8_t& idxref = _event_map[occ_num][loc];
     // find if an event for a certain OCC has been added
@@ -1543,7 +1550,7 @@ error reader_rapl::impl::add_event(const std::vector<occ::sensor_names_entry>& e
             if (entry.structure_version != 1)
                 return { error_code::NOT_IMPL, "Unsupported structure version" };
             active_entries.push_back(entry);
-            std::cout << fileline("added event - idx=") << +idxref
+            os << fileline("added event - idx=") << +idxref
                 << " OCC=" << occ_num << " " << entry << "\n";
         }
     }
@@ -1635,20 +1642,20 @@ result<sensor_value> reader_rapl::impl::value(const sample& s, uint8_t skt) cons
 
 // reader_rapl
 
-reader_rapl::reader_rapl(location_mask dmask, socket_mask skt_mask, error& ec) :
-    _impl(std::make_unique<reader_rapl::impl>(dmask, skt_mask, ec))
+reader_rapl::reader_rapl(location_mask dmask, socket_mask skt_mask, error& ec, std::ostream& os) :
+    _impl(std::make_unique<reader_rapl::impl>(dmask, skt_mask, ec, os))
 {}
 
-reader_rapl::reader_rapl(location_mask dmask, error& ec) :
-    reader_rapl(dmask, socket_mask(~0x0), ec)
+reader_rapl::reader_rapl(location_mask dmask, error& ec, std::ostream& os) :
+    reader_rapl(dmask, socket_mask(~0x0), ec, os)
 {}
 
-reader_rapl::reader_rapl(socket_mask skt_mask, error& ec) :
-    reader_rapl(location_mask(~0x0), skt_mask, ec)
+reader_rapl::reader_rapl(socket_mask skt_mask, error& ec, std::ostream& os) :
+    reader_rapl(location_mask(~0x0), skt_mask, ec, os)
 {}
 
-reader_rapl::reader_rapl(error& ec) :
-    reader_rapl(location_mask(~0x0), socket_mask(~0x0), ec)
+reader_rapl::reader_rapl(error& ec, std::ostream& os) :
+    reader_rapl(location_mask(~0x0), socket_mask(~0x0), ec, os)
 {}
 
 reader_rapl::reader_rapl(const reader_rapl& other) :

@@ -9,15 +9,17 @@
 #include "profiler.hpp"
 #include "ptrace_wrapper.hpp"
 #include "target.hpp"
-#include "util.hpp"
+#include "log.hpp"
 
 
 int main(int argc, char* argv[])
 {
     using namespace tep;
-    cmmn::expected<arguments, arg_error> args = parse_arguments(argc, argv);
+    std::optional<arguments> args = parse_arguments(argc, argv);
     if (!args)
         return 1;
+
+    log::init(args.value().logargs.quiet, args.value().logargs.path);
 
     dbg_expected<dbg_info> dbg_info = dbg_info::create(args.value().target);
     if (!dbg_info)
@@ -25,7 +27,6 @@ int main(int argc, char* argv[])
         std::cerr << dbg_info.error() << std::endl;
         return 1;
     }
-
     cfg_result config = load_config(args.value().config);
     if (!config)
     {
@@ -63,8 +64,6 @@ int main(int argc, char* argv[])
         return 0;
     }
     else if (child_pid == -1)
-    {
-        log(log_lvl::error, "fork(): %s", strerror(errnum));
-    }
+        log::logline(log::error, "fork(): %s", strerror(errnum));
     return 1;
 }

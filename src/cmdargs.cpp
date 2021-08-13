@@ -91,26 +91,30 @@ void print_usage(const char* profiler_name)
     std::cout << "\n";
     std::cout << "-c, --config <file>   (optional) read from configuration file <file>\n";
     std::cout << "                      if <file> is 'stdin' then stdin is used\n";
-    std::cout << "                      cannot be empty\n";
-    std::cout << "                      (default: stdin)\n";
+    std::cout << "                      cannot be empty (default: stdin)\n";
     std::cout << "\n";
     std::cout << "-o, --output <file>   (optional) write profiling results to <file>\n";
     std::cout << "                      if <file> is 'stdout' then stdout is used\n";
-    std::cout << "                      cannot be empty\n";
-    std::cout << "                      (default: stdout)\n";
+    std::cout << "                      cannot be empty (default: stdout)\n";
     std::cout << "\n";
     std::cout << "--idle                (default) gather idle readings at startup\n";
     std::cout << "--no-idle             do not gather idle readings at startup\n";
+    std::cout << "-q, --quiet           suppress log messages except errors to stderr\n";
+    std::cout << "-l, --log <file>      (optional) write log to <file>\n";
+    std::cout << "                      cannot be empty (default: stdout)\n";
+    std::cout << "                      errors are always written to stderr, regardless";
     std::cout << std::endl;
 }
 
-cmmn::expected<arguments, arg_error> tep::parse_arguments(int argc, char* const argv[])
+std::optional<arguments> tep::parse_arguments(int argc, char* const argv[])
 {
     int c;
     int option_index = 0;
     int idle = 1;
+    bool quiet = false;
     std::string output;
     std::string config;
+    std::string logpath;
 
     struct option long_options[] =
     {
@@ -119,10 +123,12 @@ cmmn::expected<arguments, arg_error> tep::parse_arguments(int argc, char* const 
         { "no-idle", no_argument, &idle, 0},
         { "config", required_argument, 0, 'c' },
         { "output", required_argument, 0, 'o' },
+        { "quiet", no_argument, 0, 'q' },
+        { "log", required_argument, 0, 'l' },
         {0, 0, 0, 0}
     };
 
-    while ((c = getopt_long(argc, argv, "hc:o:", long_options, &option_index)) != -1)
+    while ((c = getopt_long(argc, argv, "hqc:o:l:", long_options, &option_index)) != -1)
     {
         switch (c)
         {
@@ -135,11 +141,17 @@ cmmn::expected<arguments, arg_error> tep::parse_arguments(int argc, char* const 
         case 'o':
             output = optarg;
             break;
+        case 'l':
+            logpath = optarg;
+            break;
+        case 'q':
+            quiet = true;
+            break;
         case 'h':
         case '?':
             // getopt already printed and error message
             print_usage(argv[0]);
-            return arg_error();
+            return std::nullopt;
         default:
             assert(false);
         }
@@ -148,7 +160,13 @@ cmmn::expected<arguments, arg_error> tep::parse_arguments(int argc, char* const 
     if (optind == argc)
     {
         std::cerr << "missing target executable name\n";
-        return arg_error();
+        return std::nullopt;
+    }
+
+    if (quiet && !logpath.empty())
+    {
+        std::cerr << "both -q/--quiet and -l/--log provided\n";
+        return std::nullopt;
     }
 
     optional_output_file of(output);
@@ -158,19 +176,20 @@ cmmn::expected<arguments, arg_error> tep::parse_arguments(int argc, char* const 
     {
         std::cerr << "error opening output file '" << output << "': "
             << strerror(errno) << "\n";
-        return arg_error();
+        return std::nullopt;
     }
     if (!cfg)
     {
         std::cerr << "error opening config file '" << config << "': "
             << strerror(errno) << "\n";
-        return arg_error();
+        return std::nullopt;
     }
 
     return arguments{
         flags(idle),
         std::move(config),
         std::move(of),
+        log_args{ bool(quiet), std::move(logpath) },
         std::string(argv[optind]),
         &argv[optind]
     };

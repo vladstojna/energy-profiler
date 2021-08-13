@@ -6,6 +6,7 @@
 #include <nrg/reader.hpp>
 #include <nrg/types.hpp>
 
+#include <iostream>
 #include <memory>
 #include <vector>
 
@@ -32,10 +33,10 @@ namespace nrgprf
         std::unique_ptr<impl> _impl;
 
     public:
-        reader_rapl(location_mask, socket_mask, error&);
-        reader_rapl(location_mask, error&);
-        reader_rapl(socket_mask, error&);
-        reader_rapl(error&);
+        reader_rapl(location_mask, socket_mask, error&, std::ostream & = std::cout);
+        reader_rapl(location_mask, error&, std::ostream & = std::cout);
+        reader_rapl(socket_mask, error&, std::ostream & = std::cout);
+        reader_rapl(error&, std::ostream & = std::cout);
 
         reader_rapl(const reader_rapl& other);
         reader_rapl& operator=(const reader_rapl& other);
