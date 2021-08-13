@@ -1625,7 +1625,7 @@ result<sensor_value> reader_rapl::impl::value(const sample& s, uint8_t skt) cons
             time_point tp = canonicalize_timestamp(value_timestamp);
             if (!power.count())
                 return error(error_code::NOT_IMPL, "Unsupported power units found");
-            return sensor_value{ tp, power };
+            return sensor_value{ tp, unit_cast<decltype(sensor_value::power)>(power) };
         }
     };
     return error(error_code::NO_EVENT);
