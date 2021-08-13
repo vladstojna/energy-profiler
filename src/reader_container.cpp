@@ -32,7 +32,8 @@ create_cpu_reader(const config_data::params& params, tracer_error& err)
     nrgprf::reader_rapl reader(
         nrgprf::location_mask(params.domain_mask()),
         nrgprf::socket_mask(params.socket_mask()),
-        error);
+        error,
+        log::stream());
     if (error)
         err = handle_reader_error(__func__, error);
     else
@@ -51,7 +52,8 @@ create_gpu_reader(const config_data::params& params, tracer_error& err)
     nrgprf::reader_gpu reader(
         effective_readings_type(support ? support.value() : nrgprf::readings_type::all),
         devmask,
-        error);
+        error,
+        log::stream());
     if (error)
         err = handle_reader_error(__func__, error);
     else

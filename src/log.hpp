@@ -2,6 +2,7 @@
 
 #include <iosfwd>
 #include <string>
+#include <mutex>
 
 namespace tep
 {
@@ -35,6 +36,10 @@ namespace tep
         };
 
         static void init(bool quiet = false, const std::string& path = "");
+
+        static std::mutex& mutex();
+
+        static std::ostream& stream();
 
         static void write(level lvl, const content& cnt, loc at);
 
