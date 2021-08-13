@@ -11,7 +11,7 @@ incl := ../include $(inc_dir)
 src  := $(wildcard $(src_dir)/*.cpp)
 obj  := $(patsubst $(src_dir)/%.cpp, $(obj_dir)/%.o, $(src))
 deps := $(patsubst $(src_dir)/%.cpp, $(dep_dir)/%.d, $(src))
-tgt  := $(tgt_dir)/libnrg.so
+tgt  := $(tgt_dir)/libnrg
 
 # debug build
 dbg ?=
@@ -19,6 +19,15 @@ dbg ?=
 gpu ?=
 # no-op CPU
 cpu ?=
+
+# autodetect GPU vendor
+ifneq ($(shell command -v nvcc),)
+gpu := GPU_NV
+else
+ifneq ($(shell command -v hipcc),)
+gpu := GPU_AMD
+endif
+endif
 
 # linker flags
 ldflags := -shared
@@ -71,11 +80,15 @@ ifdef cpu
 cflags += $(addprefix -D, $(cpu))
 endif
 
+# archive
+ar := ar
+arflags := -crs
+
 # rules -----------------------------------------------------------------------
 
-.PHONY: default remake clean
+.PHONY: default remake clean dynamic static
 
-default: $(tgt)
+default: dynamic
 
 $(tgt_dir):
 	@mkdir -p $@
@@ -84,8 +97,15 @@ $(obj_dir):
 $(dep_dir):
 	@mkdir -p $@
 
-$(tgt): $(obj) | $(tgt_dir)
+dynamic: $(tgt).so
+
+static: $(tgt).a
+
+$(tgt).so: $(obj) | $(tgt_dir)
 	$(cc) $^ $(ldflags) -o $@
+
+$(tgt).a: $(obj) | $(tgt_dir)
+	$(ar) $(arflags) $@ $^
 
 $(obj_dir)/%.o: $(src_dir)/%.cpp $(dep_dir)/%.d | $(obj_dir) $(dep_dir)
 	$(cc) -MT $@ -MMD -MP -MF $(dep_dir)/$*.d $(cflags) -c -o $@ $<
