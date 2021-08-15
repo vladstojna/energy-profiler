@@ -4,8 +4,10 @@ tgt_dir := lib
 obj_dir := obj
 inc_dir := include
 dep_dir := $(obj_dir)/.deps
+lib_dir := ../lib
 
-incl := ../include $(inc_dir)
+libs_incl := $(addprefix $(lib_dir)/, expected/include)
+incl := ../include $(inc_dir) $(libs_incl)
 
 # files
 src  := $(wildcard $(src_dir)/*.cpp)
