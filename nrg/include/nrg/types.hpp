@@ -6,7 +6,7 @@
 #include <nrg/constants.hpp>
 #include <nrg/error.hpp>
 #include <nrg/units.hpp>
-#include <nonstd/expected.hpp>
+#include <util/expectedfwd.hpp>
 
 #include <bitset>
 
