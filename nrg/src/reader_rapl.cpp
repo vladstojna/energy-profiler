@@ -9,6 +9,8 @@
 
 #if defined CPU_NONE
 
+#include <nonstd/expected.hpp>
+
 #include "util.hpp"
 
 #include <cassert>
@@ -18,6 +20,7 @@
 
 #include <nrg/sample.hpp>
 #include <util/concat.hpp>
+#include <nonstd/expected.hpp>
 
 #include "util.hpp"
 
@@ -33,6 +36,7 @@
 
 #include <nrg/sample.hpp>
 #include <util/concat.hpp>
+#include <nonstd/expected.hpp>
 
 #include "util.hpp"
 

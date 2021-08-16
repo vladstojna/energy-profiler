@@ -13,6 +13,7 @@
 #include <nrg/reader_gpu.hpp>
 #include <nrg/sample.hpp>
 #include <util/concat.hpp>
+#include <nonstd/expected.hpp>
 #include "util.hpp"
 
 #include <iostream>
@@ -27,6 +28,7 @@
 #include <nrg/reader_gpu.hpp>
 #include <nrg/sample.hpp>
 #include <util/concat.hpp>
+#include <nonstd/expected.hpp>
 #include "util.hpp"
 
 #include <iostream>
@@ -41,6 +43,7 @@
 #include <nrg/reader_gpu.hpp>
 #include <nrg/sample.hpp>
 #include <util/concat.hpp>
+#include <nonstd/expected.hpp>
 #include "util.hpp"
 
 #include <cassert>
