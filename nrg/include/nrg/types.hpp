@@ -6,7 +6,7 @@
 #include <nrg/constants.hpp>
 #include <nrg/error.hpp>
 #include <nrg/units.hpp>
-#include <util/expected.hpp>
+#include <nonstd/expected.hpp>
 
 #include <bitset>
 
@@ -19,7 +19,7 @@ namespace nrgprf
     using sensor_value = detail::reader_return;
 
     template<typename R>
-    using result = cmmn::expected<R, error>;
+    using result = nonstd::expected<R, error>;
 
     using location_mask = std::bitset<max_locations>;
     using socket_mask = std::bitset<max_sockets>;
