@@ -310,7 +310,7 @@ namespace
         auto filed = file_descriptor::create(filename);
         if (!filed)
             return rettype(nonstd::unexpect, std::move(filed.error()));
-        if (read_buff(filed.value().value, name, sizeof(name)) < 0)
+        if (read_buff(filed->value, name, sizeof(name)) < 0)
             return rettype(nonstd::unexpect,
                 error_code::SYSTEM,
                 system_error_str(filename));
@@ -333,7 +333,7 @@ namespace
         if (!filed)
             return rettype(nonstd::unexpect, std::move(filed.error()));
         uint64_t max_value;
-        if (read_uint64(filed.value().value, &max_value) < 0)
+        if (read_uint64(filed->value, &max_value) < 0)
             return rettype(nonstd::unexpect,
                 error_code::SYSTEM,
                 system_error_str(filename));
@@ -341,7 +341,7 @@ namespace
         filed = file_descriptor::create(filename);
         if (!filed)
             return rettype(nonstd::unexpect, std::move(filed.error()));
-        return event_data{ std::move(filed.value()), max_value };
+        return event_data{ std::move(*filed), max_value };
     }
 }
 
@@ -380,8 +380,8 @@ reader_rapl::impl::impl(location_mask dmask, socket_mask skt_mask, error& ec, st
         ec = std::move(num_skts.error());
         return;
     }
-    os << fileline(cmmn::concat("found ", std::to_string(num_skts.value()), " sockets\n"));
-    for (uint8_t skt = 0; skt < num_skts.value(); skt++)
+    os << fileline(cmmn::concat("found ", std::to_string(*num_skts), " sockets\n"));
+    for (uint8_t skt = 0; skt < *num_skts; skt++)
     {
         if (!skt_mask[skt])
             continue;
@@ -493,14 +493,14 @@ reader_rapl::impl::add_event(
     result<int32_t> didx = get_domain_idx(base);
     if (!didx)
         return std::move(didx.error());
-    if (dmask[didx.value()])
+    if (dmask[*didx])
     {
         result<event_data> event_data = get_event_data(base);
         if (!event_data)
             return std::move(event_data.error());
         os << fileline(cmmn::concat("added event: ", base, "\n"));
-        _event_map[skt][didx.value()] = _active_events.size();
-        _active_events.push_back(std::move(event_data.value()));
+        _event_map[skt][*didx] = _active_events.size();
+        _active_events.push_back(std::move(*event_data));
     }
     return error::success();
 }
@@ -1491,8 +1491,8 @@ reader_rapl::impl::impl(location_mask lmask, socket_mask smask, error& err, std:
         err = std::move(sockets.error());
         return;
     }
-    os << fileline(cmmn::concat("Found ", std::to_string(sockets.value()), " sockets\n"));
-    for (uint32_t occ_num = 0; occ_num < sockets.value(); occ_num++)
+    os << fileline(cmmn::concat("Found ", std::to_string(*sockets), " sockets\n"));
+    for (uint32_t occ_num = 0; occ_num < *sockets; occ_num++)
     {
         if (!smask[occ_num])
             continue;

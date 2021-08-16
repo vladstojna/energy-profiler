@@ -339,9 +339,9 @@ reader_gpu::impl::impl(readings_type::type rt, device_mask dev_mask, error& ec, 
         {
             if (!(elem.first & rt))
                 continue;
-            if (!(sup_dev.value() & elem.first))
+            if (!(*sup_dev & elem.first))
                 os << event_not_supported(i, elem.first) << "\n";
-            else if (!(sup.value() & elem.first))
+            else if (!(*sup & elem.first))
                 os << event_not_added(i, elem.first) << "\n";
             else
             {
@@ -377,7 +377,7 @@ result<readings_type::type> reader_gpu::impl::support(device_mask devmask)
                 error_code::SETUP_ERROR,
                 error_str("Failed to get device handle", res));
         if (auto sup = support(devhandle))
-            retval = retval & sup.value();
+            retval = retval & *sup;
         else
             return sup;
     }
@@ -562,9 +562,9 @@ reader_gpu::impl::impl(readings_type::type rt, device_mask dev_mask, error& ec, 
         {
             if (!(elem.first & rt))
                 continue;
-            if (!(sup_dev.value() & elem.first))
+            if (!(*sup_dev & elem.first))
                 os << event_not_supported(dev_idx, elem.first) << "\n";
-            else if (!(sup.value() & elem.first))
+            else if (!(*sup & elem.first))
                 os << event_not_added(dev_idx, elem.first) << "\n";
             else
             {
@@ -595,7 +595,7 @@ result<readings_type::type> reader_gpu::impl::support(device_mask devmask)
         if (!devmask[i])
             continue;
         if (auto sup = support(i))
-            retval = retval & sup.value();
+            retval = retval & *sup;
         else
             return sup;
     }
