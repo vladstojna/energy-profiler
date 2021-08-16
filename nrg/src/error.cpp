@@ -58,6 +58,20 @@ error::error(error_code code, std::string&& message) :
     _data(std::make_unique<data>(code, std::move(message)))
 {}
 
+error::~error() = default;
+error::error(error&&) = default;
+error& error::operator=(error&&) = default;
+
+error::error(const error & other) :
+    _data(std::make_unique<data>(*other._data))
+{}
+
+error& error::operator=(const error & other)
+{
+    _data = std::make_unique<data>(*other._data);
+    return *this;
+}
+
 error_code error::code() const
 {
     if (!_data)
@@ -92,12 +106,12 @@ error::operator const std::string& () const
     return msg();
 }
 
-std::ostream& nrgprf::operator<<(std::ostream& os, const error_code& ec)
+std::ostream& nrgprf::operator<<(std::ostream & os, const error_code & ec)
 {
     return os << static_cast<std::underlying_type_t<error_code>>(ec);
 }
 
-std::ostream& nrgprf::operator<<(std::ostream& os, const error& e)
+std::ostream& nrgprf::operator<<(std::ostream & os, const error & e)
 {
     os << (e.msg().empty() ? "<no message>" : e.msg()) << " (error code " << e.code() << ")";
     return os;

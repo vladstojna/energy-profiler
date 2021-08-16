@@ -59,6 +59,13 @@ namespace nrgprf
         error(error_code code, const std::string& message);
         error(error_code code, std::string&& message);
 
+        ~error();
+        error(const error& other);
+        error(error&& other);
+
+        error& operator=(const error& other);
+        error& operator=(error&& other);
+
         error_code code() const;
         const std::string& msg() const;
 
