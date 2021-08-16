@@ -20,7 +20,7 @@ extlibs_dirs := $(addprefix $(lib_dir)/, pugixml/lib)
 # versions
 pugixml_ver := 1.11.4
 json_ver := 3.9.1
-expected_ver := 1.0.0
+expected_ver := 0.5.0
 
 # files
 src  := $(wildcard src/*.cpp)
@@ -105,7 +105,9 @@ lib/json: | $(lib_dir)
 
 lib/expected: | $(lib_dir)
 	@rm -rf $@
-	git clone --depth 1 --branch v$(expected_ver) https://github.com/TartanLlama/expected.git $@
+	@mkdir -p $(lib_dir)/expected/include/nonstd
+	wget -P $(lib_dir)/expected/include/nonstd \
+		https://github.com/martinmoene/expected-lite/releases/download/v$(expected_ver)/expected.hpp
 
 $(tgt): $(obj) | $(tgt_dir)
 	$(cc) $^ $(ldflags) -o $@
