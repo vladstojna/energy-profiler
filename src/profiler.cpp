@@ -19,6 +19,7 @@
 #include <sys/user.h>
 
 #include <util/concat.hpp>
+#include <nonstd/expected.hpp>
 
 using namespace tep;
 

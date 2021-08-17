@@ -8,11 +8,7 @@
 #include <string>
 #include <vector>
 
-namespace cmmn
-{
-    template<typename R, typename E>
-    class expected;
-}
+#include <util/expectedfwd.hpp>
 
 namespace tep
 {
@@ -52,7 +48,7 @@ namespace tep
     // types
 
     template<typename R>
-    using dbg_expected = cmmn::expected<R, dbg_error>;
+    using dbg_expected = nonstd::expected<R, dbg_error>;
 
     // classes
 
