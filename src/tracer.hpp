@@ -7,14 +7,14 @@
 #include <mutex>
 #include <unordered_map>
 
-#include <nrg/nrg.hpp>
-
 #include "reader_container.hpp"
 #include "error.hpp"
 #include "sampler.hpp"
 #include "trap.hpp"
 #include "util.hpp"
 
+#include <nrg/nrg.hpp>
+#include <util/expected.hpp>
 
 namespace tep
 {

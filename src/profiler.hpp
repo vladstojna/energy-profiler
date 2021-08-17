@@ -2,14 +2,14 @@
 
 #pragma once
 
-#include <nrg/nrg.hpp>
-
 #include "config.hpp"
 #include "dbg.hpp"
 #include "flags.hpp"
 #include "output.hpp"
 #include "reader_container.hpp"
 #include "trap.hpp"
+
+#include <util/expected.hpp>
 
 namespace tep
 {

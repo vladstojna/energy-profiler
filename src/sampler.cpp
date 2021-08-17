@@ -25,7 +25,9 @@ sampler_expected sampler_interface::run()&&
 
 sampler_expected null_sampler::results()
 {
-    return nrgprf::error(nrgprf::error_code::NO_EVENT, "Null sampler results");
+    return sampler_expected(nonstd::unexpect,
+        nrgprf::error_code::NO_EVENT,
+        "Null sampler results");
 }
 
 
@@ -55,7 +57,7 @@ sampler_expected sync_sampler::results()
     {
         log::logline(log::error, "%s: error when reading counters: %s",
             __func__, error.msg().c_str());
-        return error;
+        return sampler_expected(nonstd::unexpect, std::move(error));
     }
 
     work();
@@ -65,7 +67,7 @@ sampler_expected sync_sampler::results()
     {
         log::logline(log::error, "%s: error when reading counters: %s",
             __func__, error.msg().c_str());
-        return error;
+        return sampler_expected(nonstd::unexpect, std::move(error));
     }
     return timed_execution{ std::move(s1), std::move(s2) };
 }
@@ -117,12 +119,16 @@ null_async_sampler::null_async_sampler() :
 
 sampler_expected null_async_sampler::async_work()
 {
-    return nrgprf::error(nrgprf::error_code::NO_EVENT, "Async null sampler results");
+    return sampler_expected(nonstd::unexpect,
+        nrgprf::error_code::NO_EVENT,
+        "Async null sampler results");
 }
 
 sampler_expected null_async_sampler::results()
 {
-    return nrgprf::error(nrgprf::error_code::NO_EVENT, "Async null sampler results");
+    return sampler_expected(nonstd::unexpect,
+        nrgprf::error_code::NO_EVENT,
+        "Async null sampler results");
 }
 
 
@@ -218,7 +224,7 @@ sampler_expected bounded_ps::async_work()
     {
         log::logline(log::error, "%s: error when reading counters: %s",
             __func__, error.msg().c_str());
-        return error;
+        return sampler_expected(nonstd::unexpect, std::move(error));
     }
     while (!finished())
     {
@@ -228,7 +234,7 @@ sampler_expected bounded_ps::async_work()
         {
             log::logline(log::error, "%s: error when reading counters: %s",
                 __func__, error.msg().c_str());
-            return error;
+            return sampler_expected(nonstd::unexpect, std::move(error));;
         }
     };
     log::logline(log::success, "%s: finished evaluation with %zu samples",
@@ -262,7 +268,7 @@ sampler_expected unbounded_ps::async_work()
         {
             log::logline(log::error, "%s: error when reading counters: %s",
                 __func__, error.msg().c_str());
-            return error;
+            return sampler_expected(nonstd::unexpect, std::move(error));;
         }
         sig().wait_for(period());
     } while (!finished());
@@ -272,11 +278,10 @@ sampler_expected unbounded_ps::async_work()
     {
         log::logline(log::error, "%s: error when reading counters: %s",
             __func__, error.msg().c_str());
-        return error;
+        return sampler_expected(nonstd::unexpect, std::move(error));;
     }
 
     log::logline(log::success, "%s: finished evaluation with %zu samples",
         __func__, exec.size());
-
     return exec;
 }
