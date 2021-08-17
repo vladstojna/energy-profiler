@@ -8,7 +8,7 @@
 #include <iostream>
 
 #include <pugixml.hpp>
-#include <util/expected.hpp>
+#include <nonstd/expected.hpp>
 
 using namespace tep;
 
@@ -28,7 +28,7 @@ namespace defaults
 }
 
 template<typename R>
-using cfg_expected = cmmn::expected<R, cfg_error>;
+using cfg_expected = nonstd::expected<R, cfg_error>;
 
 constexpr static const char* error_messages[] =
 {
@@ -111,6 +111,7 @@ static std::vector<std::string_view> split_line(std::string_view line, std::stri
 
 static cfg_expected<config_data::section::target_cont> get_targets(const pugi::xml_node& nsection)
 {
+    using rettype = cfg_expected<config_data::section::target_cont>;
     using namespace pugi;
     config_data::section::target_cont retval;
     xml_attribute tgt_attr = nsection.attribute("target");
@@ -130,15 +131,16 @@ static cfg_expected<config_data::section::target_cont> get_targets(const pugi::x
         else if (target == "gpu")
             retval.insert(config_data::target::gpu);
         else
-            return cfg_error(cfg_error_code::SEC_INVALID_TARGET);
+            return rettype(nonstd::unexpect, cfg_error_code::SEC_INVALID_TARGET);
     }
     if (retval.empty())
-        return cfg_error(cfg_error_code::SEC_INVALID_TARGET);
+        return rettype(nonstd::unexpect, cfg_error_code::SEC_INVALID_TARGET);
     return retval;
 }
 
 static cfg_expected<config_data::params> get_params(const pugi::xml_node& nparams)
 {
+    using rettype = cfg_expected<config_data::params>;
     using namespace pugi;
     // all domains, devices and sockets are considered by default
     unsigned int dommask = defaults::domain_mask;
@@ -149,27 +151,27 @@ static cfg_expected<config_data::params> get_params(const pugi::xml_node& nparam
     if (ndomains)
         // <domain_mask></domain_mask> must be a valid, positive integer
         if (!(dommask = ndomains.text().as_uint(0)))
-            return cfg_error(cfg_error_code::PARAM_INVALID_DOMAIN_MASK);
+            return rettype(nonstd::unexpect, cfg_error_code::PARAM_INVALID_DOMAIN_MASK);
     xml_node nsockets = nparams.child("socket_mask");
     // <socket_mask></socket_mask> exists
     if (nsockets)
         // <socket_mask></socket_mask> must be a valid, positive integer
         if (!(sktmask = nsockets.text().as_uint(0)))
-            return cfg_error(cfg_error_code::PARAM_INVALID_SOCKET_MASK);
+            return rettype(nonstd::unexpect, cfg_error_code::PARAM_INVALID_SOCKET_MASK);
     xml_node ndevs = nparams.child("device_mask");
     // <device_mask></device_mask> exists
     if (ndevs)
         // <device_mask></device_mask> must be a valid, positive integer
         if (!(devmask = ndevs.text().as_uint(0)))
-            return cfg_error(cfg_error_code::PARAM_INVALID_DEVICE_MASK);
-    return { dommask, sktmask, devmask };
+            return rettype(nonstd::unexpect, cfg_error_code::PARAM_INVALID_DEVICE_MASK);
+    return config_data::params{ dommask, sktmask, devmask };
 }
 
 static cfg_expected<std::chrono::milliseconds> get_interval(const pugi::xml_node& nsection,
     config_data::profiling_method method)
 {
+    using rettype = cfg_expected<std::chrono::milliseconds>;
     using namespace pugi;
-
     std::chrono::milliseconds eint = defaults::interval;
     xml_node nfreq = nsection.child("freq");
     xml_node nint = nsection.child("interval");
@@ -179,7 +181,7 @@ static cfg_expected<std::chrono::milliseconds> get_interval(const pugi::xml_node
         // <interval></interval> must be a valid, positive integer
         int interval = nint.text().as_int(0);
         if (interval <= 0)
-            return cfg_error(cfg_error_code::SEC_INVALID_INTERVAL);
+            return rettype(nonstd::unexpect, cfg_error_code::SEC_INVALID_INTERVAL);
         eint = std::chrono::milliseconds(interval);
     }
     else if (nfreq)
@@ -187,7 +189,7 @@ static cfg_expected<std::chrono::milliseconds> get_interval(const pugi::xml_node
         // <freq></freq> must be a positive decimal number
         double freq = nfreq.text().as_double(0.0);
         if (freq <= 0.0)
-            return cfg_error(cfg_error_code::SEC_INVALID_FREQ);
+            return rettype(nonstd::unexpect, cfg_error_code::SEC_INVALID_FREQ);
         // clamps at 1000 Hz
         double interval = 1000.0 / freq;
         eint = std::chrono::milliseconds(interval <= 1.0 ? 1 : static_cast<unsigned int>(interval));
@@ -200,6 +202,7 @@ static cfg_expected<std::chrono::milliseconds> get_interval(const pugi::xml_node
 static cfg_expected<uint32_t> get_samples(const pugi::xml_node& nsection,
     const std::chrono::milliseconds& interval)
 {
+    using rettype = cfg_expected<uint32_t>;
     using namespace pugi;
     xml_node nsamp = nsection.child("samples");
     xml_node ndur = nsection.child("duration");
@@ -207,14 +210,14 @@ static cfg_expected<uint32_t> get_samples(const pugi::xml_node& nsection,
     {
         int duration = ndur.text().as_int(0);
         if (duration <= 0)
-            return cfg_error(cfg_error_code::SEC_INVALID_DURATION);
+            return rettype(nonstd::unexpect, cfg_error_code::SEC_INVALID_DURATION);
         return duration / interval.count() + (duration % interval.count() != 0);
     }
     if (nsamp)
     {
         int samples = nsamp.text().as_int(0);
         if (samples <= 0)
-            return cfg_error(cfg_error_code::SEC_INVALID_SAMPLES);
+            return rettype(nonstd::unexpect, cfg_error_code::SEC_INVALID_SAMPLES);
         return samples;
     }
     return defaults::samples;
@@ -222,18 +225,20 @@ static cfg_expected<uint32_t> get_samples(const pugi::xml_node& nsection,
 
 static cfg_expected<uint32_t> get_execs(const pugi::xml_node& nsection)
 {
+    using rettype = cfg_expected<uint32_t>;
     using namespace pugi;
     // <execs></execs> - optional, must be a positive integer
     // if not present - use default value
     xml_node nexecs = nsection.child("execs");
     int execs = 0;
     if (nexecs && (execs = nexecs.text().as_int(0)) <= 0)
-        return cfg_error(cfg_error_code::SEC_INVALID_EXECS);
+        return rettype(nonstd::unexpect, cfg_error_code::SEC_INVALID_EXECS);
     return execs ? static_cast<uint32_t>(execs) : defaults::executions;
 }
 
 static cfg_expected<std::string> get_cu(const pugi::xml_node& pos_node)
 {
+    using rettype = cfg_expected<std::string>;
     using namespace pugi;
     // attribute "cu" exists
     xml_attribute cu_attr = pos_node.attribute("cu");
@@ -241,22 +246,23 @@ static cfg_expected<std::string> get_cu(const pugi::xml_node& pos_node)
     {
         // if attribute exists - it cannot be empty
         if (!*cu_attr.value())
-            return cfg_error(cfg_error_code::POS_INVALID_COMP_UNIT);
+            return rettype(nonstd::unexpect, cfg_error_code::POS_INVALID_COMP_UNIT);
         return cu_attr.value();
     }
     // fallback to checking child node
     xml_node cu = pos_node.child("cu");
     // <cu></cu> exists
     if (!cu)
-        return cfg_error(cfg_error_code::POS_NO_COMP_UNIT);
+        return rettype(nonstd::unexpect, cfg_error_code::POS_NO_COMP_UNIT);
     // <cu></cu> is not empty
     if (!*cu.child_value())
-        return cfg_error(cfg_error_code::POS_INVALID_COMP_UNIT);
+        return rettype(nonstd::unexpect, cfg_error_code::POS_INVALID_COMP_UNIT);
     return cu.child_value();
 }
 
 static cfg_expected<uint32_t> get_lineno(const pugi::xml_node& pos_node)
 {
+    using rettype = cfg_expected<uint32_t>;
     using namespace pugi;
     // attribute "line" exists
     xml_attribute line_attr = pos_node.attribute("line");
@@ -264,38 +270,40 @@ static cfg_expected<uint32_t> get_lineno(const pugi::xml_node& pos_node)
     {
         // if attribute exists - it cannot be empty
         if (!*line_attr.value())
-            return cfg_error(cfg_error_code::POS_INVALID_LINE);
+            return rettype(nonstd::unexpect, cfg_error_code::POS_INVALID_LINE);
         int lineno;
         if ((lineno = line_attr.as_int(0)) <= 0)
-            return cfg_error(cfg_error_code::POS_INVALID_LINE);
+            return rettype(nonstd::unexpect, cfg_error_code::POS_INVALID_LINE);
         return lineno;
     }
     // fallback to checking child node
     xml_node line = pos_node.child("line");
     // <line></line> exists
     if (!line)
-        return cfg_error(cfg_error_code::POS_NO_LINE);
+        return rettype(nonstd::unexpect, cfg_error_code::POS_NO_LINE);
     // <line></line> is not empty or negative
     int lineno;
     if ((lineno = line.text().as_int(0)) <= 0)
-        return cfg_error(cfg_error_code::POS_INVALID_LINE);
+        return rettype(nonstd::unexpect, cfg_error_code::POS_INVALID_LINE);
     return lineno;
 }
 
 static cfg_expected<config_data::position> get_position(const pugi::xml_node& pos_node)
 {
+    using rettype = cfg_expected<config_data::position>;
     using namespace pugi;
     cfg_expected<std::string> cu = get_cu(pos_node);
     if (!cu)
-        return std::move(cu.error());
+        return rettype(nonstd::unexpect, std::move(cu.error()));
     cfg_expected<uint32_t> lineno = get_lineno(pos_node);
     if (!lineno)
-        return std::move(lineno.error());
-    return { std::move(cu.value()), lineno.value() };
+        return rettype(nonstd::unexpect, std::move(lineno.error()));
+    return config_data::position{ std::move(*cu), *lineno };
 }
 
 static cfg_expected<config_data::function> get_function(const pugi::xml_node& func_node)
 {
+    using rettype = cfg_expected<config_data::function>;
     using namespace pugi;
     // attribute "cu" exists
     std::string cu;
@@ -304,19 +312,20 @@ static cfg_expected<config_data::function> get_function(const pugi::xml_node& fu
     {
         // if attribute exists - it cannot be empty
         if (!*cu_attr.value())
-            return cfg_error(cfg_error_code::FUNC_INVALID_COMP_UNIT);
+            return rettype(nonstd::unexpect, cfg_error_code::FUNC_INVALID_COMP_UNIT);
         cu.append(cu_attr.value());
     }
     xml_attribute name_attr = func_node.attribute("name");
     if (!name_attr)
-        return cfg_error(cfg_error_code::FUNC_NO_NAME);
+        return rettype(nonstd::unexpect, cfg_error_code::FUNC_NO_NAME);
     if (!*name_attr.value())
-        return cfg_error(cfg_error_code::FUNC_INVALID_NAME);
+        return rettype(nonstd::unexpect, cfg_error_code::FUNC_INVALID_NAME);
     return config_data::function(std::move(cu), name_attr.value());
 }
 
 static cfg_expected<config_data::bounds> get_bounds(const pugi::xml_node& bounds)
 {
+    using rettype = cfg_expected<config_data::bounds>;
     using namespace pugi;
     // <start/>
     xml_node nstart = bounds.child("start");
@@ -328,36 +337,35 @@ static cfg_expected<config_data::bounds> get_bounds(const pugi::xml_node& bounds
     if (nstart || nend)
     {
         if (nfunc)
-            return cfg_error(cfg_error_code::BOUNDS_TOO_MANY);
+            return rettype(nonstd::unexpect, cfg_error_code::BOUNDS_TOO_MANY);
         if (!nend)
-            return cfg_error(cfg_error_code::BOUNDS_NO_END);
+            return rettype(nonstd::unexpect, cfg_error_code::BOUNDS_NO_END);
         if (!nstart)
-            return cfg_error(cfg_error_code::BOUNDS_NO_START);
+            return rettype(nonstd::unexpect, cfg_error_code::BOUNDS_NO_START);
 
-        cfg_expected<config_data::position> pstart = get_position(nstart);
+        auto pstart = get_position(nstart);
         if (!pstart)
-            return std::move(pstart.error());
-        cfg_expected<config_data::position> pend = get_position(nend);
+            return rettype(nonstd::unexpect, std::move(pstart.error()));
+        auto pend = get_position(nend);
         if (!pend)
-            return std::move(pend.error());
-
-        return { std::move(pstart.value()), std::move(pend.value()) };
+            return rettype(nonstd::unexpect, std::move(pend.error()));
+        return config_data::bounds{ std::move(*pstart), std::move(*pend) };
     }
     else if (nfunc)
     {
         assert(!nstart && !nend);
-        cfg_expected<config_data::function> func = get_function(nfunc);
+        auto func = get_function(nfunc);
         if (!func)
-            return std::move(func.error());
-        return std::move(func.value());
+            return rettype(nonstd::unexpect, std::move(func.error()));
+        return std::move(*func);
     }
-    return cfg_error(cfg_error_code::BOUNDS_EMPTY);
+    return rettype(nonstd::unexpect, cfg_error_code::BOUNDS_EMPTY);
 }
 
 static cfg_expected<config_data::profiling_method> get_method(const pugi::xml_node& nsection)
 {
+    using rettype = cfg_expected<config_data::profiling_method>;
     using namespace pugi;
-
     config_data::profiling_method method = defaults::method;
     // <method></method> - optional
     xml_node nmethod = nsection.child("method");
@@ -369,80 +377,83 @@ static cfg_expected<config_data::profiling_method> get_method(const pugi::xml_no
         else if (!strcmp(method_str, "total"))
             method = config_data::profiling_method::energy_total;
         else
-            return cfg_error(cfg_error_code::SEC_INVALID_METHOD);
+            return rettype(nonstd::unexpect, cfg_error_code::SEC_INVALID_METHOD);
     }
     return method;
 }
 
 static cfg_expected<config_data::section> get_section(const pugi::xml_node& nsection)
 {
+    using rettype = cfg_expected<config_data::section>;
     using namespace pugi;
     // attribute target
     cfg_expected<config_data::section::target_cont> targets = get_targets(nsection);
     if (!targets)
-        return std::move(targets.error());
+        return rettype(nonstd::unexpect, std::move(targets.error()));
 
     // label attribute - optional, must not be empty
     xml_attribute attr_label = nsection.attribute("label");
     if (attr_label && !*attr_label.value())
-        return cfg_error(cfg_error_code::SEC_INVALID_LABEL);
+        return rettype(nonstd::unexpect, cfg_error_code::SEC_INVALID_LABEL);
     // <extra></extra> - optional, must not be empty
     xml_node nxtra = nsection.child("extra");
     if (nxtra && !*nxtra.child_value())
-        return cfg_error(cfg_error_code::SEC_INVALID_EXTRA);
+        return rettype(nonstd::unexpect, cfg_error_code::SEC_INVALID_EXTRA);
 
     cfg_expected<config_data::profiling_method> method = get_method(nsection);
     if (!method)
-        return std::move(method.error());
+        return rettype(nonstd::unexpect, std::move(method.error()));
 
-    cfg_expected<std::chrono::milliseconds> interval = get_interval(nsection, method.value());
+    cfg_expected<std::chrono::milliseconds> interval = get_interval(nsection, *method);
     if (!interval)
-        return std::move(interval.error());
+        return rettype(nonstd::unexpect, std::move(interval.error()));
 
     cfg_expected<uint32_t> execs = get_execs(nsection);
     if (!execs)
-        return std::move(execs.error());
+        return rettype(nonstd::unexpect, std::move(execs.error()));
 
-    cfg_expected<uint32_t> samples = get_samples(nsection, interval.value());
+    cfg_expected<uint32_t> samples = get_samples(nsection, *interval);
     if (!samples)
-        return std::move(samples.error());
+        return rettype(nonstd::unexpect, std::move(samples.error()));
 
     // <bounds></bounds>
     xml_node nbounds = nsection.child("bounds");
     if (!nbounds)
-        return cfg_error(cfg_error_code::SEC_NO_BOUNDS);
+        return rettype(nonstd::unexpect, cfg_error_code::SEC_NO_BOUNDS);
     cfg_expected<config_data::bounds> bounds = get_bounds(nbounds);
     if (!bounds)
-        return std::move(bounds.error());
+        return rettype(nonstd::unexpect, std::move(bounds.error()));
 
     // <allow_concurrency/> - true if node exists, false otherwise
     bool allow_concurrency = bool(nsection.child("allow_concurrency"));
 
-    return {
+    return config_data::section
+    {
         attr_label.value(),
         nxtra.child_value(),
-        targets.value(),
-        method.value(),
-        std::move(bounds.value()),
-        std::move(interval.value()),
-        execs.value(),
-        samples.value(),
+        std::move(*targets),
+        *method,
+        std::move(*bounds),
+        std::move(*interval),
+        *execs,
+        *samples,
         allow_concurrency
     };
 }
 
 static cfg_expected<config_data::section_group> get_group(const pugi::xml_node& nsections)
 {
+    using rettype = cfg_expected<config_data::section_group>;
     using namespace pugi;
     // label attribute - optional, must not be empty
     xml_attribute attr_label = nsections.attribute("label");
     if (attr_label && !*attr_label.value())
-        return cfg_error(cfg_error_code::GROUP_INVALID_LABEL);
+        return rettype(nonstd::unexpect, cfg_error_code::GROUP_INVALID_LABEL);
 
     // <extra></extra> - optional, must not be empty
     xml_node nxtra = nsections.child("extra");
     if (nxtra && !*nxtra.child_value())
-        return cfg_error(cfg_error_code::GROUP_INVALID_EXTRA);
+        return rettype(nonstd::unexpect, cfg_error_code::GROUP_INVALID_EXTRA);
 
     config_data::section_group group{ attr_label.value(), nxtra.child_value() };
     // <section></section> - at least one required
@@ -450,14 +461,14 @@ static cfg_expected<config_data::section_group> get_group(const pugi::xml_node& 
         nsection;
         nsection = nsection.next_sibling("section"))
     {
-        cfg_expected<config_data::section> section = get_section(nsection);
+        auto section = get_section(nsection);
         if (!section)
-            return std::move(section.error());
-        if (!group.push_back(std::move(section.value())))
-            return cfg_error(cfg_error_code::SEC_LABEL_ALREADY_EXISTS);
+            return rettype(nonstd::unexpect, std::move(section.error()));
+        if (!group.push_back(std::move(*section)))
+            return rettype(nonstd::unexpect, cfg_error_code::SEC_LABEL_ALREADY_EXISTS);
     }
     if (group.sections().empty())
-        return cfg_error(cfg_error_code::GROUP_EMPTY);
+        return rettype(nonstd::unexpect, cfg_error_code::GROUP_EMPTY);
     return group;
 }
 
@@ -958,10 +969,8 @@ bool config_data::push_back_impl(Group&& grp)
 
 cfg_expected<config_data> tep::load_config(std::istream& from)
 {
-    assert(static_cast<size_t>(cfg_error_code::FUNC_INVALID_NAME) + 1 ==
-        sizeof(error_messages) / sizeof(error_messages[0]));
     using namespace pugi;
-
+    using rettype = cfg_expected<config_data>;
     xml_document doc;
     xml_parse_result parse_result = doc.load(from);
     if (!parse_result)
@@ -969,29 +978,29 @@ cfg_expected<config_data> tep::load_config(std::istream& from)
         switch (parse_result.status)
         {
         case status_file_not_found:
-            return cfg_error(cfg_error_code::CONFIG_NOT_FOUND);
+            return rettype(nonstd::unexpect, cfg_error_code::CONFIG_NOT_FOUND);
         case status_io_error:
-            return cfg_error(cfg_error_code::CONFIG_IO_ERROR);
+            return rettype(nonstd::unexpect, cfg_error_code::CONFIG_IO_ERROR);
         case status_out_of_memory:
-            return cfg_error(cfg_error_code::CONFIG_OUT_OF_MEM);
+            return rettype(nonstd::unexpect, cfg_error_code::CONFIG_OUT_OF_MEM);
         default:
-            return cfg_error(cfg_error_code::CONFIG_BAD_FORMAT);
+            return rettype(nonstd::unexpect, cfg_error_code::CONFIG_BAD_FORMAT);
         }
     }
     // <config></config>
     xml_node nconfig = doc.child("config");
     if (!nconfig)
-        return cfg_error(cfg_error_code::CONFIG_NO_CONFIG);
+        return rettype(nonstd::unexpect, cfg_error_code::CONFIG_NO_CONFIG);
 
     // <params></params> - optional, use default values if does not exist
     config_data::params params;
     xml_node nparams = nconfig.child("params");
     if (nparams)
     {
-        cfg_expected<config_data::params> custom_params = get_params(nparams);
+        auto custom_params = get_params(nparams);
         if (!custom_params)
-            return std::move(custom_params.error());
-        params = std::move(custom_params.value());
+            return rettype(nonstd::unexpect, std::move(custom_params.error()));
+        params = std::move(*custom_params);
     }
     config_data cfgdata(params);
 
@@ -1001,11 +1010,11 @@ cfg_expected<config_data> tep::load_config(std::istream& from)
         nsections;
         nsections = nsections.next_sibling("sections"))
     {
-        cfg_expected<config_data::section_group> group = get_group(nsections);
+        auto group = get_group(nsections);
         if (!group)
-            return std::move(group.error());
-        if (!cfgdata.push_back(std::move(group.value())))
-            return cfg_error(cfg_error_code::GROUP_LABEL_ALREADY_EXISTS);
+            return rettype(nonstd::unexpect, std::move(group.error()));
+        if (!cfgdata.push_back(std::move(*group)))
+            return rettype(nonstd::unexpect, cfg_error_code::GROUP_LABEL_ALREADY_EXISTS);
     }
     return cfgdata;
 }

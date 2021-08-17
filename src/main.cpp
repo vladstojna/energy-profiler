@@ -11,6 +11,7 @@
 #include "target.hpp"
 #include "log.hpp"
 
+#include <nonstd/expected.hpp>
 
 int main(int argc, char* argv[])
 {
