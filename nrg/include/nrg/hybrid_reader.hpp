@@ -1,4 +1,5 @@
 // hybrid_reader.hpp
+#pragma once
 
 #include <nrg/error.hpp>
 #include <nrg/reader.hpp>
