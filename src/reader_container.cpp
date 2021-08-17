@@ -52,7 +52,7 @@ create_gpu_reader(const config_data::params& params, tracer_error& err)
     if (!support)
         error = std::move(support.error());
     nrgprf::reader_gpu reader(
-        effective_readings_type(support ? support.value() : nrgprf::readings_type::all),
+        effective_readings_type(support ? *support : nrgprf::readings_type::all),
         devmask,
         error,
         log::stream());

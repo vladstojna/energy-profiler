@@ -19,6 +19,7 @@
 #include <locale>
 #include <system_error>
 
+#include <nonstd/expected.hpp>
 #include <util/expected.hpp>
 #include <util/concat.hpp>
 
@@ -117,8 +118,7 @@ static dbg_expected<std::vector<uintptr_t>> get_return_addresses(const char* tar
 {
     std::vector<uintptr_t> addresses;
     std::string output = cmmn::concat(file_base, ".returns");
-    cmmn::expected<file_descriptor, pipe_error> fd = file_descriptor::create(
-        output.c_str(), fd_flags::write, fd_mode::rdwr_all);
+    auto fd = file_descriptor::create(output.c_str(), fd_flags::write, fd_mode::rdwr_all);
     if (!fd)
         return dbg_error(dbg_error_code::PIPE_ERROR, std::move(fd.error().msg()));
 
@@ -207,8 +207,7 @@ static dbg_expected<size_t>
 get_function_entry_offset(std::string_view target, std::string_view func_name)
 {
     std::string output = cmmn::concat(file_base, ".st_other");
-    cmmn::expected<file_descriptor, pipe_error> fd = file_descriptor::create(
-        output.c_str(), fd_flags::write, fd_mode::rdwr_all);
+    auto fd = file_descriptor::create(output.c_str(), fd_flags::write, fd_mode::rdwr_all);
     if (!fd)
         return dbg_error(dbg_error_code::PIPE_ERROR, std::move(fd.error().msg()));
 
@@ -247,8 +246,7 @@ static dbg_expected<std::vector<parsed_func>> get_functions(const char* target)
 {
     std::vector<parsed_func> funcs;
     std::string output = cmmn::concat(file_base, ".syms");
-    cmmn::expected<file_descriptor, pipe_error> fd = file_descriptor::create(
-        output.c_str(), fd_flags::write, fd_mode::rdwr_all);
+    auto fd = file_descriptor::create(output.c_str(), fd_flags::write, fd_mode::rdwr_all);
     if (!fd)
         return dbg_error(dbg_error_code::PIPE_ERROR, std::move(fd.error().msg()));
 
@@ -302,8 +300,7 @@ static dbg_expected<bool> has_debug_info(const char* target)
 {
     assert(target);
     std::string output = cmmn::concat(file_base, ".dbg");
-    cmmn::expected<file_descriptor, pipe_error> fd = file_descriptor::create(
-        output.c_str(), fd_flags::write, fd_mode::rdwr_all);
+    auto fd = file_descriptor::create(output.c_str(), fd_flags::write, fd_mode::rdwr_all);
     if (!fd)
         return dbg_error(dbg_error_code::PIPE_ERROR, std::move(fd.error().msg()));
 
@@ -602,8 +599,7 @@ dbg_error header_info::get_exec_type(const char* target)
 {
     assert(target != nullptr);
     std::string output = cmmn::concat(file_base, ".type");
-    cmmn::expected<file_descriptor, pipe_error> fd = file_descriptor::create(
-        output.c_str(), fd_flags::write, fd_mode::rdwr_all);
+    auto fd = file_descriptor::create(output.c_str(), fd_flags::write, fd_mode::rdwr_all);
     if (!fd)
         return dbg_error(dbg_error_code::PIPE_ERROR, std::move(fd.error().msg()));
 

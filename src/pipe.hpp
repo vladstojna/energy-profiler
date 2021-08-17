@@ -10,11 +10,7 @@
 
 #include <sys/stat.h>
 
-namespace cmmn
-{
-    template<typename R, typename E>
-    class expected;
-}
+#include <util/expectedfwd.hpp>
 
 namespace tep
 {
@@ -97,7 +93,7 @@ namespace tep
         static file_descriptor std_out;
         static file_descriptor std_err;
 
-        static cmmn::expected<file_descriptor, pipe_error> create(const char* path,
+        static nonstd::expected<file_descriptor, pipe_error> create(const char* path,
             const fd_flags& flags,
             const fd_mode& mode);
 
@@ -135,7 +131,7 @@ namespace tep
     class pipe
     {
     public:
-        static cmmn::expected<pipe, pipe_error> create();
+        static nonstd::expected<pipe, pipe_error> create();
 
     private:
         std::array<file_descriptor, 2> _pipe;
