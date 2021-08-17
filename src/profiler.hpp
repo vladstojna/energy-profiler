@@ -9,19 +9,18 @@
 #include "reader_container.hpp"
 #include "trap.hpp"
 
-#include <util/expected.hpp>
+#include <util/expectedfwd.hpp>
 
 namespace tep
 {
-
     class profiling_results;
 
     class profiler
     {
     public:
         template<typename D = dbg_info, typename C = config_data>
-        static cmmn::expected<profiler, tracer_error> create(pid_t child, const flags& f,
-            D&& dli, C&& cd);
+        static nonstd::expected<profiler, tracer_error>
+            create(pid_t child, const flags& f, D&& dli, C&& cd);
 
     private:
         struct output_mapping
@@ -71,7 +70,7 @@ namespace tep
         const config_data& config() const;
         const registered_traps& traps() const;
 
-        cmmn::expected<profiling_results, tracer_error> run();
+        nonstd::expected<profiling_results, tracer_error> run();
 
     private:
         tracer_error obtain_idle_results();
@@ -82,7 +81,7 @@ namespace tep
             const config_data::function& func,
             uintptr_t entrypoint);
 
-        cmmn::expected<start_addr, tracer_error> insert_traps_position_start(
+        nonstd::expected<start_addr, tracer_error> insert_traps_position_start(
             const config_data::section& sec,
             const config_data::position& pos,
             uintptr_t entrypoint);
@@ -94,16 +93,4 @@ namespace tep
             uintptr_t entrypoint,
             start_addr start);
     };
-
-    template<typename D, typename C>
-    cmmn::expected<profiler, tracer_error> profiler::create(pid_t child, const flags& f,
-        D&& dli, C&& cd)
-    {
-        tracer_error err = tracer_error::success();
-        profiler prof(child, f, std::forward<D>(dli), std::forward<C>(cd), err);
-        if (err)
-            return err;
-        return prof;
-    }
-
 }

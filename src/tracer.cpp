@@ -8,6 +8,8 @@
 #include "log.hpp"
 #include "registers.hpp"
 
+#include <nonstd/expected.hpp>
+
 #include <cassert>
 #include <cstring>
 #include <future>
@@ -19,10 +21,7 @@
 #include <sys/user.h>
 #include <sys/wait.h>
 
-#include <nonstd/expected.hpp>
-
 using namespace tep;
-
 
 // tgkill wrapper
 
@@ -30,7 +29,6 @@ inline int tgkill(pid_t tgid, pid_t tid, int signal)
 {
     return syscall(SYS_tgkill, tgid, tid, signal);
 }
-
 
 // begin helper functions
 
@@ -50,17 +48,13 @@ void handle_error(pid_t tid, const char* comment, const nrgprf::error& e)
         tid, comment, sstream.str().c_str());
 }
 
-
 // end helper functions
-
 
 // definition of static variables
 
 std::mutex tracer::TRAP_BARRIER;
 
-
 // methods
-
 
 tracer::tracer(const registered_traps& traps,
     pid_t tracee_pid,
@@ -109,16 +103,15 @@ pid_t tracer::tracee_tgid() const
 
 tracer_expected<tracer::gathered_results> tracer::results()
 {
-    tracer_error error = _tracer_ftr.get();
-    if (error)
-        return error;
-
+    using rettype = tracer_expected<tracer::gathered_results>;
+    if (tracer_error error = _tracer_ftr.get())
+        return rettype(nonstd::unexpect, std::move(error));
     for (auto& child : _children)
     {
         tracer_expected<gathered_results> results = child->results();
         if (!results)
-            return std::move(results.error());
-        for (auto& [addr, entry] : results.value())
+            return results;
+        for (auto& [addr, entry] : *results)
         {
             auto& entries = _results[addr];
             entries.insert(
@@ -383,7 +376,7 @@ tracer_error tracer::trace(const registered_traps* traps)
                     log::logline(log::error, "[%d] sampling thread exited with error", tid);
                 else
                     log::logline(log::success, "[%d] sampling thread exited successfully with %zu samples",
-                        tid, sampling_results.value().size());
+                        tid, sampling_results->size());
 
                 _results[{start_bp_addr, end_bp_addr}].emplace_back(std::move(sampling_results));
 

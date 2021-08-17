@@ -13,8 +13,7 @@
 #include "trap.hpp"
 #include "util.hpp"
 
-#include <nrg/nrg.hpp>
-#include <util/expected.hpp>
+#include <util/expectedfwd.hpp>
 
 namespace tep
 {
@@ -22,7 +21,7 @@ namespace tep
     class cpu_gp_regs;
 
     template<typename R>
-    using tracer_expected = cmmn::expected<R, tracer_error>;
+    using tracer_expected = nonstd::expected<R, tracer_error>;
 
     class tracer
     {
