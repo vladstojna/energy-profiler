@@ -19,6 +19,7 @@
 #include <sys/user.h>
 #include <sys/wait.h>
 
+#include <nonstd/expected.hpp>
 
 using namespace tep;
 
@@ -265,23 +266,21 @@ tracer_error tracer::trace(const registered_traps* traps)
     int wait_status;
     pid_t tid = gettid();
     uintptr_t entrypoint = _ep;
+    ptrace_wrapper& pw = ptrace_wrapper::instance;
+    ptrace_restarter pr(tid, _tracee);
 
     log::logline(log::debug, "[%d] started tracer for tracee with tid %d, entrypoint @ 0x%" PRIxPTR,
         tid, _tracee, entrypoint);
-    tracer_expected<ptrace_restarter> pr = ptrace_restarter::create();
     while (true)
     {
-        int errnum;
-        ptrace_wrapper& pw = ptrace_wrapper::instance;
-        pr = ptrace_restarter::create(tid, _tracee, pw);
-        if (!pr)
-            return std::move(pr.error());
-
+        if (auto err = pr.cont())
+            return err;
         if (tracer_error error = wait_for_tracee(wait_status))
             return error;
-        log::logline(log::debug, "[%d] waited for tracee %d with signal: %s (status 0x%x)", tid, _tracee,
-            sig_str(WSTOPSIG(wait_status)), wait_status);
-
+        const char* sigstr = sig_str(WSTOPSIG(wait_status));
+        log::logline(log::debug, "[%d] waited for tracee %d with signal: %s (status 0x%x)",
+            tid, _tracee, sigstr ? sigstr : "<no stop signal>", wait_status);
+        int errnum;
         if (is_child_event(wait_status))
         {
             std::scoped_lock lock(TRAP_BARRIER);
@@ -312,8 +311,7 @@ tracer_error tracer::trace(const registered_traps* traps)
             log::logline(log::debug, "[%d] entered global tracer barrier", tid);
 
             // disable tracing of children during execution of section
-            cmmn::expected<ptrace_child_toggler, tracer_error> toggler =
-                ptrace_child_toggler::create(pw, tid, _tracee, false);
+            auto toggler = ptrace_child_toggler::create(pw, tid, _tracee, false);
             if (!toggler)
                 return std::move(toggler.error());
             log::logline(log::info, "[%d] child tracing disabled", tid);
@@ -419,7 +417,7 @@ tracer_error tracer::trace(const registered_traps* traps)
         }
         else if (WIFSIGNALED(wait_status))
         {
-            log::logline(log::success, "[%d] tracee %d exited with status %d", tid, _tracee,
+            log::logline(log::success, "[%d] tracee %d signaled: %s", tid, _tracee,
                 sig_str(WTERMSIG(wait_status)));
             break;
         }
