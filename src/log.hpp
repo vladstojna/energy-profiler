@@ -31,8 +31,17 @@ namespace tep
         struct content
         {
             std::string msg;
-            content(const char* fmt, ...);
+
+            template<typename... Args>
+            content(const char* fmt, const Args&... args)
+            {
+                init(fmt, args...);
+            }
+
             explicit operator bool() const;
+
+        private:
+            void init(const char*, ...);
         };
 
         static void init(bool quiet = false, const std::string& path = "");

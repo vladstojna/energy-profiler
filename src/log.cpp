@@ -52,6 +52,7 @@ namespace
             return levels[lvl];
     }
 
+    constexpr const std::size_t initial_size = 256UL;
     std::mutex _logmtx;
     std::ofstream _stream;
 
@@ -186,23 +187,28 @@ namespace tep
         return file && line;
     }
 
-    log::content::content(const char* fmt, ...) :
-        msg()
+    void log::content::init(const char* fmt, ...)
     {
-        va_list args;
-        va_list args_copy;
+        msg.resize(initial_size);
+
+        va_list args, args_copy;
         va_start(args, fmt);
         va_copy(args_copy, args);
-        ssize_t bufsz = std::vsnprintf(nullptr, 0, fmt, args);
+        int retval = std::vsnprintf(msg.data(), msg.size() + 1, fmt, args);
         va_end(args);
-        if (bufsz < 0)
-            return;
 
-        msg.resize(bufsz + 1);
-        bufsz = std::vsnprintf(msg.data(), msg.capacity(), fmt, args_copy);
-        va_end(args_copy);
-        if (bufsz < 0)
+        std::size_t size = static_cast<std::size_t>(retval);
+        if (retval < 0)
             msg.resize(0);
+        else if (size > msg.size())
+        {
+            msg.resize(size);
+            if (std::vsnprintf(msg.data(), msg.size() + 1, fmt, args_copy) < 0)
+                msg.resize(0);
+        }
+        else if (size < msg.size())
+            msg.resize(size);
+        va_end(args_copy);
     }
 
     log::content::operator bool() const
