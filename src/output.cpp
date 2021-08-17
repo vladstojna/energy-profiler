@@ -3,6 +3,8 @@
 #include "output.hpp"
 #include "trap.hpp"
 
+#include <nonstd/expected.hpp>
+
 #include <cassert>
 #include <iostream>
 #include <iomanip>
@@ -32,7 +34,7 @@ namespace
     void cpu_format(nlohmann::json& j)
     {
         j.push_back("energy");
-    }
+}
 #elif defined NRG_PPC64
     void cpu_format(nlohmann::json& j)
     {
@@ -110,7 +112,7 @@ namespace nlohmann
             nlohmann::json values;
             values.push_back(nrgprf::unit_cast<nrgprf::joules<double>>(sensor_value).count());
             j = std::move(values);
-        }
+}
     };
 #elif defined NRG_PPC64
     template<>

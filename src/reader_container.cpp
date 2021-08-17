@@ -7,6 +7,8 @@
 #include "reader_container.hpp"
 #include "log.hpp"
 
+#include <nonstd/expected.hpp>
+
 using namespace tep;
 
 
