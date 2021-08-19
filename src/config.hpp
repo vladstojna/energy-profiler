@@ -8,12 +8,7 @@
 #include <string>
 #include <vector>
 
-
-namespace cmmn
-{
-    template<typename R, typename E>
-    class expected;
-}
+#include <util/expectedfwd.hpp>
 
 namespace tep
 {
@@ -331,7 +326,7 @@ namespace tep
 
     // types
 
-    using cfg_result = cmmn::expected<config_data, cfg_error>;
+    using cfg_result = nonstd::expected<config_data, cfg_error>;
 
     // functions
 

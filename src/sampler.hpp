@@ -8,14 +8,16 @@
 #include <future>
 #include <vector>
 
-#include <nrg/nrg.hpp>
-#include <util/expected.hpp>
+#include <nrg/reader.hpp>
+#include <nrg/sample.hpp>
+#include <nrg/error.hpp>
+#include <nonstd/expected.hpp>
 
 namespace tep
 {
 
     using timed_execution = std::vector<nrgprf::timed_sample>;
-    using sampler_expected = cmmn::expected<timed_execution, nrgprf::error>;
+    using sampler_expected = nonstd::expected<timed_execution, nrgprf::error>;
     using sampler_promise = std::function<sampler_expected()>;
 
     // sampler_interface

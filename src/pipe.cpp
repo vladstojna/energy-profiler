@@ -12,7 +12,7 @@
 #include <unistd.h>
 #include <wait.h>
 
-#include <util/expected.hpp>
+#include <nonstd/expected.hpp>
 #include <util/concat.hpp>
 
 #ifdef NDEBUG
@@ -164,14 +164,15 @@ int fd_flags::get() const
 
 
 
-cmmn::expected<file_descriptor, pipe_error> file_descriptor::create(const char* path,
+nonstd::expected<file_descriptor, pipe_error> file_descriptor::create(const char* path,
     const fd_flags& flags,
     const fd_mode& mode)
 {
+    using rettype = nonstd::expected<file_descriptor, pipe_error>;
     pipe_error err = pipe_error::success();
     file_descriptor fd(path, flags, mode, err);
     if (err)
-        return err;
+        return rettype(nonstd::unexpect, std::move(err));
     return fd;
 }
 
@@ -268,12 +269,13 @@ pipe_error file_descriptor::write(const char* buffer, size_t sz)
 
 
 
-cmmn::expected<tep::pipe, pipe_error> pipe::create()
+nonstd::expected<tep::pipe, pipe_error> pipe::create()
 {
+    using rettype = nonstd::expected<tep::pipe, pipe_error>;
     pipe_error err = pipe_error::success();
     pipe p(err);
     if (err)
-        return err;
+        return rettype(nonstd::unexpect, std::move(err));
     return p;
 }
 
@@ -388,20 +390,20 @@ pipe_error piped_commands::execute_impl(Fin&& in, file_descriptor& out) const
 
     for (size_t i = 0; i < _cmds.size() - 1; i++)
     {
-        cmmn::expected<pipe, pipe_error> pfd = pipe::create();
+        auto pfd = pipe::create();
         if (!pfd)
             return std::move(pfd.error());
 
         pid_t childpid = fork();
         if (childpid == 0)
         {
-            pipe_error err = run_command(_cmds[i], _in, pfd.value().write_end());
+            pipe_error err = run_command(_cmds[i], _in, pfd->write_end());
             if (err)
                 return err;
         }
         else if (childpid > 0)
         {
-            _in = std::move(pfd.value().read_end());
+            _in = std::move(pfd->read_end());
             _children.emplace_back(_cmds[i], childpid);
         }
         else
@@ -501,4 +503,3 @@ file_descriptor& tep::operator<<(file_descriptor& fd, file_descriptor::endl_t)
     fd.flush();
     return fd;
 }
-

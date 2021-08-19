@@ -2,15 +2,11 @@
 
 #pragma once
 
-#include <nrg/nrg.hpp>
-
 #include "config.hpp"
 
-namespace cmmn
-{
-    template<typename R, typename E>
-    class expected;
-}
+#include <nrg/reader_gpu.hpp>
+#include <nrg/reader_rapl.hpp>
+#include <nrg/hybrid_reader.hpp>
 
 namespace tep
 {

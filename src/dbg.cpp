@@ -19,313 +19,347 @@
 #include <locale>
 #include <system_error>
 
-#include <util/expected.hpp>
+#include <nonstd/expected.hpp>
 #include <util/concat.hpp>
 
 using namespace tep;
 
-static constexpr const char file_base[] = "/tmp/profiler733978";
-static constexpr const char et_dyn[] = "DYN";
-static constexpr const char et_exec[] = "EXEC";
-
+namespace
+{
+    constexpr const char file_base[] = "/tmp/profiler733978";
+    constexpr const char et_dyn[] = "DYN";
+    constexpr const char et_exec[] = "EXEC";
 
 #if defined(__x86_64__) || defined(__i386__)
-
-static constexpr const char ret_match[] = "[[:space:]]*[0-9a-f]+:[[:space:]]+c3[[:space:]]+ret";
-
+    constexpr const char ret_match[] = "[[:space:]]*[0-9a-f]+:[[:space:]]+c3[[:space:]]+ret";
 #elif defined(__powerpc64__)
-
-static constexpr const char ret_match[] = "blr[[:space:]]*$"; // TODO: review
-
+    constexpr const char ret_match[] = "blr[[:space:]]*$"; // TODO: review
 #else
-
-static constexpr const char ret_match[] = "";
-
+    constexpr const char ret_match[] = "";
 #endif // __x86_64__ || __i386__
 
-
-// begin helper structs
-
-struct parsed_func
-{
-    std::string name;
-    uintptr_t addr;
-    size_t size;
-    position pos;
-};
-
-
-// begin helper functions
-
-static std::string get_system_error(int errnum)
-{
-    char buffer[256];
-    return { strerror_r(errnum, buffer, 256) };
-}
-
-template<typename T>
-static std::string remove_spaces(T&& txt)
-{
-    std::string ret(std::forward<T>(txt));
-    ret.erase(std::remove_if(ret.begin(), ret.end(), [](unsigned char c)
-        {
-            return std::isspace(c);
-        }), ret.end());
-    return ret;
-}
-
-static dbg_error cu_ambiguous(const std::string& name, const unit_lines& first,
-    const unit_lines& second)
-{
-    return dbg_error(dbg_error_code::COMPILATION_UNIT_AMBIGUOUS,
-        cmmn::concat("Compilation unit ", name, " ambiguous; found two matches: '",
-            first.name(), "' and '", second.name(), "'"));
-}
-
-static dbg_error func_ambiguous(const std::string& name, const function& first,
-    const function& second)
-{
-    return dbg_error(dbg_error_code::FUNCTION_AMBIGUOUS,
-        cmmn::concat("Function ", name, " ambiguous; found two matches: '",
-            first.name(), "' and '", second.name(), "'"));
-}
-
-static dbg_error func_ambiguous(const std::string& name,
-    const std::vector<const function*>& matches)
-{
-    std::string msg = cmmn::concat("Function '", name, "' ambiguous; found matches:");
-    for (const function* fptr : matches)
-        msg.append(" '")
-        .append(fptr->name())
-        .append("'");
-    return dbg_error(dbg_error_code::FUNCTION_AMBIGUOUS, std::move(msg));
-}
-
-static dbg_error cu_not_found(const std::string& name)
-{
-    return dbg_error(dbg_error_code::COMPILATION_UNIT_NOT_FOUND,
-        cmmn::concat("Compilation unit '", name, "' not found"));
-}
-
-static dbg_error func_not_found(const std::string& name)
-{
-    return dbg_error(dbg_error_code::FUNCTION_NOT_FOUND,
-        cmmn::concat("Function '", name, "' not found"));
-}
-
-static dbg_expected<std::vector<uintptr_t>> get_return_addresses(const char* target)
-{
-    std::vector<uintptr_t> addresses;
-    std::string output = cmmn::concat(file_base, ".returns");
-    cmmn::expected<file_descriptor, pipe_error> fd = file_descriptor::create(
-        output.c_str(), fd_flags::write, fd_mode::rdwr_all);
-    if (!fd)
-        return dbg_error(dbg_error_code::PIPE_ERROR, std::move(fd.error().msg()));
-
-    piped_commands cmd("objdump", "-d", target);
-    cmd.add("egrep", ret_match)
-        .add("awk", "{print $1}")
-        .add("sed", "s/:$//");
-
-    pipe_error err = cmd.execute(file_descriptor::std_in, fd.value());
-    if (err)
-        return dbg_error(dbg_error_code::PIPE_ERROR, std::move(err.msg()));
-    fd.value().flush();
-
-    std::ifstream ifs(output);
-    if (!ifs)
-        return dbg_error(dbg_error_code::SYSTEM_ERROR,
-            cmmn::concat("Could not open ", output, " for reading"));
-    for (std::string line; std::getline(ifs, line); )
+    struct parsed_func
     {
+        std::string name;
         uintptr_t addr;
-        std::string_view view(line);
-        auto [p, ec] = std::from_chars(view.begin(), view.end(), addr, 16);
-        std::error_code code = make_error_code(ec);
-        if (code)
-            return dbg_error(dbg_error_code::FORMAT_ERROR, get_system_error(code.value()));
-        addresses.push_back(addr);
-    }
-    return addresses;
-}
+        size_t size;
+        position pos;
+    };
 
-static std::vector<std::string_view> split_line(std::string_view line, std::string_view delim)
-{
-    std::vector<std::string_view> tokens;
-    std::string_view::size_type current = 0;
-    std::string_view::size_type next;
-    while ((next = line.find_first_of(delim, current)) != std::string_view::npos)
+    std::string get_system_error(int errnum)
     {
-        tokens.emplace_back(&line[current], next - current);
-        current = next + delim.length();
+        char buffer[256];
+        return { strerror_r(errnum, buffer, 256) };
     }
-    if (current < line.length())
-        tokens.emplace_back(&line[current], line.length() - current);
-    return tokens;
-}
+
+    template<typename Ret>
+    struct pipe_error_func
+    {
+        Ret operator()(pipe_error&& err)
+        {
+            return Ret(nonstd::unexpect,
+                dbg_error_code::PIPE_ERROR, std::move(err.msg()));
+        }
+    };
+
+    template<typename Ret>
+    struct format_error_func
+    {
+        Ret operator()(const std::error_code& ec)
+        {
+            return Ret(nonstd::unexpect,
+                dbg_error_code::FORMAT_ERROR,
+                cmmn::concat("Format error: ", get_system_error(ec.value()))
+            );
+        }
+    };
+
+    template<typename Ret>
+    struct system_error_func
+    {
+        Ret operator()(std::string&& prefix)
+        {
+            return Ret(nonstd::unexpect,
+                dbg_error_code::SYSTEM_ERROR,
+                cmmn::concat(prefix, ": ", get_system_error(errno))
+            );
+        }
+    };
+
+    template<typename T>
+    std::string remove_spaces(T&& txt)
+    {
+        std::string ret(std::forward<T>(txt));
+        ret.erase(std::remove_if(ret.begin(), ret.end(), [](unsigned char c)
+            {
+                return std::isspace(c);
+            }), ret.end());
+        return ret;
+    }
+
+    dbg_error cu_ambiguous(const std::string& name, const unit_lines& first,
+        const unit_lines& second)
+    {
+        return dbg_error(dbg_error_code::COMPILATION_UNIT_AMBIGUOUS,
+            cmmn::concat("Compilation unit ", name, " ambiguous; found two matches: '",
+                first.name(), "' and '", second.name(), "'"));
+    }
+
+    dbg_error func_ambiguous(const std::string& name, const function& first,
+        const function& second)
+    {
+        return dbg_error(dbg_error_code::FUNCTION_AMBIGUOUS,
+            cmmn::concat("Function ", name, " ambiguous; found two matches: '",
+                first.name(), "' and '", second.name(), "'"));
+    }
+
+    dbg_error func_ambiguous(const std::string& name,
+        const std::vector<const function*>& matches)
+    {
+        std::string msg = cmmn::concat("Function '", name, "' ambiguous; found matches:");
+        for (const function* fptr : matches)
+            msg.append(" '")
+            .append(fptr->name())
+            .append("'");
+        return dbg_error(dbg_error_code::FUNCTION_AMBIGUOUS, std::move(msg));
+    }
+
+    dbg_error cu_not_found(const std::string& name)
+    {
+        return dbg_error(dbg_error_code::COMPILATION_UNIT_NOT_FOUND,
+            cmmn::concat("Compilation unit '", name, "' not found"));
+    }
+
+    dbg_error func_not_found(const std::string& name)
+    {
+        return dbg_error(dbg_error_code::FUNCTION_NOT_FOUND,
+            cmmn::concat("Function '", name, "' not found"));
+    }
+
+    dbg_expected<std::vector<uintptr_t>> get_return_addresses(const char* target)
+    {
+        using rettype = dbg_expected<std::vector<uintptr_t>>;
+        auto pipe_err = pipe_error_func<rettype>{};
+        auto sys_err = system_error_func<rettype>{};
+        auto fmt_err = format_error_func<rettype>{};
+
+        std::vector<uintptr_t> addresses;
+        std::string output = cmmn::concat(file_base, ".returns");
+        auto fd = file_descriptor::create(output.c_str(), fd_flags::write, fd_mode::rdwr_all);
+        if (!fd)
+            return pipe_err(std::move(fd.error()));
+
+        piped_commands cmd("objdump", "-d", target);
+        cmd.add("egrep", ret_match)
+            .add("awk", "{print $1}")
+            .add("sed", "s/:$//");
+
+        if (auto err = cmd.execute(file_descriptor::std_in, *fd))
+            return pipe_err(std::move(err));
+        fd->flush();
+
+        std::ifstream ifs(output);
+        if (!ifs)
+            return sys_err(cmmn::concat("Could not open ", output));
+        for (std::string line; std::getline(ifs, line); )
+        {
+            uintptr_t addr;
+            std::string_view view(line);
+            auto [p, ec] = std::from_chars(view.begin(), view.end(), addr, 16);
+            std::error_code code = make_error_code(ec);
+            if (code)
+                return fmt_err(code);
+            addresses.push_back(addr);
+        }
+        return addresses;
+    }
+
+    std::vector<std::string_view> split_line(std::string_view line, std::string_view delim)
+    {
+        std::vector<std::string_view> tokens;
+        std::string_view::size_type current = 0;
+        std::string_view::size_type next;
+        while ((next = line.find_first_of(delim, current)) != std::string_view::npos)
+        {
+            tokens.emplace_back(&line[current], next - current);
+            current = next + delim.length();
+        }
+        if (current < line.length())
+            tokens.emplace_back(&line[current], line.length() - current);
+        return tokens;
+    }
 
 #if defined(__x86_64__) || defined(__i386__)
 
-static dbg_expected<size_t>
-get_function_entry_offset(std::string_view, std::string_view)
-{
-    return 0;
-}
+    dbg_expected<size_t>
+        get_function_entry_offset(std::string_view, std::string_view)
+    {
+        return 0;
+    }
 
 #elif defined(__powerpc64__)
 
-// obtains the offset between the function's global and local entry points, in bytes
-static ssize_t local_entry_point_offset(uint8_t st_other)
-{
-    constexpr static const size_t ins_size = 4;
-    // get the three most significant bits
-    st_other = st_other >> 5;
-    switch (st_other)
+    // obtains the offset between the function's global and local entry points, in bytes
+    ssize_t local_entry_point_offset(uint8_t st_other)
     {
-    case 0:
-    case 1:
-        return 0;
-    case 2:
-        return ins_size;
-    case 3:
-        return 2 * ins_size;
-    case 4:
-        return 4 * ins_size;
-    case 5:
-        return 8 * ins_size;
-    case 6:
-        return 16 * ins_size;
-    default:
-        break;
+        constexpr static const size_t ins_size = 4;
+        // get the three most significant bits
+        st_other = st_other >> 5;
+        switch (st_other)
+        {
+        case 0:
+        case 1:
+            return 0;
+        case 2:
+            return ins_size;
+        case 3:
+            return 2 * ins_size;
+        case 4:
+            return 4 * ins_size;
+        case 5:
+            return 8 * ins_size;
+        case 6:
+            return 16 * ins_size;
+        default:
+            break;
+        }
+        assert(false);
+        return -1;
     }
-    assert(false);
-    return -1;
-}
 
-// account for the local function entry offset defined in the OpenPOWER ABI
-static dbg_expected<size_t>
-get_function_entry_offset(std::string_view target, std::string_view func_name)
-{
-    std::string output = cmmn::concat(file_base, ".st_other");
-    cmmn::expected<file_descriptor, pipe_error> fd = file_descriptor::create(
-        output.c_str(), fd_flags::write, fd_mode::rdwr_all);
-    if (!fd)
-        return dbg_error(dbg_error_code::PIPE_ERROR, std::move(fd.error().msg()));
+    // account for the local function entry offset defined in the OpenPOWER ABI
+    dbg_expected<size_t>
+        get_function_entry_offset(std::string_view target, std::string_view func_name)
+    {
+        using rettype = dbg_expected<size_t>;
+        auto pipe_err = pipe_error_func<rettype>{};
+        auto sys_err = system_error_func<rettype>{};
+        auto fmt_err = format_error_func<rettype>{};
 
-    piped_commands cmd("objdump", "-tCw", std::string(target));
-    cmd.add("grep", "-F", std::string(func_name));
-    cmd.add("sed", "-nE", "s/.*0x([0-9a-f][0-9a-f]).*/\\1/p");
-    if (pipe_error err = cmd.execute(file_descriptor::std_in, fd.value()))
-        return dbg_error(dbg_error_code::PIPE_ERROR, std::move(err.msg()));
+        std::string output = cmmn::concat(file_base, ".st_other");
+        auto fd = file_descriptor::create(output.c_str(), fd_flags::write, fd_mode::rdwr_all);
+        if (!fd)
+            return pipe_err(std::move(fd.error()));
 
-    std::ifstream ifs(output);
-    if (!ifs)
-        return dbg_error(dbg_error_code::SYSTEM_ERROR,
-            cmmn::concat("Could not open ", output, " for reading"));
+        piped_commands cmd("objdump", "-tCw", std::string(target));
+        cmd.add("grep", "-F", std::string(func_name));
+        cmd.add("sed", "-nE", "s/.*0x([0-9a-f][0-9a-f]).*/\\1/p");
+        if (pipe_error err = cmd.execute(file_descriptor::std_in, *fd))
+            return pipe_err(std::move(err));
 
-    ssize_t offset = 0;
-    std::string line;
-    std::getline(ifs, line);
-    if (line.empty())
+        std::ifstream ifs(output);
+        if (!ifs)
+            return sys_err(cmmn::concat("Could not open ", output));
+
+        ssize_t offset = 0;
+        std::string line;
+        std::getline(ifs, line);
+        if (line.empty())
+            return offset;
+
+        uint8_t st_other = 0;
+        std::from_chars_result res = std::from_chars(line.data(), line.data() + line.size(),
+            st_other, 16);
+        if (std::error_code code = make_error_code(res.ec))
+            return fmt_err(code);
+        offset = local_entry_point_offset(st_other);
+        if (offset < 0)
+            return rettype(nonstd::unexpect,
+                dbg_error_code::FORMAT_ERROR,
+                "Incorrect value of symbol's st_other field");
         return offset;
-
-    uint8_t st_other = 0;
-    std::from_chars_result res = std::from_chars(line.data(), line.data() + line.size(),
-        st_other, 16);
-    if (std::error_code code = make_error_code(res.ec))
-        return dbg_error(dbg_error_code::FORMAT_ERROR, get_system_error(code.value()));
-    offset = local_entry_point_offset(st_other);
-    if (offset < 0)
-        return dbg_error(dbg_error_code::FORMAT_ERROR,
-            "Incorrect value of symbol's st_other field");
-    return offset;
-}
+    }
 
 #endif
 
-static dbg_expected<std::vector<parsed_func>> get_functions(const char* target)
-{
-    std::vector<parsed_func> funcs;
-    std::string output = cmmn::concat(file_base, ".syms");
-    cmmn::expected<file_descriptor, pipe_error> fd = file_descriptor::create(
-        output.c_str(), fd_flags::write, fd_mode::rdwr_all);
-    if (!fd)
-        return dbg_error(dbg_error_code::PIPE_ERROR, std::move(fd.error().msg()));
-
-    constexpr const size_t token_count = 5;
-    piped_commands cmd("nm", "-lSC", "--defined-only", "--format=posix", target);
-    cmd.add("sed", "-nE", "s/(.+) T ([0-9a-f]+) ([0-9a-f]+)\\t(.+):([1-9]+)/\\1|\\2|\\3|\\4|\\5/p");
-
-    if (pipe_error err = cmd.execute(file_descriptor::std_in, fd.value()))
-        return dbg_error(dbg_error_code::PIPE_ERROR, std::move(err.msg()));
-    fd.value().flush();
-
-    std::ifstream ifs(output);
-    if (!ifs)
-        return dbg_error(dbg_error_code::SYSTEM_ERROR,
-            cmmn::concat("Could not open ", output, " for reading"));
-    for (std::string line; std::getline(ifs, line); )
+    dbg_expected<std::vector<parsed_func>> get_functions(const char* target)
     {
-        std::vector<std::string_view> views = split_line(line, "|");
-        if (views.size() < token_count)
-            return dbg_error(dbg_error_code::FORMAT_ERROR, "invalid format for function parsing");
+        using rettype = dbg_expected<std::vector<parsed_func>>;
+        auto pipe_err = pipe_error_func<rettype>{};
+        auto sys_err = system_error_func<rettype>{};
+        auto fmt_err = format_error_func<rettype>{};
 
-        uintptr_t addr;
-        std::from_chars_result res = std::from_chars(views[1].begin(), views[1].end(), addr, 16);
-        if (std::error_code code = make_error_code(res.ec))
-            return dbg_error(dbg_error_code::FORMAT_ERROR, get_system_error(code.value()));
+        std::vector<parsed_func> funcs;
+        std::string output = cmmn::concat(file_base, ".syms");
+        auto fd = file_descriptor::create(
+            output.c_str(), fd_flags::write, fd_mode::rdwr_all);
+        if (!fd)
+            return pipe_err(std::move(fd.error()));
 
-        size_t size;
-        res = std::from_chars(views[2].begin(), views[2].end(), size, 16);
-        if (std::error_code code = make_error_code(res.ec))
-            return dbg_error(dbg_error_code::FORMAT_ERROR, get_system_error(code.value()));
+        constexpr const size_t token_count = 5;
+        piped_commands cmd("nm", "-lSC", "--defined-only", "--format=posix", target);
+        cmd.add("sed", "-nE", "s/(.+) T ([0-9a-f]+) ([0-9a-f]+)\\t(.+):([1-9]+)/\\1|\\2|\\3|\\4|\\5/p");
 
-        uint32_t lineno;
-        res = std::from_chars(views[4].begin(), views[4].end(), lineno, 10);
-        if (std::error_code code = make_error_code(res.ec))
-            return dbg_error(dbg_error_code::FORMAT_ERROR, get_system_error(code.value()));
+        if (auto err = cmd.execute(file_descriptor::std_in, *fd))
+            return pipe_err(std::move(err));
+        fd->flush();
 
-        dbg_expected<size_t> localentry_offset = get_function_entry_offset(target, views[0]);
-        if (!localentry_offset)
-            return localentry_offset.error();
-        addr += localentry_offset.value();
-        size -= localentry_offset.value();
+        std::ifstream ifs(output);
+        if (!ifs)
+            return sys_err(cmmn::concat("Could not open ", output));
+        for (std::string line; std::getline(ifs, line); )
+        {
+            std::vector<std::string_view> views = split_line(line, "|");
+            if (views.size() < token_count)
+                return rettype(nonstd::unexpect,
+                    dbg_error_code::FORMAT_ERROR, "Invalid format for function parsing");
 
-        funcs.push_back(
-            { std::string(views[0]), addr, size, position(std::string(views[3]), lineno) }
-        );
+            uintptr_t addr;
+            std::from_chars_result res = std::from_chars(views[1].begin(), views[1].end(), addr, 16);
+            if (std::error_code code = make_error_code(res.ec))
+                return fmt_err(code);
+
+            size_t size;
+            res = std::from_chars(views[2].begin(), views[2].end(), size, 16);
+            if (std::error_code code = make_error_code(res.ec))
+                return fmt_err(code);
+
+            uint32_t lineno;
+            res = std::from_chars(views[4].begin(), views[4].end(), lineno, 10);
+            if (std::error_code code = make_error_code(res.ec))
+                return fmt_err(code);
+
+            auto localentry_offset = get_function_entry_offset(target, views[0]);
+            if (!localentry_offset)
+                return rettype(nonstd::unexpect, std::move(localentry_offset.error()));
+            addr += *localentry_offset;
+            size -= *localentry_offset;
+
+            funcs.push_back(
+                { std::string(views[0]), addr, size, position(std::string(views[3]), lineno) }
+            );
+        }
+        return funcs;
     }
-    return funcs;
+
+    dbg_expected<bool> has_debug_info(const char* target)
+    {
+        assert(target);
+        using rettype = dbg_expected<bool>;
+        auto pipe_err = pipe_error_func<rettype>{};
+        auto sys_err = system_error_func<rettype>{};
+
+        std::string output = cmmn::concat(file_base, ".dbg");
+        auto fd = file_descriptor::create(output.c_str(), fd_flags::write, fd_mode::rdwr_all);
+        if (!fd)
+            return pipe_err(std::move(fd.error()));
+
+        piped_commands cmd("objdump", "-h", target);
+        cmd.add("sed", "-nE", "s/.*(debug_info).*/\\1/p");
+
+        if (auto err = cmd.execute(file_descriptor::std_in, *fd))
+            return pipe_err(std::move(err));
+        fd->flush();
+
+        std::ifstream ifs(output);
+        if (!ifs)
+            return sys_err(cmmn::concat("Could not open ", output));
+
+        std::string line;
+        std::getline(ifs, line);
+        return !line.empty();
+    }
 }
-
-static dbg_expected<bool> has_debug_info(const char* target)
-{
-    assert(target);
-    std::string output = cmmn::concat(file_base, ".dbg");
-    cmmn::expected<file_descriptor, pipe_error> fd = file_descriptor::create(
-        output.c_str(), fd_flags::write, fd_mode::rdwr_all);
-    if (!fd)
-        return dbg_error(dbg_error_code::PIPE_ERROR, std::move(fd.error().msg()));
-
-    piped_commands cmd("objdump", "-h", target);
-    cmd.add("sed", "-nE", "s/.*(debug_info).*/\\1/p");
-
-    if (pipe_error err = cmd.execute(file_descriptor::std_in, fd.value()))
-        return dbg_error(dbg_error_code::PIPE_ERROR, std::move(err.msg()));
-    fd.value().flush();
-
-    std::ifstream ifs(output);
-    if (!ifs)
-        return dbg_error(dbg_error_code::SYSTEM_ERROR,
-            cmmn::concat("Could not open ", output, " for reading"));
-
-    std::string line;
-    std::getline(ifs, line);
-    return !line.empty();
-}
-
-// end helper functions
-
 
 // dbg_error
 
@@ -545,6 +579,9 @@ unit_lines::highest_addr(uint32_t lineno) const
 dbg_expected<std::pair<uint32_t, uintptr_t>>
 unit_lines::get_addr_impl(uint32_t lineno, addr_getter fn) const
 {
+    using pair = std::pair<uint32_t, uintptr_t>;
+    using rettype = dbg_expected<pair>;
+
     using it = decltype(_lines)::const_iterator;
     std::pair<it, it> eqrange = _lines.equal_range(lineno);
     // if there is an element not less than lineno
@@ -552,26 +589,28 @@ unit_lines::get_addr_impl(uint32_t lineno, addr_getter fn) const
     {
         auto res = CALL_MEMBER_FN(*this, fn)(eqrange.first->second);
         if (!res)
-            return std::move(res.error());
-        return { eqrange.first->first, res.value() };
+            return rettype(nonstd::unexpect, std::move(res.error()));
+        return pair{ eqrange.first->first, *res };
     }
     // otherwise, the first element greater than lineno
     if (eqrange.second != _lines.end())
     {
         auto res = CALL_MEMBER_FN(*this, fn)(eqrange.second->second);
         if (!res)
-            return std::move(res.error());
-        return { eqrange.second->first, res.value() };
+            return rettype(nonstd::unexpect, std::move(res.error()));
+        return pair{ eqrange.second->first, *res };
     }
-    return dbg_error(dbg_error_code::INVALID_LINE, "Invalid line");
+    return rettype(nonstd::unexpect,
+        dbg_error_code::INVALID_LINE, "Invalid line");
 }
 
 dbg_expected<uintptr_t> unit_lines::get_lowest_addr(
     const decltype(_lines)::mapped_type& addrs) const
 {
     assert(!addrs.empty());
+    using rettype = dbg_expected<uintptr_t>;
     if (addrs.empty())
-        return dbg_error(dbg_error_code::INVALID_LINE, "Line has no addresses");
+        return rettype(nonstd::unexpect, dbg_error_code::INVALID_LINE, "Line has no addresses");
     return *addrs.begin();
 }
 
@@ -579,8 +618,9 @@ dbg_expected<uintptr_t> unit_lines::get_highest_addr(
     const decltype(_lines)::mapped_type& addrs) const
 {
     assert(!addrs.empty());
+    using rettype = dbg_expected<uintptr_t>;
     if (addrs.empty())
-        return dbg_error(dbg_error_code::INVALID_LINE, "Line has no addresses");
+        return rettype(nonstd::unexpect, dbg_error_code::INVALID_LINE, "Line has no addresses");
     return *addrs.rbegin();
 }
 
@@ -602,18 +642,17 @@ dbg_error header_info::get_exec_type(const char* target)
 {
     assert(target != nullptr);
     std::string output = cmmn::concat(file_base, ".type");
-    cmmn::expected<file_descriptor, pipe_error> fd = file_descriptor::create(
-        output.c_str(), fd_flags::write, fd_mode::rdwr_all);
+    auto fd = file_descriptor::create(output.c_str(), fd_flags::write, fd_mode::rdwr_all);
     if (!fd)
         return dbg_error(dbg_error_code::PIPE_ERROR, std::move(fd.error().msg()));
 
     piped_commands cmd("readelf", "-h", target);
     cmd.add("sed", "-nE", "s/.*Type:[[:space:]]+([A-Z]+).*/\\1/p");
 
-    pipe_error err = cmd.execute(file_descriptor::std_in, fd.value());
+    pipe_error err = cmd.execute(file_descriptor::std_in, *fd);
     if (err)
         return dbg_error(dbg_error_code::PIPE_ERROR, std::move(err.msg()));
-    fd.value().flush();
+    fd->flush();
 
     std::ifstream ifs(output);
     if (!ifs)
@@ -644,7 +683,7 @@ dbg_expected<dbg_info> dbg_info::create(const char* filename)
     dbg_error error(dbg_error::success());
     dbg_info dli(filename, error);
     if (error)
-        return error;
+        return dbg_expected<dbg_info>(nonstd::unexpect, std::move(error));
     return dli;
 }
 
@@ -668,7 +707,7 @@ dbg_info::dbg_info(const char* filename, dbg_error& err) :
         err = std::move(di.error());
         return;
     }
-    if (!di.value())
+    if (!*di)
     {
         err = { dbg_error_code::DEBUG_SYMBOLS_NOT_FOUND, "No debugging information found" };
         return;
@@ -728,15 +767,16 @@ dbg_expected<unit_lines*> dbg_info::find_lines(const char* name)
 dbg_expected<const function*> dbg_info::find_function(const std::string& name,
     const std::string& cu) const
 {
-    std::vector<const function*> matches;
+    using rettype = dbg_expected<const function*>;
 
+    std::vector<const function*> matches;
     // first, iterate all functions and find matched candidates
     for (const function& f : _funcs)
         if (f.matches(name, cu))
             matches.push_back(&f);
     // no matches found means the function does not exist
     if (matches.empty())
-        return func_not_found(name);
+        return rettype(nonstd::unexpect, func_not_found(name));
 
     // next, iterate all matches and check if any of them equal the function we are
     // searching for
@@ -747,7 +787,7 @@ dbg_expected<const function*> dbg_info::find_function(const std::string& name,
         {
             // another equal function was previously located
             if (retval != nullptr)
-                return func_ambiguous(name, *retval, *fptr);
+                return rettype(nonstd::unexpect, func_ambiguous(name, *retval, *fptr));
             retval = fptr;
         }
     }
@@ -756,7 +796,7 @@ dbg_expected<const function*> dbg_info::find_function(const std::string& name,
     if (retval == nullptr)
     {
         if (matches.size() > 1)
-            return func_ambiguous(name, matches);
+            return rettype(nonstd::unexpect, func_ambiguous(name, matches));
         else
             retval = matches.front();
     }
@@ -769,8 +809,11 @@ template<typename T>
 auto dbg_info::find_lines_impl(T& instance, const char* name)
 -> decltype(instance.find_lines(name))
 {
-    assert(name != nullptr);
-    decltype(instance.find_lines(name).value()) contains = nullptr;
+    assert(name);
+    using rettype = decltype(instance.find_lines(name));
+    using value_type = decltype(*instance.find_lines(name));
+
+    value_type contains = nullptr;
     for (auto& cu : instance._lines)
     {
         // existing path is always absolute
@@ -784,12 +827,12 @@ auto dbg_info::find_lines_impl(T& instance, const char* name)
             subpath.begin(), subpath.end()) != existing_path.end())
         {
             if (contains != nullptr)
-                return cu_ambiguous(name, *contains, cu);
+                return rettype(nonstd::unexpect, cu_ambiguous(name, *contains, cu));
             contains = &cu;
         }
     }
     if (contains == nullptr)
-        return cu_not_found(name);
+        return rettype(nonstd::unexpect, cu_not_found(name));
     return contains;
 }
 
@@ -855,7 +898,7 @@ dbg_error dbg_info::get_line_info(int fd)
             }
             else
             {
-                cu.value()->add_address(lineno, lineaddr);
+                (*cu)->add_address(lineno, lineaddr);
             }
 
             dwarf_dealloc(dw_dbg, linebuf[ix], DW_DLA_LINE);
@@ -887,10 +930,10 @@ dbg_error dbg_info::get_functions(const char* filename)
     if (!funcs)
         return std::move(funcs.error());
 
-    for (auto& pf : funcs.value())
+    for (auto& pf : *funcs)
     {
         std::vector<uintptr_t> effrets;
-        for (uintptr_t ret : returns.value())
+        for (uintptr_t ret : *returns)
         {
             if (ret > pf.addr && ret < pf.addr + pf.size)
                 effrets.push_back(ret);

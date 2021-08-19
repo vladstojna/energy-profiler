@@ -8,6 +8,8 @@
 #include "log.hpp"
 #include "registers.hpp"
 
+#include <nonstd/expected.hpp>
+
 #include <cassert>
 #include <cstring>
 #include <future>
@@ -19,9 +21,7 @@
 #include <sys/user.h>
 #include <sys/wait.h>
 
-
 using namespace tep;
-
 
 // tgkill wrapper
 
@@ -29,7 +29,6 @@ inline int tgkill(pid_t tgid, pid_t tid, int signal)
 {
     return syscall(SYS_tgkill, tgid, tid, signal);
 }
-
 
 // begin helper functions
 
@@ -49,17 +48,13 @@ void handle_error(pid_t tid, const char* comment, const nrgprf::error& e)
         tid, comment, sstream.str().c_str());
 }
 
-
 // end helper functions
-
 
 // definition of static variables
 
 std::mutex tracer::TRAP_BARRIER;
 
-
 // methods
-
 
 tracer::tracer(const registered_traps& traps,
     pid_t tracee_pid,
@@ -108,16 +103,15 @@ pid_t tracer::tracee_tgid() const
 
 tracer_expected<tracer::gathered_results> tracer::results()
 {
-    tracer_error error = _tracer_ftr.get();
-    if (error)
-        return error;
-
+    using rettype = tracer_expected<tracer::gathered_results>;
+    if (tracer_error error = _tracer_ftr.get())
+        return rettype(nonstd::unexpect, std::move(error));
     for (auto& child : _children)
     {
         tracer_expected<gathered_results> results = child->results();
         if (!results)
-            return std::move(results.error());
-        for (auto& [addr, entry] : results.value())
+            return results;
+        for (auto& [addr, entry] : *results)
         {
             auto& entries = _results[addr];
             entries.insert(
@@ -265,23 +259,21 @@ tracer_error tracer::trace(const registered_traps* traps)
     int wait_status;
     pid_t tid = gettid();
     uintptr_t entrypoint = _ep;
+    ptrace_wrapper& pw = ptrace_wrapper::instance;
+    ptrace_restarter pr(tid, _tracee);
 
     log::logline(log::debug, "[%d] started tracer for tracee with tid %d, entrypoint @ 0x%" PRIxPTR,
         tid, _tracee, entrypoint);
-    tracer_expected<ptrace_restarter> pr = ptrace_restarter::create();
     while (true)
     {
-        int errnum;
-        ptrace_wrapper& pw = ptrace_wrapper::instance;
-        pr = ptrace_restarter::create(tid, _tracee, pw);
-        if (!pr)
-            return std::move(pr.error());
-
+        if (auto err = pr.cont())
+            return err;
         if (tracer_error error = wait_for_tracee(wait_status))
             return error;
-        log::logline(log::debug, "[%d] waited for tracee %d with signal: %s (status 0x%x)", tid, _tracee,
-            sig_str(WSTOPSIG(wait_status)), wait_status);
-
+        const char* sigstr = sig_str(WSTOPSIG(wait_status));
+        log::logline(log::debug, "[%d] waited for tracee %d with signal: %s (status 0x%x)",
+            tid, _tracee, sigstr ? sigstr : "<no stop signal>", wait_status);
+        int errnum;
         if (is_child_event(wait_status))
         {
             std::scoped_lock lock(TRAP_BARRIER);
@@ -312,8 +304,7 @@ tracer_error tracer::trace(const registered_traps* traps)
             log::logline(log::debug, "[%d] entered global tracer barrier", tid);
 
             // disable tracing of children during execution of section
-            cmmn::expected<ptrace_child_toggler, tracer_error> toggler =
-                ptrace_child_toggler::create(pw, tid, _tracee, false);
+            auto toggler = ptrace_child_toggler::create(pw, tid, _tracee, false);
             if (!toggler)
                 return std::move(toggler.error());
             log::logline(log::info, "[%d] child tracing disabled", tid);
@@ -385,7 +376,7 @@ tracer_error tracer::trace(const registered_traps* traps)
                     log::logline(log::error, "[%d] sampling thread exited with error", tid);
                 else
                     log::logline(log::success, "[%d] sampling thread exited successfully with %zu samples",
-                        tid, sampling_results.value().size());
+                        tid, sampling_results->size());
 
                 _results[{start_bp_addr, end_bp_addr}].emplace_back(std::move(sampling_results));
 
@@ -419,7 +410,7 @@ tracer_error tracer::trace(const registered_traps* traps)
         }
         else if (WIFSIGNALED(wait_status))
         {
-            log::logline(log::success, "[%d] tracee %d exited with status %d", tid, _tracee,
+            log::logline(log::success, "[%d] tracee %d signaled: %s", tid, _tracee,
                 sig_str(WTERMSIG(wait_status)));
             break;
         }

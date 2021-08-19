@@ -3,26 +3,18 @@
 #pragma once
 
 #include <functional>
-
-namespace cmmn
-{
-    template<typename R, typename E>
-    class expected;
-}
+#include <util/expectedfwd.hpp>
 
 namespace tep
 {
-
     class ptrace_wrapper;
-
     class tracer_error;
 
     class ptrace_child_toggler
     {
     public:
-        static cmmn::expected<ptrace_child_toggler, tracer_error> create(ptrace_wrapper& pw,
-            pid_t tracer, pid_t tracee,
-            bool trace_children);
+        static nonstd::expected<ptrace_child_toggler, tracer_error>
+            create(ptrace_wrapper& pw, pid_t tracer, pid_t tracee, bool trace_children);
 
     private:
         pid_t _tracee;
@@ -43,5 +35,4 @@ namespace tep
         ptrace_child_toggler& operator=(ptrace_child_toggler&& other) noexcept;
 
     };
-
 }

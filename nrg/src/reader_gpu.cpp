@@ -13,6 +13,7 @@
 #include <nrg/reader_gpu.hpp>
 #include <nrg/sample.hpp>
 #include <util/concat.hpp>
+#include <nonstd/expected.hpp>
 #include "util.hpp"
 
 #include <iostream>
@@ -27,6 +28,7 @@
 #include <nrg/reader_gpu.hpp>
 #include <nrg/sample.hpp>
 #include <util/concat.hpp>
+#include <nonstd/expected.hpp>
 #include "util.hpp"
 
 #include <iostream>
@@ -41,6 +43,7 @@
 #include <nrg/reader_gpu.hpp>
 #include <nrg/sample.hpp>
 #include <util/concat.hpp>
+#include <nonstd/expected.hpp>
 #include "util.hpp"
 
 #include <cassert>
@@ -206,11 +209,11 @@ private:
     result<ToUnits> get_value(const S& data, uint8_t dev) const
     {
         if (event_idx(rt, dev) < 0)
-            return error(error_code::NO_EVENT);
-        auto result = data[dev];
-        if (!result)
-            return error(error_code::NO_EVENT);
-        return UnitsRead(result);
+            return result<ToUnits>(nonstd::unexpect, error_code::NO_EVENT);
+        auto res = data[dev];
+        if (!res)
+            return result<ToUnits>(nonstd::unexpect, error_code::NO_EVENT);
+        return UnitsRead(res);
     }
 
     constexpr static const std::array<
@@ -336,9 +339,9 @@ reader_gpu::impl::impl(readings_type::type rt, device_mask dev_mask, error& ec, 
         {
             if (!(elem.first & rt))
                 continue;
-            if (!(sup_dev.value() & elem.first))
+            if (!(*sup_dev & elem.first))
                 os << event_not_supported(i, elem.first) << "\n";
-            else if (!(sup.value() & elem.first))
+            else if (!(*sup & elem.first))
                 os << event_not_added(i, elem.first) << "\n";
             else
             {
@@ -354,14 +357,15 @@ reader_gpu::impl::impl(readings_type::type rt, device_mask dev_mask, error& ec, 
 
 result<readings_type::type> reader_gpu::impl::support(device_mask devmask)
 {
+    using rettype = result<readings_type::type>;
     if (devmask.none())
-        return error(error_code::NO_DEVICES, "No devices set in mask");
+        return rettype(nonstd::unexpect, error_code::NO_DEVICES, "No devices set in mask");
     auto lib = lib_handle::create();
     if (!lib)
-        return std::move(lib.error());
+        return rettype(nonstd::unexpect, std::move(lib.error()));
     unsigned int devcount;
     if (error err = get_device_count(devcount))
-        return err;
+        return rettype(nonstd::unexpect, std::move(err));
     readings_type::type retval = readings_type::all;
     for (unsigned i = 0; i < devcount; i++)
     {
@@ -369,32 +373,43 @@ result<readings_type::type> reader_gpu::impl::support(device_mask devmask)
         if (!devmask[i])
             continue;
         if (nvmlReturn_t res; (res = nvmlDeviceGetHandleByIndex(i, &devhandle)) != NVML_SUCCESS)
-            return error(error_code::SETUP_ERROR, error_str("Failed to get device handle", res));
+            return rettype(nonstd::unexpect,
+                error_code::SETUP_ERROR,
+                error_str("Failed to get device handle", res));
         if (auto sup = support(devhandle))
-            retval = retval & sup.value();
+            retval = retval & *sup;
         else
-            return std::move(sup.error());
+            return sup;
     }
     if (!retval)
-        return error(error_code::UNSUPPORTED, "Both power and energy are unsupported");
+        return rettype(nonstd::unexpect,
+            error_code::UNSUPPORTED,
+            "Both power and energy are unsupported");
     return retval;
 }
 
 result<readings_type::type> reader_gpu::impl::support(nvmlDevice_t handle)
 {
     assert(handle);
+    auto cannot_query_support = [](nvmlReturn_t res)
+    {
+        return result<readings_type::type>(nonstd::unexpect,
+            error_code::READER_GPU,
+            error_str("Cannot query support", res));
+    };
+
     nvmlReturn_t res;
     readings_type::type rt = readings_type::all;
     unsigned int power;
     if ((res = nvmlDeviceGetPowerUsage(handle, &power)) == NVML_ERROR_NOT_SUPPORTED)
         rt = rt ^ readings_type::power;
     else if (res != NVML_SUCCESS)
-        return error(error_code::READER_GPU, error_str("Cannot query support", res));
+        return cannot_query_support(res);
     unsigned long long energy;
     if ((res = nvmlDeviceGetTotalEnergyConsumption(handle, &energy)) == NVML_ERROR_NOT_SUPPORTED)
         rt = rt ^ readings_type::energy;
     else if (res != NVML_SUCCESS)
-        return error(error_code::READER_GPU, error_str("Cannot query support", res));
+        return cannot_query_support(res);
     return rt;
 }
 
@@ -547,9 +562,9 @@ reader_gpu::impl::impl(readings_type::type rt, device_mask dev_mask, error& ec, 
         {
             if (!(elem.first & rt))
                 continue;
-            if (!(sup_dev.value() & elem.first))
+            if (!(*sup_dev & elem.first))
                 os << event_not_supported(dev_idx, elem.first) << "\n";
-            else if (!(sup.value() & elem.first))
+            else if (!(*sup & elem.first))
                 os << event_not_added(dev_idx, elem.first) << "\n";
             else
             {
@@ -565,37 +580,43 @@ reader_gpu::impl::impl(readings_type::type rt, device_mask dev_mask, error& ec, 
 
 result<readings_type::type> reader_gpu::impl::support(device_mask devmask)
 {
+    using rettype = result<readings_type::type>;
     if (devmask.none())
-        return error(error_code::NO_DEVICES, "No devices set in mask");
+        return rettype(nonstd::unexpect, error_code::NO_DEVICES, "No devices set in mask");
     auto lib = lib_handle::create();
     if (!lib)
-        return std::move(lib.error());
+        return rettype(nonstd::unexpect, std::move(lib.error()));
     unsigned int devcount;
     if (error err = get_device_count(devcount))
-        return err;
+        return rettype(nonstd::unexpect, std::move(err));;
     readings_type::type retval = readings_type::all;
     for (unsigned i = 0; i < devcount; i++)
     {
         if (!devmask[i])
             continue;
         if (auto sup = support(i))
-            retval = retval & sup.value();
+            retval = retval & *sup;
         else
-            return std::move(sup.error());
+            return sup;
     }
     if (!retval)
-        return error(error_code::UNSUPPORTED, "Both power and energy are unsupported");
+        return rettype(nonstd::unexpect,
+            error_code::UNSUPPORTED,
+            "Both power and energy are unsupported");
     return retval;
 }
 
 result<readings_type::type> reader_gpu::impl::support(gpu_handle h)
 {
+    using rettype = result<readings_type::type>;
     rsmi_status_t res;
     readings_type::type rt = readings_type::all;
     if (uint64_t power; (res = rsmi_dev_power_ave_get(h, 0, &power)) == RSMI_STATUS_NOT_SUPPORTED)
         rt = rt ^ readings_type::power;
     else if (res != RSMI_STATUS_SUCCESS)
-        return error(error_code::READER_GPU, error_str("Cannot query support", res));
+        return  rettype(nonstd::unexpect,
+            error_code::READER_GPU,
+            error_str("Cannot query support", res));
     return rt ^ readings_type::energy;
 }
 
@@ -629,7 +650,7 @@ result<units_power> reader_gpu::impl::get_board_power(const sample& s, uint8_t d
 
 result<units_energy> reader_gpu::impl::get_board_energy(const sample&, uint8_t) const
 {
-    return error(error_code::NO_EVENT);
+    return result<units_energy>(nonstd::unexpect, error_code::NO_EVENT);
 }
 
 #else // GPU_NONE
@@ -661,12 +682,12 @@ size_t reader_gpu::impl::num_events() const
 
 result<units_power> reader_gpu::impl::get_board_power(const sample&, uint8_t) const
 {
-    return error(error_code::NO_EVENT);
+    return result<units_power>(nonstd::unexpect, error_code::NO_EVENT);
 }
 
 result<units_energy> reader_gpu::impl::get_board_energy(const sample&, uint8_t) const
 {
-    return error(error_code::NO_EVENT);
+    return result<units_energy>(nonstd::unexpect, error_code::NO_EVENT);
 }
 
 result<readings_type::type> reader_gpu::impl::support(device_mask)
@@ -793,7 +814,7 @@ reader_gpu::method(const sample& s) const \
     for (uint32_t d = 0; d < max_devices; d++) \
     { \
         if (auto val = method(s, d)) \
-            retval.push_back({ d, std::move(val.value()) }); \
+            retval.push_back({ d, *std::move(val) }); \
     } \
     return retval; \
 }

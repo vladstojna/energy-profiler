@@ -3,6 +3,10 @@
 #include "output.hpp"
 #include "trap.hpp"
 
+#include <nrg/reader_gpu.hpp>
+#include <nrg/reader_rapl.hpp>
+#include <nonstd/expected.hpp>
+
 #include <cassert>
 #include <iostream>
 #include <iomanip>
@@ -48,9 +52,9 @@ namespace
         assert(support);
         if (support)
         {
-            if (support.value() & readings_type::energy)
+            if (*support & readings_type::energy)
                 j.push_back("energy");
-            else if (support.value() & readings_type::power)
+            else if (*support & readings_type::power)
                 j.push_back("power");
         }
     }
@@ -242,17 +246,17 @@ void readings_output_dev<nrgprf::reader_rapl>::output(detail::output_impl& os,
         for (const auto& sample : exec)
         {
             if (result<sensor_value> sens_value = _reader.value<loc::pkg>(sample, skt))
-                jpkg.push_back(sens_value.value());
+                jpkg.push_back(*sens_value);
             if (result<sensor_value> sens_value = _reader.value<loc::cores>(sample, skt))
-                jcores.push_back(sens_value.value());
+                jcores.push_back(*sens_value);
             if (result<sensor_value> sens_value = _reader.value<loc::uncore>(sample, skt))
-                juncore.push_back(sens_value.value());
+                juncore.push_back(*sens_value);
             if (result<sensor_value> sens_value = _reader.value<loc::mem>(sample, skt))
-                jdram.push_back(sens_value.value());
+                jdram.push_back(*sens_value);
             if (result<sensor_value> sens_value = _reader.value<loc::sys>(sample, skt))
-                jsys.push_back(sens_value.value());
+                jsys.push_back(*sens_value);
             if (result<sensor_value> sens_value = _reader.value<loc::gpu>(sample, skt))
-                jgpu.push_back(sens_value.value());
+                jgpu.push_back(*sens_value);
         }
         if (!jpkg.empty() || !jcores.empty() || !juncore.empty()
             || !jdram.empty() || !jgpu.empty() || !jsys.empty())
@@ -280,10 +284,10 @@ void readings_output_dev<nrgprf::reader_gpu>::output(detail::output_impl& os,
         {
             if (result<units_energy> energy = _reader.get_board_energy(sample, dev))
                 readings["board"].push_back(
-                    json::array({ unit_cast<joules<double>>(energy.value()).count() }));
+                    json::array({ unit_cast<joules<double>>(*energy).count() }));
             else if (result<units_power> power = _reader.get_board_power(sample, dev))
                 readings["board"].push_back(
-                    json::array({ unit_cast<watts<double>>(power.value()).count() }));
+                    json::array({ unit_cast<watts<double>>(*power).count() }));
         }
         if (!readings["board"].empty())
             os.json()["gpu"].push_back(std::move(readings));

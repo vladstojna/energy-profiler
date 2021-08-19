@@ -9,6 +9,8 @@
 
 #if defined CPU_NONE
 
+#include <nonstd/expected.hpp>
+
 #include "util.hpp"
 
 #include <cassert>
@@ -18,6 +20,7 @@
 
 #include <nrg/sample.hpp>
 #include <util/concat.hpp>
+#include <nonstd/expected.hpp>
 
 #include "util.hpp"
 
@@ -33,6 +36,7 @@
 
 #include <nrg/sample.hpp>
 #include <util/concat.hpp>
+#include <nonstd/expected.hpp>
 
 #include "util.hpp"
 
@@ -72,6 +76,21 @@ namespace
 
     result<uint8_t> count_sockets()
     {
+        using rettype = result<uint8_t>;
+        auto system_error = [](std::string&& msg)
+        {
+            return rettype(nonstd::unexpect, error_code::SYSTEM, system_error_str(msg));
+        };
+        auto too_many_sockets = [](std::size_t max, std::size_t found)
+        {
+            return rettype(
+                nonstd::unexpect,
+                error_code::TOO_MANY_SOCKETS,
+                cmmn::concat("Too many sockets: maximum of ", std::to_string(max),
+                    ", found ", std::to_string(found))
+            );
+        };
+
         char filename[128];
         std::set<uint32_t> packages;
         for (int i = 0; ; i++)
@@ -84,20 +103,17 @@ namespace
                 // file does not exist
                 if (errno == ENOENT)
                     break;
-                return error(error_code::SYSTEM, system_error_str(
-                    cmmn::concat("Error opening ", filename)));
+                return system_error(cmmn::concat("Error opening ", filename));
             }
             uint32_t pkg;
             if (!(ifs >> pkg))
-                return error(error_code::SYSTEM, system_error_str("Error reading package"));
+                return system_error("Error reading package");
             packages.insert(pkg);
         };
         if (packages.empty())
-            return error(error_code::NO_SOCKETS, "No sockets found");
+            return rettype(nonstd::unexpect, error_code::NO_SOCKETS, "No sockets found");
         if (packages.size() > max_sockets)
-            return error(error_code::TOO_MANY_SOCKETS, cmmn::concat(
-                "Too many sockets: maximum of ", std::to_string(nrgprf::max_sockets),
-                ", found ", std::to_string(packages.size())));
+            return too_many_sockets(max_sockets, packages.size());
         return packages.size();
     }
 }
@@ -151,7 +167,7 @@ int32_t reader_rapl::impl::event_idx(uint8_t) const
 template<typename Location>
 result<sensor_value> reader_rapl::impl::value(const sample&, uint8_t) const
 {
-    return error(error_code::NO_EVENT);
+    return result<sensor_value>(nonstd::unexpect, error_code::NO_EVENT);
 }
 
 #elif defined NRG_X86_64
@@ -182,9 +198,7 @@ namespace
         file_descriptor(const char* file, error& err);
         ~file_descriptor() noexcept;
 
-        file_descriptor(const file_descriptor& fd) noexcept;
-        file_descriptor& operator=(const file_descriptor& other) noexcept;
-
+        file_descriptor(const file_descriptor& fd);
         file_descriptor(file_descriptor&& fd) noexcept;
         file_descriptor& operator=(file_descriptor&& other) noexcept;
     };
@@ -205,7 +219,7 @@ namespace
         nrgprf::error err = error::success();
         file_descriptor fd(file, err);
         if (err)
-            return err;
+            return result<file_descriptor>(nonstd::unexpect, std::move(err));
         return fd;
     }
 
@@ -216,11 +230,11 @@ namespace
             err = { error_code::SYSTEM, system_error_str(file) };
     }
 
-    file_descriptor::file_descriptor(const file_descriptor& other) noexcept :
+    file_descriptor::file_descriptor(const file_descriptor& other) :
         value(dup(other.value))
     {
         if (value == -1)
-            perror("file_descriptor: error duplicating file descriptor");
+            throw std::runtime_error("file_descriptor: error duplicating file descriptor");
     }
 
     file_descriptor::file_descriptor(file_descriptor&& other) noexcept :
@@ -237,14 +251,6 @@ namespace
     {
         value = other.value;
         other.value = -1;
-        return *this;
-    }
-
-    file_descriptor& file_descriptor::operator=(const file_descriptor& other) noexcept
-    {
-        value = dup(other.value);
-        if (value == -1)
-            perror("file_descriptor: error duplicating file descriptor");
         return *this;
     }
 
@@ -297,18 +303,22 @@ namespace
     result<int32_t> get_domain_idx(const char* base)
     {
         // open the */name file, read the name and obtain the domain index
-
+        using rettype = result<int32_t>;
         char name[64];
         char filename[256];
         snprintf(filename, sizeof(filename), "%s/name", base);
-        result<file_descriptor> filed = file_descriptor::create(filename);
+        auto filed = file_descriptor::create(filename);
         if (!filed)
-            return std::move(filed.error());
-        if (read_buff(filed.value().value, name, sizeof(name)) < 0)
-            return error(error_code::SYSTEM, system_error_str(filename));
+            return rettype(nonstd::unexpect, std::move(filed.error()));
+        if (read_buff(filed->value, name, sizeof(name)) < 0)
+            return rettype(nonstd::unexpect,
+                error_code::SYSTEM,
+                system_error_str(filename));
         int32_t didx = domain_index_from_name(name);
         if (didx < 0)
-            return error(error_code::INVALID_DOMAIN_NAME, cmmn::concat("invalid domain name - ", name));
+            return rettype(nonstd::unexpect,
+                error_code::INVALID_DOMAIN_NAME,
+                cmmn::concat("invalid domain name: ", name));
         return didx;
     }
 
@@ -316,20 +326,22 @@ namespace
     {
         // open the */max_energy_range_uj file and save the max value
         // open the */energy_uj file and save the file descriptor
-
+        using rettype = result<event_data>;
         char filename[256];
         snprintf(filename, sizeof(filename), "%s/max_energy_range_uj", base);
-        result<file_descriptor> filed = file_descriptor::create(filename);
+        auto filed = file_descriptor::create(filename);
         if (!filed)
-            return std::move(filed.error());
+            return rettype(nonstd::unexpect, std::move(filed.error()));
         uint64_t max_value;
-        if (read_uint64(filed.value().value, &max_value) < 0)
-            return error(error_code::SYSTEM, system_error_str(filename));
+        if (read_uint64(filed->value, &max_value) < 0)
+            return rettype(nonstd::unexpect,
+                error_code::SYSTEM,
+                system_error_str(filename));
         snprintf(filename, sizeof(filename), "%s/energy_uj", base);
         filed = file_descriptor::create(filename);
         if (!filed)
-            return std::move(filed.error());
-        return { std::move(filed.value()), max_value };
+            return rettype(nonstd::unexpect, std::move(filed.error()));
+        return event_data{ std::move(*filed), max_value };
     }
 }
 
@@ -368,8 +380,8 @@ reader_rapl::impl::impl(location_mask dmask, socket_mask skt_mask, error& ec, st
         ec = std::move(num_skts.error());
         return;
     }
-    os << fileline(cmmn::concat("found ", std::to_string(num_skts.value()), " sockets\n"));
-    for (uint8_t skt = 0; skt < num_skts.value(); skt++)
+    os << fileline(cmmn::concat("found ", std::to_string(*num_skts), " sockets\n"));
+    for (uint8_t skt = 0; skt < *num_skts; skt++)
     {
         if (!skt_mask[skt])
             continue;
@@ -453,24 +465,25 @@ int32_t reader_rapl::impl::event_idx<loc::gpu>(uint8_t) const
 template<typename Location>
 result<sensor_value> reader_rapl::impl::value(const sample& s, uint8_t skt) const
 {
+    using rettype = result<sensor_value>;
     if (event_idx<Location>(skt) < 0)
-        return error(error_code::NO_EVENT);
-    auto result = s.data.cpu[event_idx<Location>(skt)];
-    if (!result)
-        return error(error_code::NO_EVENT);
-    return result;
+        return rettype(nonstd::unexpect, error_code::NO_EVENT);
+    auto res = s.data.cpu[event_idx<Location>(skt)];
+    if (!res)
+        return rettype(nonstd::unexpect, error_code::NO_EVENT);
+    return sensor_value{ res };
 }
 
 template<>
 result<sensor_value> reader_rapl::impl::value<loc::sys>(const sample&, uint8_t) const
 {
-    return error(error_code::NO_EVENT);
+    return result<sensor_value>(nonstd::unexpect, error_code::NO_EVENT);
 }
 
 template<>
 result<sensor_value> reader_rapl::impl::value<loc::gpu>(const sample&, uint8_t) const
 {
-    return error(error_code::NO_EVENT);
+    return result<sensor_value>(nonstd::unexpect, error_code::NO_EVENT);
 }
 
 error
@@ -480,14 +493,14 @@ reader_rapl::impl::add_event(
     result<int32_t> didx = get_domain_idx(base);
     if (!didx)
         return std::move(didx.error());
-    if (dmask[didx.value()])
+    if (dmask[*didx])
     {
         result<event_data> event_data = get_event_data(base);
         if (!event_data)
             return std::move(event_data.error());
         os << fileline(cmmn::concat("added event: ", base, "\n"));
-        _event_map[skt][didx.value()] = _active_events.size();
-        _active_events.push_back(std::move(event_data.value()));
+        _event_map[skt][*didx] = _active_events.size();
+        _active_events.push_back(std::move(*event_data));
     }
     return error::success();
 }
@@ -1478,8 +1491,8 @@ reader_rapl::impl::impl(location_mask lmask, socket_mask smask, error& err, std:
         err = std::move(sockets.error());
         return;
     }
-    os << fileline(cmmn::concat("Found ", std::to_string(sockets.value()), " sockets\n"));
-    for (uint32_t occ_num = 0; occ_num < sockets.value(); occ_num++)
+    os << fileline(cmmn::concat("Found ", std::to_string(*sockets), " sockets\n"));
+    for (uint32_t occ_num = 0; occ_num < *sockets; occ_num++)
     {
         if (!smask[occ_num])
             continue;
@@ -1615,15 +1628,16 @@ template<typename Location>
 result<sensor_value> reader_rapl::impl::value(const sample& s, uint8_t skt) const
 {
     assert(skt < max_sockets);
+    using rettype = result<sensor_value>;
     int32_t idx = event_idx<Location>(skt);
     if (idx < 0)
-        return error(error_code::NO_EVENT);
+        return rettype(nonstd::unexpect, error_code::NO_EVENT);
     uint32_t stride = skt * nrgprf::max_domains + Location::value;
 
     auto value_timestamp = s.data.timestamps[stride];
     auto value_sample = s.data.cpu[stride];
     if (!value_timestamp || !value_sample)
-        return error(error_code::NO_EVENT);
+        return rettype(nonstd::unexpect, error_code::NO_EVENT);
     for (const auto& sensor_entry : _active_events[idx].entries)
     {
         if (sensor_entry.gsid == to_sensor_gsid<Location>())
@@ -1631,11 +1645,12 @@ result<sensor_value> reader_rapl::impl::value(const sample& s, uint8_t skt) cons
             watts<double> power = canonicalize_power(value_sample, sensor_entry);
             time_point tp = canonicalize_timestamp(value_timestamp);
             if (!power.count())
-                return error(error_code::NOT_IMPL, "Unsupported power units found");
+                return rettype(nonstd::unexpect,
+                    error_code::NOT_IMPL, "Unsupported power units found");
             return sensor_value{ tp, unit_cast<decltype(sensor_value::power)>(power) };
         }
     };
-    return error(error_code::NO_EVENT);
+    return rettype(nonstd::unexpect, error_code::NO_EVENT);
 }
 
 #endif // defined CPU_NONE
@@ -1705,9 +1720,8 @@ std::vector<std::pair<uint32_t, sensor_value>> reader_rapl::values(const sample 
     std::vector<std::pair<uint32_t, sensor_value>> retval;
     for (uint32_t skt = 0; skt < max_sockets; skt++)
     {
-        result<sensor_value> val = value<Location>(s, skt);
-        if (val)
-            retval.push_back({ skt, std::move(val.value()) });
+        if (auto val = value<Location>(s, skt))
+            retval.push_back({ skt, *std::move(val) });
     };
     return retval;
 }

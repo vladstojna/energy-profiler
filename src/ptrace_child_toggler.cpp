@@ -5,7 +5,7 @@
 #include "ptrace_wrapper.hpp"
 #include "util.hpp"
 
-#include <util/expected.hpp>
+#include <nonstd/expected.hpp>
 
 #include <cassert>
 #include <unistd.h>
@@ -13,14 +13,16 @@
 using namespace tep;
 
 
-cmmn::expected<ptrace_child_toggler, tracer_error> ptrace_child_toggler::create(ptrace_wrapper& pw,
+nonstd::expected<ptrace_child_toggler, tracer_error>
+ptrace_child_toggler::create(ptrace_wrapper& pw,
     pid_t tracer, pid_t tracee,
     bool trace_children)
 {
+    using rettype = nonstd::expected<ptrace_child_toggler, tracer_error>;
     tracer_error err = tracer_error::success();
     ptrace_child_toggler pct(pw, tracer, tracee, trace_children, err);
     if (err)
-        return err;
+        return rettype(nonstd::unexpect, std::move(err));
     return pct;
 }
 

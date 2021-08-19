@@ -19,6 +19,7 @@
 #include <sys/user.h>
 
 #include <util/concat.hpp>
+#include <nonstd/expected.hpp>
 
 using namespace tep;
 
@@ -45,19 +46,25 @@ namespace
     // returns either error or original word at address 'addr'
     tracer_expected<long> insert_trap(pid_t my_tid, pid_t pid, uintptr_t addr)
     {
+        using rettype = tracer_expected<long>;
+        auto ptrace_error = [](int code, pid_t tid, const char* comment)
+        {
+            return rettype(nonstd::unexpect,
+                get_syserror(code, tracer_errcode::PTRACE_ERROR, tid, comment));
+        };
         ptrace_wrapper& pw = ptrace_wrapper::instance;
         int error;
         long word = pw.ptrace(error, PTRACE_PEEKDATA, pid, addr, 0);
         if (error)
         {
             log::logline(log::error, "[%d] error inserting trap @ 0x%" PRIxPTR, my_tid, addr);
-            return get_syserror(error, tracer_errcode::PTRACE_ERROR, my_tid, "insert_trap: PTRACE_PEEKDATA");
+            return ptrace_error(error, my_tid, "insert_trap: PTRACE_PEEKDATA");
         }
         long new_word = set_trap(word);
         if (pw.ptrace(error, PTRACE_POKEDATA, pid, addr, new_word) < 0)
         {
             log::logline(log::error, "[%d] error inserting trap @ 0x%" PRIxPTR, my_tid, addr);
-            return get_syserror(error, tracer_errcode::PTRACE_ERROR, my_tid, "insert_trap: PTRACE_POKEDATA");
+            return ptrace_error(error, my_tid, "insert_trap: PTRACE_POKEDATA");
         }
         log::logline(log::debug, "[%d] 0x%" PRIxPTR ": %lx -> %lx", my_tid, addr, word, new_word);
         return word;
@@ -150,7 +157,7 @@ namespace
             return { tracer_errcode::READER_ERROR, results.error().msg() };
         }
         log::logline(log::success, "successfuly gathered %s idle readings", target);
-        into = std::move(results.value());
+        into = std::move(*results);
         into.shrink_to_fit();
         return tracer_error::success();
     }
@@ -272,31 +279,41 @@ const registered_traps& profiler::traps() const
 
 tracer_expected<profiling_results> profiler::run()
 {
+    using rettype = tracer_expected<profiling_results>;
+
     if (_flags.obtain_idle_readings())
+        if (tracer_error err = obtain_idle_results())
+            return rettype(nonstd::unexpect, std::move(err));
+
+    auto system_error = [](pid_t tid, const char* comment)
     {
-        tracer_error err = obtain_idle_results();
-        if (err)
-            return err;
-    }
+        return rettype(nonstd::unexpect,
+            get_syserror(errno, tracer_errcode::SYSTEM_ERROR, tid, comment));
+    };
+    auto move_error = [](tracer_error& err)
+    {
+        return rettype(nonstd::unexpect, std::move(err));
+    };
 
     int wait_status;
     pid_t waited_pid = waitpid(_child, &wait_status, 0);
     if (waited_pid == -1)
-        return get_syserror(errno, tracer_errcode::SYSTEM_ERROR, _tid, "waitpid");
+        return system_error(_tid, "waitpid");
     assert(waited_pid == _child);
 
     log::logline(log::info, "[%d] started the profiling procedure for child %d", _tid, waited_pid);
-
     if (!WIFSTOPPED(wait_status))
     {
-        log::logline(log::error, "[%d] ptrace(PTRACE_TRACEME, ...) called but target was not stopped", _tid);
-        return tracer_error(tracer_errcode::PTRACE_ERROR,
+        log::logline(log::error, "[%d] ptrace(PTRACE_TRACEME, ...) "
+            "called but target was not stopped", _tid);
+        return rettype(nonstd::unexpect,
+            tracer_errcode::PTRACE_ERROR,
             "Tracee not stopped despite being attached with ptrace");
     }
 
     cpu_gp_regs regs(waited_pid);
     if (tracer_error err = regs.getregs())
-        return err;
+        return move_error(err);
 
     uintptr_t entrypoint;
     switch (_dli.header().exec_type())
@@ -304,7 +321,7 @@ tracer_expected<profiling_results> profiler::run()
     case header_info::type::dyn:
         log::logline(log::success, "[%d] target is a PIE", _tid);
         if (get_entrypoint_addr(_child, entrypoint) == -1)
-            return get_syserror(errno, tracer_errcode::SYSTEM_ERROR, _tid, "get_entrypoint_addr");
+            return system_error(_tid, "get_entrypoint_addr");
         break;
     case header_info::type::exec:
         log::logline(log::success, "[%d] target is not a PIE", _tid);
@@ -321,7 +338,8 @@ tracer_expected<profiling_results> profiler::run()
     if (ptrace_wrapper::instance
         .ptrace(errnum, PTRACE_SETOPTIONS, waited_pid, 0, get_ptrace_opts(true)) == -1)
     {
-        return get_syserror(errnum, tracer_errcode::PTRACE_ERROR, _tid, "PTRACE_SETOPTIONS");
+        return rettype(nonstd::unexpect,
+            get_syserror(errnum, tracer_errcode::PTRACE_ERROR, _tid, "PTRACE_SETOPTIONS"));
     }
     log::logline(log::debug, "[%d] ptrace options successfully set", _tid);
 
@@ -332,29 +350,27 @@ tracer_expected<profiling_results> profiler::run()
         {
             if (sec.bounds().has_function())
             {
-                tracer_error err = insert_traps_function(group, sec,
-                    sec.bounds().func(), entrypoint);
-                if (err)
-                    return err;
+                if (tracer_error err = insert_traps_function(group, sec,
+                    sec.bounds().func(), entrypoint))
+                    return move_error(err);
             }
             else if (sec.bounds().has_positions())
             {
                 if (!_dli.has_line_info())
                 {
                     log::logline(log::error, "[%d] no line information found", _tid);
-                    return tracer_error(tracer_errcode::NO_SYMBOL, "No line information found");
+                    return rettype(nonstd::unexpect,
+                        tracer_errcode::NO_SYMBOL, "No line information found");
                 }
 
                 auto insert_start = insert_traps_position_start(sec,
                     sec.bounds().start(), entrypoint);
                 if (!insert_start)
-                    return std::move(insert_start.error());
+                    return move_error(insert_start.error());
 
-                tracer_error err = insert_traps_position_end(group, sec,
-                    sec.bounds().end(), entrypoint,
-                    insert_start.value());
-                if (err)
-                    return err;
+                if (tracer_error err = insert_traps_position_end(group, sec,
+                    sec.bounds().end(), entrypoint, *insert_start))
+                    return move_error(err);
             }
             else
                 assert(false);
@@ -363,22 +379,24 @@ tracer_expected<profiling_results> profiler::run()
 
     // first tracer has the same tracee tgid and tid, since there is only one tracee at this point
     tracer trc(_traps, _child, _child, entrypoint, std::launch::deferred);
-    tracer_expected<tracer::gathered_results> results = trc.results();
+    auto results = trc.results();
     if (!results)
-        return std::move(results.error());
+        return move_error(results.error());
 
-    for (auto& [pair, execs] : results.value())
+    for (auto& [pair, execs] : *results)
     {
         start_trap* strap = _traps.find(pair.first);
         end_trap* etrap = _traps.find(pair.second, pair.first);
 
         assert(strap && etrap);
         if (!strap || !etrap)
-            return tracer_error(tracer_errcode::NO_TRAP, "Starting or ending traps are malformed");
+            return rettype(nonstd::unexpect,
+                tracer_errcode::NO_TRAP, "Starting or ending traps are malformed");
         section_output* sec_out = _output.find(pair);
         assert(sec_out != nullptr);
         if (sec_out == nullptr)
-            return tracer_error(tracer_errcode::NO_TRAP, "Address bounds not found");
+            return rettype(nonstd::unexpect,
+                tracer_errcode::NO_TRAP, "Address bounds not found");
 
         pos::interval interval{ std::move(strap->at()), std::move(etrap->at()) };
         std::string interval_str = to_string(interval);
@@ -392,7 +410,7 @@ tracer_expected<profiling_results> profiler::run()
             }
             log::logline(log::success, "[%d] registered execution of section %s as successful",
                 _tid, interval_str.c_str());
-            sec_out->push_back({ interval, std::move(exec.value()) });
+            sec_out->push_back({ interval, std::move(*exec) });
         }
     }
     return std::move(_output.results);
@@ -437,7 +455,7 @@ tracer_error profiler::insert_traps_function(
         log::logline(log::error, "[%d] function: %s", _tid, func_res.error().message.c_str());
         return tracer_error(tracer_errcode::NO_SYMBOL, std::move(func_res.error().message));
     }
-    const function& func = *func_res.value();
+    const function& func = **func_res;
     const function_bounds& fbnds = func.bounds();
 
     pos::function pf{ func.name() };
@@ -458,7 +476,7 @@ tracer_error profiler::insert_traps_function(
         _tid, pos_func_str.c_str(), start.val(), start.val() - entrypoint);
 
     auto insert_res = _traps.insert(start,
-        start_trap(origw.value(), std::move(pf), sec.allow_concurrency(),
+        start_trap(*origw, std::move(pf), sec.allow_concurrency(),
             creator_from_section(_readers, sec)));
 
     if (!insert_res.second)
@@ -485,7 +503,7 @@ tracer_error profiler::insert_traps_function(
 
         auto insert_res = _traps.insert(
             end,
-            end_trap(origw.value(), pos::single_pos{ std::move(pf_off) }, start));
+            end_trap(*origw, pos::single_pos{ std::move(pf_off) }, start));
         if (!insert_res.second)
         {
             log::logline(log::error, "[%d] trap @ 0x%" PRIxPTR " (offset 0x%" PRIxPTR ") already exists",
@@ -500,47 +518,51 @@ tracer_error profiler::insert_traps_function(
 }
 
 
-cmmn::expected<start_addr, tracer_error> profiler::insert_traps_position_start(
+tracer_expected<start_addr> profiler::insert_traps_position_start(
     const config_data::section& sec,
     const config_data::position& pos,
     uintptr_t entrypoint)
 {
+    using rettype = tracer_expected<start_addr>;
     dbg_expected<unit_lines*> ul = _dli.find_lines(pos.compilation_unit());
     if (!ul)
     {
         log::logline(log::error, "[%d] unit lines: %s", _tid, ul.error().message.c_str());
-        return tracer_error(tracer_errcode::NO_SYMBOL, std::move(ul.error().message));
+        return rettype(nonstd::unexpect,
+            tracer_errcode::NO_SYMBOL, std::move(ul.error().message));
     }
-    dbg_expected<std::pair<uint32_t, uintptr_t>> line_addr = ul.value()->lowest_addr(pos.line());
+    dbg_expected<std::pair<uint32_t, uintptr_t>> line_addr = (*ul)->lowest_addr(pos.line());
     if (!line_addr)
     {
         log::logline(log::error, "[%d] unit lines: invalid line %" PRIu32, _tid, pos.line());
-        return tracer_error(tracer_errcode::NO_SYMBOL, std::move(line_addr.error().message));
+        return rettype(nonstd::unexpect,
+            tracer_errcode::NO_SYMBOL, std::move(line_addr.error().message));
     }
 
-    pos::line posline{ ul.value()->name(), line_addr.value().first };
+    pos::line posline{ (*ul)->name(), line_addr->first };
     std::string pstr = to_string(posline);
 
-    start_addr eaddr = entrypoint + line_addr.value().second;
+    start_addr eaddr = entrypoint + line_addr->second;
     tracer_expected<long> origw = insert_trap(_tid, _child, eaddr.val());
     if (!origw)
-        return std::move(origw.error());
+        return rettype(nonstd::unexpect, std::move(origw.error()));
     log::logline(log::info, "[%d] inserted trap @ 0x%" PRIxPTR " (offset 0x%" PRIxPTR ")",
         _tid, eaddr.val(), eaddr.val() - entrypoint);
 
     auto insert_res = _traps.insert(eaddr,
-        start_trap(origw.value(), std::move(posline), sec.allow_concurrency(),
+        start_trap(*origw, std::move(posline), sec.allow_concurrency(),
             creator_from_section(_readers, sec)));
     if (!insert_res.second)
     {
         log::logline(log::error, "[%d] trap @ 0x%" PRIxPTR " (offset 0x%" PRIxPTR ") already exists",
             _tid, eaddr.val(), eaddr.val() - entrypoint);
-        return tracer_error(tracer_errcode::NO_TRAP,
+        return rettype(nonstd::unexpect,
+            tracer_errcode::NO_TRAP,
             cmmn::concat("Trap ", to_string(eaddr), " already exists"));
     }
 
     log::logline(log::debug, "[%d] line %s @ offset 0x%" PRIxPTR,
-        _tid, pstr.c_str(), line_addr.value().second);
+        _tid, pstr.c_str(), line_addr->second);
     log::logline(log::success, "[%d] inserted trap on line: %s", _tid, pstr.c_str());
     return eaddr;
 }
@@ -558,24 +580,24 @@ tracer_error profiler::insert_traps_position_end(
         log::logline(log::error, "[%d] unit lines: %s", _tid, ul.error().message.c_str());
         return tracer_error(tracer_errcode::NO_SYMBOL, std::move(ul.error().message));
     }
-    dbg_expected<std::pair<uint32_t, uintptr_t>> line_addr = ul.value()->lowest_addr(pos.line());
+    dbg_expected<std::pair<uint32_t, uintptr_t>> line_addr = (*ul)->lowest_addr(pos.line());
     if (!line_addr)
     {
         log::logline(log::error, "[%d] unit lines: invalid line %" PRIu32, _tid, pos.line());
         return tracer_error(tracer_errcode::NO_SYMBOL, std::move(line_addr.error().message));
     }
 
-    pos::line posline = { ul.value()->name(), line_addr.value().first };
+    pos::line posline = { (*ul)->name(), line_addr->first };
     std::string pstr = to_string(posline);
 
-    end_addr eaddr = entrypoint + line_addr.value().second;
+    end_addr eaddr = entrypoint + line_addr->second;
     tracer_expected<long> origw = insert_trap(_tid, _child, eaddr.val());
     if (!origw)
         return std::move(origw.error());
     log::logline(log::info, "[%d] inserted trap @ 0x%" PRIxPTR " (offset 0x%" PRIxPTR ")",
         _tid, eaddr.val(), eaddr.val() - entrypoint);
 
-    auto insert_res = _traps.insert(eaddr, end_trap(origw.value(), std::move(posline), start));
+    auto insert_res = _traps.insert(eaddr, end_trap(*origw, std::move(posline), start));
     if (!insert_res.second)
     {
         log::logline(log::error, "[%d] trap @ 0x%" PRIxPTR " (offset 0x%" PRIxPTR ") already exists",
@@ -587,7 +609,31 @@ tracer_error profiler::insert_traps_position_end(
         return tracer_error(tracer_errcode::NO_TRAP, "Trap address interval already exists");
 
     log::logline(log::debug, "[%d] line %s @ offset 0x%" PRIxPTR,
-        _tid, pstr.c_str(), line_addr.value().second);
+        _tid, pstr.c_str(), line_addr->second);
     log::logline(log::success, "[%d] inserted trap on line: %s", _tid, pstr.c_str());
     return tracer_error::success();
 }
+
+template<typename D, typename C>
+nonstd::expected<profiler, tracer_error> profiler::create(pid_t child, const flags& f,
+    D&& dli, C&& cd)
+{
+    using rettype = nonstd::expected<profiler, tracer_error>;
+    tracer_error err = tracer_error::success();
+    profiler prof(child, f, std::forward<D>(dli), std::forward<C>(cd), err);
+    if (err)
+        return rettype(nonstd::unexpect, std::move(err));
+    return prof;
+}
+
+template nonstd::expected<profiler, tracer_error>
+profiler::create(pid_t child, const flags& f, dbg_info&& dli, config_data&& cd);
+
+template nonstd::expected<profiler, tracer_error>
+profiler::create(pid_t child, const flags& f, dbg_info&& dli, const config_data& cd);
+
+template nonstd::expected<profiler, tracer_error>
+profiler::create(pid_t child, const flags& f, const dbg_info& dli, config_data&& cd);
+
+template nonstd::expected<profiler, tracer_error>
+profiler::create(pid_t child, const flags& f, const dbg_info& dli, const config_data& cd);
