@@ -8,7 +8,6 @@ import fnmatch
 import distutils.util
 from typing import Dict, Iterable, Sequence, Tuple, Union
 import matplotlib
-from matplotlib import markers
 import matplotlib.pyplot as plt
 
 
