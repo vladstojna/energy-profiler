@@ -48,6 +48,20 @@ class store_key_pairs(argparse.Action):
         setattr(namespace, self.dest, retval)
 
 
+class store_dpi(argparse.Action):
+    def __init__(self, option_strings: Sequence[str], dest: str, **kwargs) -> None:
+        super().__init__(option_strings, dest, **kwargs)
+
+    def __call__(self, parser, namespace, values, option_string) -> None:
+        try:
+            retval = int(values) if values else self.default
+            if retval <= 0:
+                raise ValueError("DPI must be a positive integer")
+            setattr(namespace, self.dest, retval)
+        except (ValueError, TypeError, argparse.ArgumentTypeError) as err:
+            raise argparse.ArgumentError(self, err.args[0] if err.args else "<empty>")
+
+
 def read_from(path):
     if not path:
         return sys.stdin
@@ -70,7 +84,7 @@ def match_pattern(patterns: Dict[str, Union[bool, str]], fieldnames: Sequence[st
     return retval
 
 
-def add_arguments(parser):
+def add_arguments(parser: argparse.ArgumentParser):
     parser.add_argument(
         "source_file",
         action="store",
@@ -149,6 +163,13 @@ def add_arguments(parser):
         choices=["agg", "pdf", "svg"],
         default="agg",
     )
+    parser.add_argument(
+        "--dpi",
+        action=store_dpi,
+        help="image DPI (only has an effect when backend is agg)",
+        required=False,
+        default=0,
+    )
 
 
 def convert_input(fields, data) -> dict:
@@ -224,6 +245,10 @@ def main():
         matplotlib.use(args.backend)
         with plt.ioff():
             fig, ax = plt.subplots()
+
+            if args.backend == "agg" and args.dpi:
+                fig.set_dpi(args.dpi)
+
             ax.set_title(args.title if args.title else f.name)
             ax.minorticks_on()
             ax.set_xlabel(get_label(args.x, args.units))
