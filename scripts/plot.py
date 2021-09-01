@@ -6,7 +6,7 @@ import argparse
 import itertools
 import fnmatch
 import distutils.util
-from typing import Dict, Iterable, Sequence, Union
+from typing import Dict, Iterable, Sequence, Tuple, Union
 import matplotlib
 from matplotlib import markers
 import matplotlib.pyplot as plt
@@ -58,6 +58,23 @@ class store_dpi(argparse.Action):
             retval = int(values) if values else self.default
             if retval <= 0:
                 raise ValueError("DPI must be a positive integer")
+            setattr(namespace, self.dest, retval)
+        except (ValueError, TypeError, argparse.ArgumentTypeError) as err:
+            raise argparse.ArgumentError(self, err.args[0] if err.args else "<empty>")
+
+
+class store_size(argparse.Action):
+    def __init__(self, option_strings: Sequence[str], dest: str, **kwargs) -> None:
+        super().__init__(option_strings, dest, **kwargs)
+
+    def __call__(self, parser, namespace, values, option_string) -> None:
+        try:
+            w, _, h = values.partition(",")
+            retval = float(w), float(h)
+            if retval[0] <= 0:
+                raise ValueError("Width must be a positive decimal")
+            if retval[1] <= 0:
+                raise ValueError("Height must be a positive decimal")
             setattr(namespace, self.dest, retval)
         except (ValueError, TypeError, argparse.ArgumentTypeError) as err:
             raise argparse.ArgumentError(self, err.args[0] if err.args else "<empty>")
@@ -178,6 +195,15 @@ def add_arguments(parser: argparse.ArgumentParser):
         required=False,
         default=False,
     )
+    parser.add_argument(
+        "-s",
+        "--size",
+        action=store_size,
+        help="image width and height, in cm",
+        metavar="WIDTH,HEIGHT",
+        required=False,
+        default=(),
+    )
 
 
 def convert_input(fields, data) -> dict:
@@ -218,6 +244,11 @@ def get_label(plots: Iterable[str], units: Dict[str, str]):
             u = units.get(p, None)
             return "{} ({})".format(p, u) if not u is None else p
     return " / ".join({units[p] for p in plots if p in units}) if units else ""
+
+
+def cm2inch(size: Tuple[float, float]) -> Tuple[float, float]:
+    inch = 2.54
+    return size[0] / inch, size[1] / inch
 
 
 def main():
@@ -263,6 +294,8 @@ def main():
 
             if args.backend == "agg" and args.dpi:
                 fig.set_dpi(args.dpi)
+            if args.size:
+                fig.set_size_inches(cm2inch(args.size))
 
             ax.set_title(args.title if args.title else f.name)
             ax.minorticks_on()
