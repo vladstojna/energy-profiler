@@ -87,20 +87,23 @@ namespace tep
     {
     private:
         std::string _name;
+        std::string _suffix;
         position _pos;
         function_bounds _bounds;
 
     public:
-        function(const std::string& name, const position& pos, const function_bounds& bounds);
-        function(const std::string& name, const position& pos, function_bounds&& bounds);
-        function(const std::string& name, position&& pos, const function_bounds& bounds);
-        function(const std::string& name, position&& pos, function_bounds&& bounds);
-        function(std::string&& name, const position& pos, const function_bounds& bounds);
-        function(std::string&& name, const position& pos, function_bounds&& bounds);
-        function(std::string&& name, position&& pos, const function_bounds& bounds);
-        function(std::string&& name, position&& pos, function_bounds&& bounds);
+        template<typename N, typename S, typename P, typename B>
+        function(N&& name, S&& suffix, P&& pos, B&& bounds) :
+            _name(std::forward<N>(name)),
+            _suffix(std::forward<S>(suffix)),
+            _pos(std::forward<P>(pos)),
+            _bounds(std::forward<B>(bounds))
+        {}
 
-        const std::string& name() const;
+        std::string name() const;
+
+        const std::string& prototype() const;
+        const std::string& suffix() const;
         const position& pos() const;
         const function_bounds& bounds() const;
 
