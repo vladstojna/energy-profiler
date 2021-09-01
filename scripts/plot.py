@@ -8,6 +8,7 @@ import fnmatch
 import distutils.util
 from typing import Dict, Iterable, Sequence, Union
 import matplotlib
+from matplotlib import markers
 import matplotlib.pyplot as plt
 
 
@@ -170,6 +171,13 @@ def add_arguments(parser: argparse.ArgumentParser):
         required=False,
         default=0,
     )
+    parser.add_argument(
+        "--scatter",
+        action="store_true",
+        help="use markers instead of a continuous line",
+        required=False,
+        default=False,
+    )
 
 
 def convert_input(fields, data) -> dict:
@@ -216,6 +224,13 @@ def main():
     parser = argparse.ArgumentParser(description="Generate plot from CSV file")
     add_arguments(parser)
     args = parser.parse_args()
+
+    marker_style = {}
+    if args.scatter:
+        marker_style["marker"] = "x"
+        marker_style["markersize"] = 3
+        marker_style["linestyle"] = ""
+
     with read_from(args.source_file) as f:
         csvrdr = csv.DictReader(row for row in f if not row.startswith("#"))
         if not csvrdr.fieldnames:
@@ -256,7 +271,9 @@ def main():
             for x, y in itertools.zip_longest(
                 args.x, args.y, fillvalue=next(iter(args.x))
             ):
-                (line,) = ax.plot(converted[x], converted[y])
+                (line,) = ax.plot(
+                    converted[x], converted[y], linewidth=1, **marker_style
+                )
                 set_legend(line, x, y)
             legend = ax.legend(
                 bbox_to_anchor=(0.0, 1.1, 1.0, 0.1),
