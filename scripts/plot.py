@@ -372,11 +372,14 @@ def main():
             if not found:
                 raise ValueError("File {} is not a valid source file".format(file))
 
-    marker_style = {}
+    style = {}
     if args.scatter:
-        marker_style["marker"] = "x"
-        marker_style["markersize"] = 3
-        marker_style["linestyle"] = ""
+        style["marker"] = "."
+        style["markersize"] = 2
+        style["linestyle"] = "dotted"
+        style["linewidth"] = 0.7
+    else:
+        style["linewidth"] = 1
 
     matplotlib.use(args.backend)
     with plt.ioff():
@@ -426,9 +429,7 @@ def main():
                 for x, y in itertools.zip_longest(
                     x_plots, y_plots, fillvalue=next(iter(x_plots))
                 ):
-                    (line,) = ax.plot(
-                        converted[x], converted[y], linewidth=1, **marker_style
-                    )
+                    (line,) = ax.plot(converted[x], converted[y], **style)
                     set_legend(line, x, y, lg_prefix)
 
                 labels[0].append(get_label(x_plots, units))
