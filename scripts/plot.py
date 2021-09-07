@@ -26,6 +26,8 @@ def raise_empty_value() -> None:
 
 
 class store_key_pairs(argparse.Action):
+    default_file = sys.stdin.name
+
     def __init__(
         self,
         option_strings,
@@ -49,9 +51,9 @@ class store_key_pairs(argparse.Action):
                 file, _, field = k.partition(":")
                 if file and not field:
                     field = file
-                    file = sys.stdin.name
+                    file = self.default_file
                 elif not file:
-                    file = sys.stdin.name
+                    file = self.default_file
                 if file not in retval:
                     retval[file] = {}
                 retval[file].update(
@@ -297,7 +299,7 @@ def get_title(args) -> str:
     elif args.source_files and len(args.source_files) == 1:
         if args.source_files[0]:
             return os.path.basename(args.source_files[0])
-        return sys.stdin.name
+        return store_key_pairs.default_file
     return ",".join((os.path.basename(sf) for sf in args.source_files))
 
 
@@ -317,12 +319,12 @@ def main():
 
     if len(args.source_files) == 1:
         for kp_args in args.x, args.y, args.units:
-            if kp_args.get(sys.stdin.name):
-                kp_args[args.source_files[0]] = kp_args[sys.stdin.name]
-                del kp_args[sys.stdin.name]
+            if kp_args.get(store_key_pairs.default_file):
+                kp_args[args.source_files[0]] = kp_args[store_key_pairs.default_file]
+                del kp_args[store_key_pairs.default_file]
     elif len(args.source_files) > 1:
         for kp_args in args.x, args.y, args.units:
-            if kp_args.get(sys.stdin.name):
+            if kp_args.get(store_key_pairs.default_file):
                 raise ValueError(
                     (
                         "Multiple source files provided "
