@@ -43,7 +43,9 @@ def main():
             "-t",
             "--to",
             action="store",
-            help="what type of representation to convert to",
+            help="what type of representation to convert to (default: {})".format(
+                choices[1]
+            ),
             required=False,
             type=str,
             default=choices[1],
