@@ -7,7 +7,7 @@ import itertools
 import fnmatch
 import distutils.util
 import os
-from typing import Dict, Iterable, List, Sequence, Set, Tuple, Union
+from typing import Dict, Iterable, List, Optional, Sequence, Set, Tuple, Union
 import matplotlib
 import matplotlib.pyplot as plt
 
@@ -15,6 +15,10 @@ import matplotlib.pyplot as plt
 UnitKeyPairs = Dict[str, str]
 PlotKeyPairs = Dict[str, bool]
 AnyKeyPairs = Dict[str, Union[str, bool]]
+
+UniqueLabel = Tuple[str, Optional[str]]
+CombinedLabel = Set[str]
+LabelType = Union[UniqueLabel, CombinedLabel]
 
 
 def str_as_bool(s=None) -> bool:
@@ -256,41 +260,44 @@ def get_legend_prefix(source_files: Iterable[str], fname: str) -> str:
 
 def set_legend(line, x, y, prefix=None) -> None:
     if prefix:
-        line.set_label("{}:{}({})".format(prefix, y, x))
+        line.set_label("[{}] {}({})".format(prefix, y, x))
     else:
         line.set_label("{}({})".format(y, x))
 
 
-def get_label(plots: Dict[str, PlotKeyPairs], units: Dict[str, UnitKeyPairs]) -> str:
-    BaseType = str
-    CombType = Set[BaseType]
-    LabelType = Union[BaseType, Set[BaseType]]
+def get_label(plots: PlotKeyPairs, units: UnitKeyPairs) -> LabelType:
+    def get_unique_label(plot: str, units: UnitKeyPairs) -> UniqueLabel:
+        return (plot, units.get(plot))
 
-    def get_unique_label(plot: str, units: UnitKeyPairs) -> BaseType:
-        if plot not in units:
-            return plot
-        return "{} ({})".format(plot, units[plot]) if units[plot] else plot
-
-    def get_combined_units(plots: PlotKeyPairs, units: UnitKeyPairs) -> CombType:
+    def get_combined_units(plots: PlotKeyPairs, units: UnitKeyPairs) -> CombinedLabel:
         return {units[p] for p in plots if p in units} if units else {}
 
-    def get_label_for_file(plots: PlotKeyPairs, units: UnitKeyPairs) -> LabelType:
-        if len(plots) == 1:
-            return get_unique_label(next(iter(plots)), units)
-        return get_combined_units(plots, units)
-
     if len(plots) == 1:
-        file, keypairs = next(iter(plots.items()))
-        lbl = get_label_for_file(keypairs, units[file] if file in units else {})
-        if isinstance(lbl, BaseType):
-            return lbl
-        return " / ".join(lbl)
+        return get_unique_label(next(iter(plots)), units)
+    return get_combined_units(plots, units)
 
-    retval: CombType = set()
-    for f, v in plots.items():
-        if f in units:
-            retval.update(get_combined_units(v, units[f]))
-    return " / ".join(retval)
+
+def combine_labels(labels: List[LabelType]) -> str:
+    def label_to_str(label: LabelType) -> str:
+        if isinstance(label, tuple):
+            return "{} ({})".format(label[0], label[1]) if label[1] else label[0]
+        if isinstance(label, set):
+            return " / ".join(label)
+        raise TypeError("Invalid label type encountered")
+
+    if len(labels) == 1:
+        return label_to_str(labels[0])
+
+    fully_combined: CombinedLabel = set()
+    for lbl in labels:
+        if isinstance(lbl, tuple):
+            if lbl[1]:
+                fully_combined.add(lbl[1])
+        elif isinstance(lbl, set):
+            fully_combined.update(lbl)
+        else:
+            raise TypeError("Invalid label type encountered")
+    return label_to_str(fully_combined)
 
 
 def get_title(args) -> str:
@@ -366,10 +373,9 @@ def main():
 
         ax.minorticks_on()
         ax.set_title(get_title(args))
-        ax.set_xlabel(get_label(args.x, args.units))
-        ax.set_ylabel(get_label(args.y, args.units))
         ax.grid(which="major", axis="both", linestyle="dotted", alpha=0.5)
 
+        labels: Tuple[List[LabelType], List[LabelType]] = ([], [])
         for fname in args.source_files:
             with read_from(fname) as f:
                 csvrdr = csv.DictReader(
@@ -379,7 +385,7 @@ def main():
                     raise AssertionError("Fieldnames cannot be empty or None")
                 x_plots = args.x[f.name]
                 y_plots = args.y[f.name]
-                units = args.units[f.name]
+                units = args.units.get(f.name, {})
                 lg_prefix = get_legend_prefix(args.source_files, f.name)
 
                 x_plots = match_pattern(x_plots, csvrdr.fieldnames)
@@ -397,8 +403,6 @@ def main():
                         )
                     )
                 units = match_pattern(units, csvrdr.fieldnames)
-                if not units:
-                    raise parser.error("Pattern matching for units: no matches found")
                 if not unique_units(x_plots, units):
                     raise parser.error("units for x plots must be the same")
 
@@ -412,6 +416,11 @@ def main():
                     )
                     set_legend(line, x, y, lg_prefix)
 
+                labels[0].append(get_label(x_plots, units))
+                labels[1].append(get_label(y_plots, units))
+
+        ax.set_xlabel(combine_labels(labels[0]))
+        ax.set_ylabel(combine_labels(labels[1]))
         legend = ax.legend(
             bbox_to_anchor=(0.0, 1.1, 1.0, 0.1),
             loc="lower left",
