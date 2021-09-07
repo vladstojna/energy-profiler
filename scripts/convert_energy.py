@@ -84,8 +84,8 @@ def main():
 
         conversion_func = convert_to_monotonic if monotonic else convert_to_nonmonotonic
         for skt_readings in readings:
-            for loc, samples in (
-                (k, v) for k, v in skt_readings.items() if isinstance(v, list) and v
+            for samples in (
+                v for _, v in skt_readings.items() if isinstance(v, list) and v
             ):
                 conversion_func(samples, energy_idx)
 
