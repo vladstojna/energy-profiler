@@ -6,9 +6,15 @@ import argparse
 import itertools
 import fnmatch
 import distutils.util
-from typing import Dict, Iterable, Sequence, Tuple, Union
+import os
+from typing import Dict, Iterable, List, Sequence, Set, Tuple, Union
 import matplotlib
 import matplotlib.pyplot as plt
+
+
+UnitKeyPairs = Dict[str, str]
+PlotKeyPairs = Dict[str, bool]
+AnyKeyPairs = Dict[str, Union[str, bool]]
 
 
 def str_as_bool(s=None) -> bool:
@@ -40,7 +46,17 @@ class store_key_pairs(argparse.Action):
             if not k:
                 raise argparse.ArgumentError(self, "Key cannot be empty")
             try:
-                retval[k] = self.store_as(v) if v else self.empty_val()
+                file, _, field = k.partition(":")
+                if file and not field:
+                    field = file
+                    file = sys.stdin.name
+                elif not file:
+                    file = sys.stdin.name
+                if file not in retval:
+                    retval[file] = {}
+                retval[file].update(
+                    {field: self.store_as(v) if v else self.empty_val()}
+                )
             except (ValueError, TypeError, argparse.ArgumentTypeError) as err:
                 raise argparse.ArgumentError(
                     self, err.args[0] if err.args else "<empty>"
@@ -93,7 +109,7 @@ def output_to(path):
         return open(path, "wb")
 
 
-def match_pattern(patterns: Dict[str, Union[bool, str]], fieldnames: Sequence[str]):
+def match_pattern(patterns: AnyKeyPairs, fieldnames: Sequence[str]) -> AnyKeyPairs:
     retval = {}
     for k, v in patterns.items():
         for m in fnmatch.filter(fieldnames, k):
@@ -101,20 +117,20 @@ def match_pattern(patterns: Dict[str, Union[bool, str]], fieldnames: Sequence[st
     return retval
 
 
-def add_arguments(parser: argparse.ArgumentParser):
+def add_arguments(parser: argparse.ArgumentParser) -> None:
     parser.add_argument(
-        "source_file",
+        "source_files",
         action="store",
-        help="file to extract from",
-        nargs="?",
+        help="file to extract from (default: stdin)",
+        nargs="*",
         type=str,
-        default=None,
+        default=[None],
     )
     parser.add_argument(
         "-o",
         "--output",
         action="store",
-        help="destination file or stdout if not present",
+        help="destination file (default: stdout)",
         required=False,
         type=str,
         default=None,
@@ -130,8 +146,8 @@ def add_arguments(parser: argparse.ArgumentParser):
             the first x value of the corresponding column from the rest""",
         required=True,
         nargs="+",
-        metavar="NAME=BOOL",
-        default=None,
+        metavar="FILE:NAME=BOOL",
+        default={},
         dest="x",
     )
     parser.add_argument(
@@ -145,8 +161,8 @@ def add_arguments(parser: argparse.ArgumentParser):
             the first y value of the corresponding column from the rest""",
         required=True,
         nargs="+",
-        metavar="NAME=BOOL",
-        default=None,
+        metavar="FILE:NAME=BOOL",
+        default={},
         dest="y",
     )
     parser.add_argument(
@@ -167,7 +183,7 @@ def add_arguments(parser: argparse.ArgumentParser):
         help="plot units",
         required=False,
         nargs="*",
-        metavar="NAME=UNIT",
+        metavar="FILE:NAME=UNIT",
         default={},
     )
     parser.add_argument(
@@ -219,30 +235,70 @@ def convert_input(fields, data) -> dict:
     return retval
 
 
-def assert_key_pairs(kps, fieldnames):
+def assert_key_pairs(kps, fieldnames) -> None:
     for k in kps:
         if k not in fieldnames:
             raise ValueError("'{}' is not a valid column".format(k))
 
 
-def unique_units(plots: Iterable[str], units: Dict[str, str]):
+def unique_units(plots: Iterable[str], units: UnitKeyPairs) -> bool:
     units = {v for k, v in units.items() if k in plots}
     return len(units) <= 1
 
 
-def set_legend(line, x, y):
-    line.set_label("{}({})".format(y, x))
+def get_legend_prefix(source_files: Iterable[str], fname: str) -> str:
+    if len(source_files) > 1:
+        return os.path.basename(fname)
+    return ""
 
 
-def get_label(plots: Iterable[str], units: Dict[str, str]):
+def set_legend(line, x, y, prefix=None) -> None:
+    if prefix:
+        line.set_label("{}:{}({})".format(prefix, y, x))
+    else:
+        line.set_label("{}({})".format(y, x))
+
+
+def get_label(plots: Dict[str, PlotKeyPairs], units: Dict[str, UnitKeyPairs]) -> str:
+    BaseType = str
+    CombType = Set[BaseType]
+    LabelType = Union[BaseType, Set[BaseType]]
+
+    def get_unique_label(plot: str, units: UnitKeyPairs) -> BaseType:
+        if plot not in units:
+            return plot
+        return "{} ({})".format(plot, units[plot]) if units[plot] else plot
+
+    def get_combined_units(plots: PlotKeyPairs, units: UnitKeyPairs) -> CombType:
+        return {units[p] for p in plots if p in units} if units else {}
+
+    def get_label_for_file(plots: PlotKeyPairs, units: UnitKeyPairs) -> LabelType:
+        if len(plots) == 1:
+            return get_unique_label(next(iter(plots)), units)
+        return get_combined_units(plots, units)
+
     if len(plots) == 1:
-        p = next(iter(plots))
-        if not units:
-            return p
-        else:
-            u = units.get(p, None)
-            return "{} ({})".format(p, u) if not u is None else p
-    return " / ".join({units[p] for p in plots if p in units}) if units else ""
+        file, keypairs = next(iter(plots.items()))
+        lbl = get_label_for_file(keypairs, units[file] if file in units else {})
+        if isinstance(lbl, BaseType):
+            return lbl
+        return " / ".join(lbl)
+
+    retval: CombType = set()
+    for f, v in plots.items():
+        if f in units:
+            retval.update(get_combined_units(v, units[f]))
+    return " / ".join(retval)
+
+
+def get_title(args) -> str:
+    if args.title:
+        return args.title
+    elif args.source_files and len(args.source_files) == 1:
+        if args.source_files[0]:
+            return os.path.basename(args.source_files[0])
+        return sys.stdin.name
+    return ",".join((os.path.basename(sf) for sf in args.source_files))
 
 
 def cm2inch(size: Tuple[float, float]) -> Tuple[float, float]:
@@ -250,10 +306,47 @@ def cm2inch(size: Tuple[float, float]) -> Tuple[float, float]:
     return size[0] / inch, size[1] / inch
 
 
+def plots_compatible(x: PlotKeyPairs, y: PlotKeyPairs) -> bool:
+    return len(x) == 1 or len(x) == len(y)
+
+
 def main():
     parser = argparse.ArgumentParser(description="Generate plot from CSV file")
     add_arguments(parser)
     args = parser.parse_args()
+
+    if len(args.source_files) == 1:
+        for kp_args in args.x, args.y, args.units:
+            if kp_args.get(sys.stdin.name):
+                kp_args[args.source_files[0]] = kp_args[sys.stdin.name]
+                del kp_args[sys.stdin.name]
+    elif len(args.source_files) > 1:
+        for kp_args in args.x, args.y, args.units:
+            if kp_args.get(sys.stdin.name):
+                raise ValueError(
+                    (
+                        "Multiple source files provided "
+                        "but some key-value pairs "
+                        "have no file specified"
+                    )
+                )
+
+    for fname in args.source_files:
+        found = False
+        for kp_args in args.x, args.y, args.units:
+            if fname in kp_args:
+                found = True
+        if not found:
+            raise ValueError(
+                "File {} is not referenced by any key-value pair".format(fname)
+            )
+    for kp_args in args.x, args.y, args.units:
+        for file in kp_args:
+            found = False
+            if file in args.source_files:
+                found = True
+            if not found:
+                raise ValueError("File {} is not a valid source file".format(file))
 
     marker_style = {}
     if args.scatter:
@@ -261,62 +354,71 @@ def main():
         marker_style["markersize"] = 3
         marker_style["linestyle"] = ""
 
-    with read_from(args.source_file) as f:
-        csvrdr = csv.DictReader(row for row in f if not row.startswith("#"))
-        if not csvrdr.fieldnames:
-            raise AssertionError("Fieldnames cannot be empty or None")
-        args.x = match_pattern(args.x, csvrdr.fieldnames)
-        if not args.x:
-            raise parser.error("Pattern matching for x plots: no matches found")
-        assert_key_pairs(args.x, csvrdr.fieldnames)
-        args.y = match_pattern(args.y, csvrdr.fieldnames)
-        if not args.y:
-            raise parser.error("Pattern matching for y plots: no matches found")
-        assert_key_pairs(args.y, csvrdr.fieldnames)
-        if len(args.x) > 1 and len(args.y) > 1 and len(args.x) != len(args.y):
-            raise parser.error(
-                "x plot count does not match y plot count, found {} and {}".format(
-                    len(args.x), len(args.y)
+    matplotlib.use(args.backend)
+    with plt.ioff():
+        fig, ax = plt.subplots()
+        if args.backend == "agg" and args.dpi:
+            fig.set_dpi(args.dpi)
+        if args.size:
+            fig.set_size_inches(cm2inch(args.size))
+
+        ax.minorticks_on()
+        ax.set_title(get_title(args))
+        ax.set_xlabel(get_label(args.x, args.units))
+        ax.set_ylabel(get_label(args.y, args.units))
+        ax.grid(which="major", axis="both", linestyle="dotted", alpha=0.5)
+
+        for fname in args.source_files:
+            with read_from(fname) as f:
+                csvrdr = csv.DictReader(
+                    row for row in f if not row.lstrip().startswith("#")
                 )
-            )
-        args.units = match_pattern(args.units, csvrdr.fieldnames)
-        if not args.units:
-            raise parser.error("Pattern matching for units: no matches found")
-        if not unique_units(args.x, args.units):
-            raise parser.error("units for x plots must be the same")
+                if not csvrdr.fieldnames:
+                    raise AssertionError("Fieldnames cannot be empty or None")
+                x_plots = args.x[f.name]
+                y_plots = args.y[f.name]
+                units = args.units[f.name]
+                lg_prefix = get_legend_prefix(args.source_files, f.name)
 
-        converted = convert_input({**args.x, **args.y}, csvrdr)
+                x_plots = match_pattern(x_plots, csvrdr.fieldnames)
+                if not x_plots:
+                    raise parser.error("Pattern matching for x plots: no matches found")
+                assert_key_pairs(x_plots, csvrdr.fieldnames)
+                y_plots = match_pattern(y_plots, csvrdr.fieldnames)
+                if not y_plots:
+                    raise parser.error("Pattern matching for y plots: no matches found")
+                assert_key_pairs(y_plots, csvrdr.fieldnames)
+                if not plots_compatible(x_plots, y_plots):
+                    raise parser.error(
+                        "x plot count does not match y plot count, found {} and {}".format(
+                            len(x_plots), len(y_plots)
+                        )
+                    )
+                units = match_pattern(units, csvrdr.fieldnames)
+                if not units:
+                    raise parser.error("Pattern matching for units: no matches found")
+                if not unique_units(x_plots, units):
+                    raise parser.error("units for x plots must be the same")
 
-        matplotlib.use(args.backend)
-        with plt.ioff():
-            fig, ax = plt.subplots()
+                converted = convert_input({**x_plots, **y_plots}, csvrdr)
 
-            if args.backend == "agg" and args.dpi:
-                fig.set_dpi(args.dpi)
-            if args.size:
-                fig.set_size_inches(cm2inch(args.size))
+                for x, y in itertools.zip_longest(
+                    x_plots, y_plots, fillvalue=next(iter(x_plots))
+                ):
+                    (line,) = ax.plot(
+                        converted[x], converted[y], linewidth=1, **marker_style
+                    )
+                    set_legend(line, x, y, lg_prefix)
 
-            ax.set_title(args.title if args.title else f.name)
-            ax.minorticks_on()
-            ax.set_xlabel(get_label(args.x, args.units))
-            ax.set_ylabel(get_label(args.y, args.units))
-            for x, y in itertools.zip_longest(
-                args.x, args.y, fillvalue=next(iter(args.x))
-            ):
-                (line,) = ax.plot(
-                    converted[x], converted[y], linewidth=1, **marker_style
-                )
-                set_legend(line, x, y)
-            legend = ax.legend(
-                bbox_to_anchor=(0.0, 1.1, 1.0, 0.1),
-                loc="lower left",
-                ncol=1,
-                mode="expand",
-                borderaxespad=0.0,
-            )
-            plt.grid(which="major", axis="both", linestyle="dotted", alpha=0.5)
-            with output_to(args.output) as of:
-                plt.savefig(of, bbox_extra_artists=(legend,), bbox_inches="tight")
+        legend = ax.legend(
+            bbox_to_anchor=(0.0, 1.1, 1.0, 0.1),
+            loc="lower left",
+            ncol=1,
+            mode="expand",
+            borderaxespad=0.0,
+        )
+        with output_to(args.output) as of:
+            fig.savefig(of, bbox_extra_artists=(legend,), bbox_inches="tight")
 
 
 if __name__ == "__main__":
