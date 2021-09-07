@@ -7,7 +7,7 @@ import itertools
 import fnmatch
 import distutils.util
 import os
-from typing import Dict, Iterable, List, Optional, Sequence, Set, Tuple, Union
+from typing import Any, Dict, Iterable, List, Optional, Sequence, Set, Tuple, Union
 import matplotlib
 import matplotlib.pyplot as plt
 
@@ -30,7 +30,7 @@ def raise_empty_value() -> None:
 
 
 class store_key_pairs(argparse.Action):
-    default_file = sys.stdin.name
+    default_file = "default"
 
     def __init__(
         self,
@@ -115,10 +115,10 @@ def output_to(path):
         return open(path, "wb")
 
 
-def match_pattern(patterns: AnyKeyPairs, fieldnames: Sequence[str]) -> AnyKeyPairs:
+def match_pattern(patterns: Dict[str, Any], names: Sequence[str]) -> Dict[str, Any]:
     retval = {}
     for k, v in patterns.items():
-        for m in fnmatch.filter(fieldnames, k):
+        for m in fnmatch.filter(names, k):
             retval[m] = v
     return retval
 
@@ -319,26 +319,41 @@ def plots_compatible(x: PlotKeyPairs, y: PlotKeyPairs) -> bool:
     return len(x) == 1 or len(x) == len(y)
 
 
+def substitute_default_file(args) -> None:
+    for kp_args in args.x, args.y, args.units:
+        if kp_args.get(store_key_pairs.default_file):
+            kp_args[args.source_files[0]] = kp_args[store_key_pairs.default_file]
+            del kp_args[store_key_pairs.default_file]
+
+
+def assert_files_provided(args) -> None:
+    for kp_args in args.x, args.y, args.units:
+        if kp_args.get(store_key_pairs.default_file):
+            raise ValueError(
+                (
+                    "Multiple source files provided "
+                    "but some key-value pairs "
+                    "have no file specified"
+                )
+            )
+
+
+def pattern_match_files(args) -> None:
+    args.x = match_pattern(args.x, args.source_files)
+    args.y = match_pattern(args.y, args.source_files)
+    args.units = match_pattern(args.units, args.source_files)
+
+
 def main():
     parser = argparse.ArgumentParser(description="Generate plot from CSV file")
     add_arguments(parser)
     args = parser.parse_args()
 
     if len(args.source_files) == 1:
-        for kp_args in args.x, args.y, args.units:
-            if kp_args.get(store_key_pairs.default_file):
-                kp_args[args.source_files[0]] = kp_args[store_key_pairs.default_file]
-                del kp_args[store_key_pairs.default_file]
+        substitute_default_file(args)
     elif len(args.source_files) > 1:
-        for kp_args in args.x, args.y, args.units:
-            if kp_args.get(store_key_pairs.default_file):
-                raise ValueError(
-                    (
-                        "Multiple source files provided "
-                        "but some key-value pairs "
-                        "have no file specified"
-                    )
-                )
+        assert_files_provided(args)
+    pattern_match_files(args)
 
     for fname in args.source_files:
         found = False
