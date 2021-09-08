@@ -84,7 +84,7 @@ def main():
             except ValueError:
                 return -1
 
-        retval: DataIdxType = {}
+        retval: DataIndex = {}
         for k, v in fmt.items():
             idx = format_index_of(v, data_type)
             if idx != -1:
