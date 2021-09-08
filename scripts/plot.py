@@ -157,6 +157,16 @@ def add_arguments(parser: argparse.ArgumentParser) -> None:
         dest="x",
     )
     parser.add_argument(
+        "--xl",
+        "--x-label",
+        action="store",
+        help="X axis label",
+        type=str,
+        required=False,
+        default=None,
+        dest="xlabel",
+    )
+    parser.add_argument(
         "-y",
         "--y-plots",
         action=store_key_pairs,
@@ -170,6 +180,16 @@ def add_arguments(parser: argparse.ArgumentParser) -> None:
         metavar="FILE:NAME=BOOL",
         default={},
         dest="y",
+    )
+    parser.add_argument(
+        "--yl",
+        "--y-label",
+        action="store",
+        help="Y axis label",
+        type=str,
+        required=False,
+        default=None,
+        dest="ylabel",
     )
     parser.add_argument(
         "-t",
@@ -435,8 +455,12 @@ def main():
                 labels[0].append(get_label(x_plots, units))
                 labels[1].append(get_label(y_plots, units))
 
-        ax.set_xlabel(combine_labels(labels[0]))
-        ax.set_ylabel(combine_labels(labels[1]))
+        ax.set_xlabel(
+            args.xlabel if args.xlabel is not None else combine_labels(labels[0])
+        )
+        ax.set_ylabel(
+            args.ylabel if args.ylabel is not None else combine_labels(labels[1])
+        )
         legend = ax.legend(
             bbox_to_anchor=(0.0, 1.1, 1.0, 0.1),
             loc="lower left",
