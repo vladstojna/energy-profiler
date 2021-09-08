@@ -41,6 +41,7 @@ namespace
     struct parsed_func
     {
         std::string name;
+        std::string suffix;
         uintptr_t addr;
         size_t size;
         position pos;
@@ -113,14 +114,12 @@ namespace
                 first.name(), "' and '", second.name(), "'"));
     }
 
-    dbg_error func_ambiguous(const std::string& name,
-        const std::vector<const function*>& matches)
+    template<typename Iterator>
+    dbg_error func_ambiguous(const std::string& name, Iterator begin, Iterator end)
     {
         std::string msg = cmmn::concat("Function '", name, "' ambiguous; found matches:");
-        for (const function* fptr : matches)
-            msg.append(" '")
-            .append(fptr->name())
-            .append("'");
+        for (auto it = begin; it != end; it++)
+            msg.append(" '").append((*it)->name()).append("'");
         return dbg_error(dbg_error_code::FUNCTION_AMBIGUOUS, std::move(msg));
     }
 
@@ -286,9 +285,19 @@ namespace
         if (!fd)
             return pipe_err(std::move(fd.error()));
 
-        constexpr const size_t token_count = 5;
+        constexpr const size_t token_count = 6;
+        constexpr const size_t iname = 0;
+        constexpr const size_t isuff = 1;
+        constexpr const size_t iaddr = 2;
+        constexpr const size_t isize = 3;
+        constexpr const size_t ifile = 4;
+        constexpr const size_t iline = 5;
+
         piped_commands cmd("nm", "-lSC", "--defined-only", "--format=posix", target);
-        cmd.add("sed", "-nE", "s/(.+) T ([0-9a-f]+) ([0-9a-f]+)\\t(.+):([1-9]+)/\\1|\\2|\\3|\\4|\\5/p");
+        cmd.add("sed", "-nE",
+            "-e", "s/(.+) (\\[.+\\]) [tT] ([0-9a-f]+) ([0-9a-f]+)\\t(.+):([1-9]+)/\\1|\\2|\\3|\\4|\\5|\\6/p",
+            "-e", "s/(.+) [tT] ([0-9a-f]+) ([0-9a-f]+)\\t(.+):([1-9]+)/\\1||\\2|\\3|\\4|\\5/p"
+        );
 
         if (auto err = cmd.execute(file_descriptor::std_in, *fd))
             return pipe_err(std::move(err));
@@ -300,33 +309,40 @@ namespace
         for (std::string line; std::getline(ifs, line); )
         {
             std::vector<std::string_view> views = split_line(line, "|");
-            if (views.size() < token_count)
+            assert(views.size() == token_count);
+            if (views.size() != token_count)
                 return rettype(nonstd::unexpect,
                     dbg_error_code::FORMAT_ERROR, "Invalid format for function parsing");
 
             uintptr_t addr;
-            std::from_chars_result res = std::from_chars(views[1].begin(), views[1].end(), addr, 16);
+            auto res = std::from_chars(views[iaddr].begin(), views[iaddr].end(), addr, 16);
             if (std::error_code code = make_error_code(res.ec))
                 return fmt_err(code);
 
             size_t size;
-            res = std::from_chars(views[2].begin(), views[2].end(), size, 16);
+            res = std::from_chars(views[isize].begin(), views[isize].end(), size, 16);
             if (std::error_code code = make_error_code(res.ec))
                 return fmt_err(code);
 
             uint32_t lineno;
-            res = std::from_chars(views[4].begin(), views[4].end(), lineno, 10);
+            res = std::from_chars(views[iline].begin(), views[iline].end(), lineno, 10);
             if (std::error_code code = make_error_code(res.ec))
                 return fmt_err(code);
 
-            auto localentry_offset = get_function_entry_offset(target, views[0]);
+            auto localentry_offset = get_function_entry_offset(target, views[iname]);
             if (!localentry_offset)
                 return rettype(nonstd::unexpect, std::move(localentry_offset.error()));
             addr += *localentry_offset;
             size -= *localentry_offset;
 
             funcs.push_back(
-                { std::string(views[0]), addr, size, position(std::string(views[3]), lineno) }
+                {
+                    std::string(views[iname]),
+                    std::string(views[isuff]),
+                    addr,
+                    size,
+                    position(std::string(views[ifile]), lineno)
+                }
             );
         }
         return funcs;
@@ -456,57 +472,21 @@ const std::vector<uintptr_t>& function_bounds::returns() const
 
 // function
 
-function::function(const std::string& name, const position& pos, const function_bounds& bounds) :
-    _name(name),
-    _pos(pos),
-    _bounds(bounds)
-{}
+std::string function::name() const
+{
+    if (_suffix.empty())
+        return _name;
+    return cmmn::concat(_name, " ", _suffix);
+}
 
-function::function(const std::string& name, const position& pos, function_bounds&& bounds) :
-    _name(name),
-    _pos(pos),
-    _bounds(std::move(bounds))
-{}
-
-function::function(const std::string& name, position&& pos, const function_bounds& bounds) :
-    _name(name),
-    _pos(std::move(pos)),
-    _bounds(bounds)
-{}
-
-function::function(const std::string& name, position&& pos, function_bounds&& bounds) :
-    _name(name),
-    _pos(std::move(pos)),
-    _bounds(std::move(bounds))
-{}
-
-function::function(std::string&& name, const position& pos, const function_bounds& bounds) :
-    _name(std::move(name)),
-    _pos(pos),
-    _bounds(bounds)
-{}
-
-function::function(std::string&& name, const position& pos, function_bounds&& bounds) :
-    _name(std::move(name)),
-    _pos(pos),
-    _bounds(std::move(bounds))
-{}
-
-function::function(std::string&& name, position&& pos, const function_bounds& bounds) :
-    _name(std::move(name)),
-    _pos(std::move(pos)),
-    _bounds(bounds)
-{}
-
-function::function(std::string&& name, position&& pos, function_bounds&& bounds) :
-    _name(std::move(name)),
-    _pos(std::move(pos)),
-    _bounds(std::move(bounds))
-{}
-
-const std::string& function::name() const
+const std::string& function::prototype() const
 {
     return _name;
+}
+
+const std::string& function::suffix() const
+{
+    return _suffix;
 }
 
 const position& function::pos() const
@@ -521,7 +501,7 @@ const function_bounds& function::bounds() const
 
 bool function::matches(const std::string& name, const std::string& cu) const
 {
-    std::string nospaces = remove_spaces(_name);
+    std::string nospaces = remove_spaces(this->name());
     std::string to_match = remove_spaces(name);
     std::string_view view(nospaces);
     std::string_view match_view(to_match);
@@ -531,7 +511,7 @@ bool function::matches(const std::string& name, const std::string& cu) const
 
 bool function::equals(const std::string& name, const std::string& cu) const
 {
-    return remove_spaces(_name) == remove_spaces(name) && _pos.contains(cu);
+    return remove_spaces(this->name()) == remove_spaces(name) && _pos.contains(cu);
 }
 
 
@@ -764,7 +744,8 @@ dbg_expected<unit_lines*> dbg_info::find_lines(const char* name)
     return find_lines_impl(*this, name);
 }
 
-dbg_expected<const function*> dbg_info::find_function(const std::string& name,
+dbg_expected<const function*> dbg_info::find_function(
+    const std::string& name,
     const std::string& cu) const
 {
     using rettype = dbg_expected<const function*>;
@@ -786,22 +767,31 @@ dbg_expected<const function*> dbg_info::find_function(const std::string& name,
         if (fptr->equals(name, cu))
         {
             // another equal function was previously located
-            if (retval != nullptr)
+            if (retval)
                 return rettype(nonstd::unexpect, func_ambiguous(name, *retval, *fptr));
             retval = fptr;
         }
     }
-
     // if no equal function found
-    if (retval == nullptr)
+    if (!retval)
     {
+        // if more than one match, disambiguate using suffix
         if (matches.size() > 1)
-            return rettype(nonstd::unexpect, func_ambiguous(name, matches));
+        {
+            auto it = std::partition(matches.begin(), matches.end(), [](const function* f)
+                {
+                    return !f->suffix().empty();
+                });
+            if (std::distance(it, matches.end()) != 1)
+                return rettype(nonstd::unexpect,
+                    func_ambiguous(name, matches.begin(), matches.end()));
+            return *it;
+        }
         else
             retval = matches.front();
     }
 
-    assert(retval != nullptr);
+    assert(retval);
     return retval;
 }
 
@@ -938,8 +928,12 @@ dbg_error dbg_info::get_functions(const char* filename)
             if (ret > pf.addr && ret < pf.addr + pf.size)
                 effrets.push_back(ret);
         }
-        _funcs.emplace_back(std::move(pf.name), std::move(pf.pos),
-            function_bounds(pf.addr, std::move(effrets)));
+        _funcs.emplace_back(
+            std::move(pf.name),
+            std::move(pf.suffix),
+            std::move(pf.pos),
+            function_bounds(pf.addr, std::move(effrets))
+        );
     }
     return dbg_error::success();
 }
