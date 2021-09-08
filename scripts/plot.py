@@ -201,6 +201,14 @@ def add_arguments(parser: argparse.ArgumentParser) -> None:
         default=None,
     )
     parser.add_argument(
+        "--legends",
+        action="store",
+        help="legend associated with each plot",
+        required=False,
+        nargs="+",
+        default=[],
+    )
+    parser.add_argument(
         "--no-legend",
         action="store_true",
         help="disable plot legend",
@@ -285,11 +293,11 @@ def get_legend_prefix(source_files: Iterable[str], fname: str) -> str:
     return ""
 
 
-def set_legend(line, x, y, prefix=None) -> None:
+def generate_legend(x, y, prefix=None) -> str:
     if prefix:
-        line.set_label("[{}] {}({})".format(prefix, y, x))
+        return "[{}] {}({})".format(prefix, y, x)
     else:
-        line.set_label("{}({})".format(y, x))
+        return "{}({})".format(y, x)
 
 
 def get_label(plots: PlotKeyPairs, units: UnitKeyPairs) -> LabelType:
@@ -421,6 +429,7 @@ def main():
         ax.grid(which="major", axis="both", linestyle="dotted", alpha=0.5)
 
         labels: Tuple[List[LabelType], List[LabelType]] = ([], [])
+        legend_iter = iter(args.legends)
         for fname in args.source_files:
             with read_from(fname) as f:
                 csvrdr = csv.DictReader(
@@ -458,7 +467,12 @@ def main():
                 ):
                     (line,) = ax.plot(converted[x], converted[y], **style)
                     if not args.no_legend:
-                        set_legend(line, x, y, lg_prefix)
+                        next_legend = next(legend_iter, None)
+                        line.set_label(
+                            next_legend
+                            if next_legend
+                            else generate_legend(x, y, lg_prefix)
+                        )
 
                 labels[0].append(get_label(x_plots, units))
                 labels[1].append(get_label(y_plots, units))
