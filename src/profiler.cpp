@@ -11,6 +11,7 @@
 #include <algorithm>
 #include <cassert>
 #include <sstream>
+#include <utility>
 
 #include <unistd.h>
 #include <sys/types.h>
@@ -161,6 +162,28 @@ namespace
         into.shrink_to_fit();
         return tracer_error::success();
     }
+
+    template<typename Container, typename Func>
+    typename Container::iterator find_or_insert_output(
+        Container& cont,
+        const std::string& label,
+        Func func)
+    {
+        auto it = std::find_if(cont.begin(), cont.end(),
+            [&label](const typename Container::value_type& val)
+            {
+                return label == val.label();
+            });
+
+        if (it == cont.end())
+        {
+            cont.push_back(func());
+            it = std::prev(cont.end());
+        }
+
+        assert(it != cont.end());
+        return it;
+    }
 }
 
 // end helper functions
@@ -170,31 +193,23 @@ bool profiler::output_mapping::insert(addr_bounds bounds,
     const config_data::section_group& group,
     const config_data::section& sec)
 {
-    distance_pair pair{};
-    const std::string& label = group.label();
-
-    auto grp_it = std::find_if(results.groups().begin(), results.groups().end(),
-        [&label](const group_output& go)
+    auto grp_it = find_or_insert_output(results.groups(), group.label(),
+        [&group]()
         {
-            return label == go.label();
+            return group_output{ group.label(), group.extra() };
         });
 
-    if (grp_it == results.groups().end())
-    {
-        results.groups().push_back({ group.label(), group.extra() });
-        grp_it = std::prev(results.groups().end());
-    }
-    assert(grp_it != results.groups().end());
-
-    grp_it->push_back({
-        results_from_targets(readers, sec.targets()),
-        sec.label(),
-        sec.extra() });
+    auto sec_it = find_or_insert_output(grp_it->sections(), sec.label(),
+        [&sec, &readers]()
+        {
+            return section_output{
+                results_from_targets(readers, sec.targets()), sec.label(), sec.extra()
+            };
+        });
 
     auto grp_begin = results.groups().begin();
     auto sec_begin = grp_it->sections().begin();
-    auto sec_it = std::prev(grp_it->sections().end());
-    pair = { std::distance(grp_begin, grp_it), std::distance(sec_begin, sec_it) };
+    distance_pair pair{ std::distance(grp_begin, grp_it), std::distance(sec_begin, sec_it) };
 
     auto [it, inserted] = map.insert({ bounds, pair });
     return inserted;
