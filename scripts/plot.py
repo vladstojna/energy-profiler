@@ -201,6 +201,13 @@ def add_arguments(parser: argparse.ArgumentParser) -> None:
         default=None,
     )
     parser.add_argument(
+        "--no-legend",
+        action="store_true",
+        help="disable plot legend",
+        required=False,
+        default=False,
+    )
+    parser.add_argument(
         "-u",
         "--units",
         action=store_key_pairs,
@@ -450,7 +457,8 @@ def main():
                     x_plots, y_plots, fillvalue=next(iter(x_plots))
                 ):
                     (line,) = ax.plot(converted[x], converted[y], **style)
-                    set_legend(line, x, y, lg_prefix)
+                    if not args.no_legend:
+                        set_legend(line, x, y, lg_prefix)
 
                 labels[0].append(get_label(x_plots, units))
                 labels[1].append(get_label(y_plots, units))
@@ -461,15 +469,22 @@ def main():
         ax.set_ylabel(
             args.ylabel if args.ylabel is not None else combine_labels(labels[1])
         )
-        legend = ax.legend(
-            bbox_to_anchor=(0.0, 1.1, 1.0, 0.1),
-            loc="lower left",
-            ncol=1,
-            mode="expand",
-            borderaxespad=0.0,
+
+        legend = (
+            None
+            if args.no_legend
+            else ax.legend(
+                bbox_to_anchor=(0.0, 1.1, 1.0, 0.1),
+                loc="lower left",
+                ncol=1,
+                mode="expand",
+                borderaxespad=0.0,
+            )
         )
+
+        bbox_extra = () if args.no_legend else (legend,)
         with output_to(args.output) as of:
-            fig.savefig(of, bbox_extra_artists=(legend,), bbox_inches="tight")
+            fig.savefig(of, bbox_extra_artists=bbox_extra, bbox_inches="tight")
 
 
 if __name__ == "__main__":
