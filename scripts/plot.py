@@ -197,7 +197,6 @@ def match_pattern(
                     _add_or_update(retval, m, v)
             else:
                 retval[k] = v
-            print("_match_dict", retval, file=sys.stderr)
         return retval
 
     def _match_list(pats, names, functor):
@@ -506,21 +505,11 @@ def main():
     add_arguments(parser)
     args = parser.parse_args()
 
-    print("before", file=sys.stderr)
-    print(args.x, file=sys.stderr)
-    print(args.y, file=sys.stderr)
-    print(args.units, file=sys.stderr)
-
     if len(args.source_files) == 1:
         substitute_default_file(args)
     elif len(args.source_files) > 1:
         assert_files_provided(args)
     pattern_match_files(args)
-
-    print("after", file=sys.stderr)
-    print(args.x, file=sys.stderr)
-    print(args.y, file=sys.stderr)
-    print(args.units, file=sys.stderr)
 
     for fname in args.source_files:
         found = False
@@ -574,14 +563,12 @@ def main():
                 units = args.units.get(f.name, {})
                 lg_prefix = get_legend_prefix(args.source_files, f.name)
 
-                print(x_plots, file=sys.stderr)
                 x_plots: AnyKeyPairs = match_pattern(
                     x_plots, csvrdr.fieldnames, callable
                 )
                 if not x_plots:
                     pattern_matching_error(parser, "x", f.name)
                 assert_key_pairs(x_plots, csvrdr.fieldnames)
-                print(y_plots, file=sys.stderr)
                 y_plots: AnyKeyPairs = match_pattern(
                     y_plots, csvrdr.fieldnames, callable
                 )
