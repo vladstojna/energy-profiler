@@ -13,9 +13,9 @@
 namespace tep
 {
 
-    class async_sampler;
+    class sampler;
 
-    using sampler_creator = std::function<std::unique_ptr<async_sampler>()>;
+    using sampler_creator = std::function<std::unique_ptr<sampler>()>;
 
     namespace pos
     {
@@ -173,7 +173,7 @@ namespace tep
         {}
 
         bool allow_concurrency() const;
-        std::unique_ptr<async_sampler> create_sampler() const;
+        std::unique_ptr<sampler> create_sampler() const;
     };
 
     class end_trap : public trap

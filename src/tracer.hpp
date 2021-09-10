@@ -40,7 +40,7 @@ namespace tep
         std::vector<std::unique_ptr<tracer>> _children;
         const tracer* _parent;
 
-        std::unique_ptr<async_sampler> _sampler;
+        std::unique_ptr<sampler> _sampler;
 
         pid_t _tracee_tgid;
         pid_t _tracee;
