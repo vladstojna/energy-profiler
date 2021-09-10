@@ -56,6 +56,24 @@ namespace tep
         const nrgprf::reader* reader() const;
     };
 
+    // short sampler
+
+    class short_sampler : public sampler
+    {
+    private:
+        nrgprf::timed_sample _start;
+        nrgprf::timed_sample _end;
+
+    public:
+        using sampler::sampler;
+
+        sampler_promise run() & override;
+        sampler_expected run() && override;
+
+    private:
+        sampler_expected results() override;
+    };
+
     // sync_sampler
 
     class sync_sampler : public sampler
