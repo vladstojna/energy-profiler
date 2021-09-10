@@ -4,17 +4,18 @@ import json
 import sys
 import argparse
 import copy
-from typing import Any, Dict, List, Optional, Union
+from typing import Any, Dict, List, Optional, Tuple, Union
 
 
 def main():
     FormatType = Dict[str, List[str]]
     DataIndex = Dict[str, int]
-    DataIndices = Dict[str, List[int]]
-
+    ReadingsIndices = Dict[str, List[int]]
+    MergedIndices = Dict[str, ReadingsIndices]
     Sample = List[Union[int, float]]
     ReadingsType = Dict[str, Union[int, List[Sample]]]
     SampleTimes = Union[List[int], List[float]]
+    Relative = Union[None, bool, Union[int, float]]
 
     choices = ("monotonic", "nonmonotonic", "m", "nm")
 
@@ -28,13 +29,30 @@ def main():
         return sys.stdout if not path else open(path, "w")
 
     def add_arguments(parser: argparse.ArgumentParser) -> argparse.ArgumentParser:
+        def to_positive_float_or_int(s: str) -> Union[int, float]:
+            try:
+                val = int(s)
+                if val <= 0:
+                    raise ValueError("value must be positive")
+                return val
+            except ValueError:
+                val = float(s)
+                if val <= 0:
+                    raise ValueError("value must be positive")
+                return val
+
         def add_relative(parser: argparse.ArgumentParser, argname: str) -> None:
             parser.add_argument(
                 argname,
-                action="store_true",
-                help="convert to relative values starting at 0",
+                action="store",
+                help="""convert to relative values starting at 0
+                    if no argument provided or starting at first = first - QUANTITY""",
+                nargs="?",
+                type=to_positive_float_or_int,
                 required=False,
-                default=False,
+                default=None,
+                const=True,
+                metavar="QUANTITY",
             )
 
         parser.add_argument(
@@ -97,14 +115,19 @@ def main():
     def get_energy_indices(fmt: FormatType) -> DataIndex:
         return get_indices(fmt, "energy")
 
-    def merge_data_indices(*dis: DataIndex) -> DataIndices:
-        retval: DataIndices = {}
-        for di in dis:
-            for dt, idx in di.items():
-                if dt in retval:
-                    retval[dt].append(idx)
+    def merge_data_indices(*dis: Tuple[str, DataIndex]) -> MergedIndices:
+        retval: MergedIndices = {}
+        for key, di in dis:
+            for tgt, idx in di.items():
+                if tgt in retval:
+                    if key in retval[tgt]:
+                        retval[tgt][key].append(idx)
+                    else:
+                        retval[tgt][key] = [idx]
                 else:
-                    retval[dt] = [idx]
+                    retval[tgt] = {}
+                    if key not in retval[tgt]:
+                        retval[tgt][key] = [idx]
         return retval
 
     def convert_readings(
@@ -141,38 +164,60 @@ def main():
             ):
                 conversion_func(samples, energy_idx)
 
-    def relative_sample_times(sample_times: SampleTimes) -> None:
-        first = sample_times[0]
+    def relative_sample_times(sample_times: SampleTimes, rel: Relative) -> None:
+        first = sample_times[0] if rel is True else rel
         if first > 0:
             for ix in range(0, len(sample_times)):
                 sample_times[ix] -= first
 
-    def relative_readings(readings: List[ReadingsType], indices: List[int]) -> None:
-        def to_relative(samples: List[Sample], indices: List[int]) -> None:
-            def all_zero(sample: Sample, indices: List[int]) -> bool:
-                for ix in indices:
+    def relative_readings(
+        readings: List[ReadingsType],
+        indices: ReadingsIndices,
+        rel_energy: Relative,
+        rel_time: Relative,
+    ) -> None:
+        def to_relative(
+            samples: List[Sample],
+            indices: ReadingsIndices,
+            renergy: Relative,
+            rtime: Relative,
+        ) -> None:
+            def get_first(
+                sample: Sample,
+                indices: ReadingsIndices,
+                renergy: Relative,
+                rtime: Relative,
+            ) -> List[Sample]:
+                retval = copy.deepcopy(sample)
+                if renergy is True and rtime is True:
+                    return retval
+                eixs = indices.get("energy")
+                tixs = indices.get("time")
+                if renergy is not True and eixs:
+                    for i in eixs:
+                        retval[i] = renergy
+                if rtime is not True and tixs:
+                    for i in tixs:
+                        retval[i] = rtime
+                return retval
+
+            def all_zero_or_negative(sample: Sample, indices: ReadingsIndices) -> bool:
+                for ix in [i for v in indices.values() for i in v]:
                     if sample[ix] > 0:
                         return False
                 return True
 
-            first = copy.deepcopy(samples[0])
-            if not all_zero(first, indices):
+            first = get_first(samples[0], indices, renergy, rtime)
+            if not all_zero_or_negative(first, indices):
                 for s in range(0, len(samples)):
-                    for ix in indices:
+                    for ix in [i for v in indices.values() for i in v]:
                         samples[s][ix] -= first[ix]
 
         for skt_readings in readings:
             for samples in (
                 v for _, v in skt_readings.items() if isinstance(v, list) and v
             ):
-                to_relative(samples, indices)
-
-    def convert_idle(idle) -> None:
-        for i in idle:
-            if args.relative_time:
-                relative_sample_times(i["sample_times"])
-            for tgt, idx in ((k, v) for k, v in merged_ixs.items() if i.get(k)):
-                relative_readings(i[tgt], idx)
+                to_relative(samples, indices, rel_energy, rel_time)
 
     def write_output(json_in, output_path: str) -> None:
         with output_to(output_path) as of:
@@ -212,23 +257,29 @@ def main():
 
         time_indices = get_time_indices(fmt) if args.relative_time else {}
         merged_ixs = (
-            merge_data_indices(time_indices)
+            merge_data_indices(("time", time_indices), ("energy", {}))
             if to_nonmonotonic(args.energy) or not args.relative_energy
-            else merge_data_indices(energy_indices, time_indices)
+            else merge_data_indices(("time", time_indices), ("energy", energy_indices))
         )
 
         if any_conversion(args.energy):
             # remove the 'idle' object because it is only used
             # properly when energy is increasing monotonically
             json_in["idle"] = []
-        elif args.relative_time or args.relative_energy:
-            convert_idle(json_in["idle"])
+        else:
+            for i in json_in["idle"]:
+                if args.relative_time:
+                    relative_sample_times(i["sample_times"], args.relative_time)
+                for tgt, idx in ((k, v) for k, v in merged_ixs.items() if i.get(k)):
+                    relative_readings(
+                        i[tgt], idx, args.relative_energy, args.relative_time
+                    )
 
         for g in json_in["groups"]:
             for s in g["sections"]:
                 for e in s["executions"]:
                     if args.relative_time:
-                        relative_sample_times(e["sample_times"])
+                        relative_sample_times(e["sample_times"], args.relative_time)
                     for rds, idx in (
                         (e[k], v) for k, v in energy_indices.items() if e.get(k)
                     ):
@@ -236,7 +287,9 @@ def main():
                     for rds, idxs in (
                         (e[k], v) for k, v in merged_ixs.items() if e.get(k)
                     ):
-                        relative_readings(rds, idxs)
+                        relative_readings(
+                            rds, idxs, args.relative_energy, args.relative_time
+                        )
 
         write_output(json_in, args.output)
 
