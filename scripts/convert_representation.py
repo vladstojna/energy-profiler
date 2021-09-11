@@ -29,17 +29,23 @@ def main():
         return sys.stdout if not path else open(path, "w")
 
     def add_arguments(parser: argparse.ArgumentParser) -> argparse.ArgumentParser:
-        def to_positive_float_or_int(s: str) -> Union[int, float]:
+        def positive_int_or_float(s: str) -> Union[int, float]:
             try:
                 val = int(s)
                 if val <= 0:
-                    raise ValueError("value must be positive")
+                    raise argparse.ArgumentTypeError("value must be positive")
                 return val
             except ValueError:
-                val = float(s)
-                if val <= 0:
-                    raise ValueError("value must be positive")
-                return val
+                try:
+                    val = float(s)
+                    if val <= 0:
+                        raise argparse.ArgumentTypeError("value must be positive")
+                except ValueError as err:
+                    raise argparse.ArgumentTypeError(
+                        err.args[0]
+                        if len(err.args)
+                        else "could not convert value to float"
+                    )
 
         def add_relative(parser: argparse.ArgumentParser, argname: str) -> None:
             parser.add_argument(
@@ -48,7 +54,7 @@ def main():
                 help="""convert to relative values starting at 0
                     if no argument provided or starting at first = first - QUANTITY""",
                 nargs="?",
-                type=to_positive_float_or_int,
+                type=positive_int_or_float,
                 required=False,
                 default=None,
                 const=True,
