@@ -1,6 +1,7 @@
 #! /usr/bin/env python3
 
 import csv
+import copy
 import sys
 import argparse
 import itertools
@@ -35,6 +36,10 @@ ConstValue = Union[int, float]
 UniqueLabel = Tuple[str, Optional[str]]
 CombinedLabel = Set[str]
 LabelType = Union[UniqueLabel, CombinedLabel]
+
+
+def log(*args: Any) -> None:
+    print("{}:".format(sys.argv[0]), *args, file=sys.stderr)
 
 
 def str_as_bool(s=None) -> bool:
@@ -176,7 +181,8 @@ def output_to(path: Optional[str]):
 def match_pattern(
     patterns: Iterable,
     names: Sequence[str],
-    wildcard_match_predicate=lambda _: False,
+    always_match_predicate: Callable = lambda _: False,
+    no_matches_found: Callable = lambda _: None,
 ) -> Union[List[AnyKeyPair], Dict]:
     def _match_dict(pats, names, functor):
         def _add_or_update(cont, match, val):
@@ -188,31 +194,53 @@ def match_pattern(
                 else:
                     cont[match] = val
             else:
-                cont[match] = val
+                if isinstance(val, list) or isinstance(val, dict):
+                    cont[match] = copy.deepcopy(val)
+                else:
+                    cont[match] = val
 
         retval = {}
         for k, v in pats.items():
             if not functor(k):
-                for m in fnmatch.filter(names, k):
-                    _add_or_update(retval, m, v)
+                matches = fnmatch.filter(names, k)
+                if not matches:
+                    no_matches_found(k, names)
+                else:
+                    for m in matches:
+                        _add_or_update(retval, m, v)
             else:
                 retval[k] = v
         return retval
 
     def _match_list(pats, names, functor):
+        def _add_or_update(cont, match, val):
+            idx, _ = next(
+                filter(lambda elem: elem[1][0] == match, enumerate(cont)), (None, None)
+            )
+            if idx is not None:
+                cont[idx] = (match, val)
+            else:
+                cont.append((match, val))
+
         retval = []
         for k, v in pats:
             if not functor(k):
-                for m in fnmatch.filter(names, k):
-                    retval.append((m, v))
+                matches = fnmatch.filter(names, k)
+                if not matches:
+                    no_matches_found(k, names)
+                else:
+                    for m in matches:
+                        _add_or_update(retval, m, v)
             else:
-                retval.append((k, v))
+                _add_or_update(retval, k, v)
         return retval
 
     if isinstance(patterns, dict):
-        return _match_dict(patterns, names, wildcard_match_predicate)
+        return _match_dict(patterns, names, always_match_predicate)
+    elif isinstance(patterns, list):
+        return _match_list(patterns, names, always_match_predicate)
     else:
-        return _match_list(patterns, names, wildcard_match_predicate)
+        raise AssertionError("match_pattern invalid type")
 
 
 def add_arguments(parser: argparse.ArgumentParser) -> None:
@@ -452,9 +480,26 @@ def assert_files_provided(args) -> None:
 
 
 def pattern_match_files(args) -> None:
-    args.x = match_pattern(args.x, args.source_files)
-    args.y = match_pattern(args.y, args.source_files)
-    args.units = match_pattern(args.units, args.source_files)
+    def raise_no_match(pat, names):
+        raise ValueError(
+            "no matches found for '{}' in {}".format(pat, ", ".join(names))
+        )
+
+    args.x = match_pattern(
+        args.x,
+        args.source_files,
+        no_matches_found=raise_no_match,
+    )
+    args.y = match_pattern(
+        args.y,
+        args.source_files,
+        no_matches_found=raise_no_match,
+    )
+    args.units = match_pattern(
+        args.units,
+        args.source_files,
+        no_matches_found=raise_no_match,
+    )
 
 
 def pattern_matching_error(
@@ -562,15 +607,24 @@ def main():
                 y_plots = args.y[f.name]
                 units = args.units.get(f.name, {})
                 lg_prefix = get_legend_prefix(args.source_files, f.name)
+                no_match = lambda k, _: log(
+                    "column {} not found in {}".format(k, f.name)
+                )
 
                 x_plots: AnyKeyPairs = match_pattern(
-                    x_plots, csvrdr.fieldnames, callable
+                    x_plots,
+                    csvrdr.fieldnames,
+                    always_match_predicate=callable,
+                    no_matches_found=no_match,
                 )
                 if not x_plots:
                     pattern_matching_error(parser, "x", f.name)
                 assert_key_pairs(x_plots, csvrdr.fieldnames)
                 y_plots: AnyKeyPairs = match_pattern(
-                    y_plots, csvrdr.fieldnames, callable
+                    y_plots,
+                    csvrdr.fieldnames,
+                    always_match_predicate=callable,
+                    no_matches_found=no_match,
                 )
                 if not y_plots:
                     pattern_matching_error(parser, "y", f.name)
