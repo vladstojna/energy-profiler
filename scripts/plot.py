@@ -397,6 +397,16 @@ def add_arguments(parser: argparse.ArgumentParser) -> None:
         const=default_marker_size,
     )
     parser.add_argument(
+        "--markers-line",
+        action="store",
+        help="""draw a line between markers;
+            no effect if --scatter is not provided (default: all)""",
+        choices=("all", "const", "nonconst", "none"),
+        default="all",
+        required=False,
+        type=str,
+    )
+    parser.add_argument(
         "-s",
         "--size",
         action=store_size,
@@ -558,6 +568,37 @@ def convert_input(
     return x_ret, y_ret
 
 
+def get_style(
+    scatter: Optional[Union[float, int]], style: Dict, markers_line: str, x, y
+) -> Dict:
+    if scatter is None:
+        return style
+    if markers_line == "none":
+        style["linestyle"] = ""
+        if callable(x) or callable(y):
+            style["marker"] = "x"
+    elif markers_line == "all":
+        style["marker"] = "."
+        style["linestyle"] = "dotted"
+    elif markers_line == "const":
+        if callable(x) or callable(y):
+            style["marker"] = "."
+            style["linestyle"] = "dotted"
+        else:
+            style["marker"] = "x"
+            style["linestyle"] = ""
+    elif markers_line == "nonconst":
+        if not callable(x) and not callable(y):
+            style["marker"] = "."
+            style["linestyle"] = "dotted"
+        else:
+            style["marker"] = "x"
+            style["linestyle"] = ""
+    else:
+        raise AssertionError("invalid markers_line value")
+    return style
+
+
 def main():
     parser = argparse.ArgumentParser(description="Generate plot from CSV file")
     add_arguments(parser)
@@ -664,7 +705,7 @@ def main():
                     (line,) = ax.plot(
                         get_plot_values(xf, xval, yf, yval),
                         get_plot_values(yf, yval, xf, xval),
-                        **style,
+                        **get_style(args.scatter, style, args.markers_line, xf, yf),
                     )
                     if not args.no_legend:
                         next_legend = next(legend_iter, None)
