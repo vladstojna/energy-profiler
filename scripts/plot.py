@@ -244,6 +244,24 @@ def match_pattern(
 
 
 def add_arguments(parser: argparse.ArgumentParser) -> None:
+    def positive_int_or_float(s: str) -> Union[int, float]:
+        try:
+            val = int(s)
+            if val <= 0:
+                raise argparse.ArgumentTypeError("value must be positive")
+            return val
+        except ValueError:
+            try:
+                val = float(s)
+                if val <= 0:
+                    raise argparse.ArgumentTypeError("value must be positive")
+            except ValueError as err:
+                raise argparse.ArgumentTypeError(
+                    err.args[0] if len(err.args) else "could not convert value to float"
+                )
+
+    default_marker_size = 3
+
     parser.add_argument(
         "source_files",
         action="store",
@@ -366,10 +384,17 @@ def add_arguments(parser: argparse.ArgumentParser) -> None:
     )
     parser.add_argument(
         "--scatter",
-        action="store_true",
-        help="use markers instead of a continuous line",
+        action="store",
+        help="""use markers with size SIZE instead
+            of a continuous line (default: {})""".format(
+            default_marker_size
+        ),
         required=False,
-        default=False,
+        type=positive_int_or_float,
+        nargs="?",
+        metavar="SIZE",
+        default=None,
+        const=default_marker_size,
     )
     parser.add_argument(
         "-s",
@@ -562,9 +587,9 @@ def main():
                 raise ValueError("File {} is not a valid source file".format(file))
 
     style = {}
-    if args.scatter:
+    if args.scatter is not None:
         style["marker"] = "."
-        style["markersize"] = 2
+        style["markersize"] = args.scatter
         style["linestyle"] = "dotted"
         style["linewidth"] = 0.7
     else:
