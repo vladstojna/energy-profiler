@@ -181,10 +181,10 @@ def output_to(path: Optional[str]):
 def match_pattern(
     patterns: Iterable,
     names: Sequence[str],
-    always_match_predicate: Callable = lambda _: False,
-    no_matches_found: Callable = lambda _: None,
+    use_fnmatch: Callable = lambda _: True,
+    no_matches: Callable = lambda _: None,
 ) -> Union[List[AnyKeyPair], Dict]:
-    def _match_dict(pats, names, functor):
+    def _match_dict(pats, names, func):
         def _add_or_update(cont, match, val):
             if match in cont:
                 if isinstance(val, list):
@@ -201,10 +201,10 @@ def match_pattern(
 
         retval = {}
         for k, v in pats.items():
-            if not functor(k):
+            if func(k):
                 matches = fnmatch.filter(names, k)
                 if not matches:
-                    no_matches_found(k, names)
+                    no_matches(k, names)
                 else:
                     for m in matches:
                         _add_or_update(retval, m, v)
@@ -212,7 +212,7 @@ def match_pattern(
                 retval[k] = v
         return retval
 
-    def _match_list(pats, names, functor):
+    def _match_list(pats, names, func):
         def _add_or_update(cont, match, val):
             idx, _ = next(
                 filter(lambda elem: elem[1][0] == match, enumerate(cont)), (None, None)
@@ -224,10 +224,10 @@ def match_pattern(
 
         retval = []
         for k, v in pats:
-            if not functor(k):
+            if func(k):
                 matches = fnmatch.filter(names, k)
                 if not matches:
-                    no_matches_found(k, names)
+                    no_matches(k, names)
                 else:
                     for m in matches:
                         _add_or_update(retval, m, v)
@@ -236,9 +236,9 @@ def match_pattern(
         return retval
 
     if isinstance(patterns, dict):
-        return _match_dict(patterns, names, always_match_predicate)
+        return _match_dict(patterns, names, use_fnmatch)
     elif isinstance(patterns, list):
-        return _match_list(patterns, names, always_match_predicate)
+        return _match_list(patterns, names, use_fnmatch)
     else:
         raise AssertionError("match_pattern invalid type")
 
@@ -480,26 +480,14 @@ def assert_files_provided(args) -> None:
 
 
 def pattern_match_files(args) -> None:
-    def raise_no_match(pat, names):
+    def _raise(pat, names):
         raise ValueError(
-            "no matches found for '{}' in {}".format(pat, ", ".join(names))
+            "no matches found for file '{}' in {}".format(pat, ", ".join(names))
         )
 
-    args.x = match_pattern(
-        args.x,
-        args.source_files,
-        no_matches_found=raise_no_match,
-    )
-    args.y = match_pattern(
-        args.y,
-        args.source_files,
-        no_matches_found=raise_no_match,
-    )
-    args.units = match_pattern(
-        args.units,
-        args.source_files,
-        no_matches_found=raise_no_match,
-    )
+    args.x = match_pattern(args.x, args.source_files, no_matches=_raise)
+    args.y = match_pattern(args.y, args.source_files, no_matches=_raise)
+    args.units = match_pattern(args.units, args.source_files, no_matches=_raise)
 
 
 def pattern_matching_error(
@@ -614,8 +602,8 @@ def main():
                 x_plots: AnyKeyPairs = match_pattern(
                     x_plots,
                     csvrdr.fieldnames,
-                    always_match_predicate=callable,
-                    no_matches_found=no_match,
+                    use_fnmatch=lambda x: not callable(x),
+                    no_matches=no_match,
                 )
                 if not x_plots:
                     pattern_matching_error(parser, "x", f.name)
@@ -623,8 +611,8 @@ def main():
                 y_plots: AnyKeyPairs = match_pattern(
                     y_plots,
                     csvrdr.fieldnames,
-                    always_match_predicate=callable,
-                    no_matches_found=no_match,
+                    use_fnmatch=lambda x: not callable(x),
+                    no_matches=no_match,
                 )
                 if not y_plots:
                     pattern_matching_error(parser, "y", f.name)
