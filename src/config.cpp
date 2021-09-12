@@ -52,6 +52,8 @@ constexpr static const char* error_messages[] =
     "section: samples must be a positive integer",
     "section: duration must be a positive integer",
     "section: section label already exists",
+    "section: cannot have both <short/> and <long/> tags",
+    "section: invalid <method></method> for <short/>",
 
     "section group: <sections></sections> is empty",
     "section group: label cannot be empty",
@@ -382,6 +384,22 @@ static cfg_expected<config_data::profiling_method> get_method(const pugi::xml_no
     return method;
 }
 
+static cfg_expected<bool>
+get_short(const pugi::xml_node& nsection, config_data::profiling_method method)
+{
+    using rettype = cfg_expected<bool>;
+    using namespace pugi;
+
+    xml_node nshort = nsection.child("short");
+    xml_node nlong = nsection.child("long");
+
+    if (nshort && nlong)
+        return rettype(nonstd::unexpect, cfg_error_code::SEC_BOTH_SHORT_AND_LONG);
+    if (nshort && method == config_data::profiling_method::energy_profile)
+        return rettype(nonstd::unexpect, cfg_error_code::SEC_INVALID_METHOD_FOR_SHORT);
+    return bool(nshort);
+}
+
 static cfg_expected<config_data::section> get_section(const pugi::xml_node& nsection)
 {
     using rettype = cfg_expected<config_data::section>;
@@ -403,6 +421,10 @@ static cfg_expected<config_data::section> get_section(const pugi::xml_node& nsec
     cfg_expected<config_data::profiling_method> method = get_method(nsection);
     if (!method)
         return rettype(nonstd::unexpect, std::move(method.error()));
+
+    cfg_expected<bool> is_short = get_short(nsection, *method);
+    if (!is_short)
+        return rettype(nonstd::unexpect, std::move(is_short.error()));
 
     cfg_expected<std::chrono::milliseconds> interval = get_interval(nsection, *method);
     if (!interval)
@@ -437,7 +459,8 @@ static cfg_expected<config_data::section> get_section(const pugi::xml_node& nsec
         std::move(*interval),
         *execs,
         *samples,
-        allow_concurrency
+        allow_concurrency,
+        *is_short
     };
 }
 
@@ -815,6 +838,11 @@ bool config_data::section::allow_concurrency() const
     return _concurrency;
 }
 
+bool config_data::section::is_short() const
+{
+    return _isshort;
+}
+
 
 // section_group
 
@@ -1107,6 +1135,7 @@ std::ostream& tep::operator<<(std::ostream& os, const config_data::section& s)
     os << "\nexecutions: " << s.executions();
     os << "\nsamples: " << s.samples();
     os << "\nallow concurrency: " << (s.allow_concurrency() ? "true" : "false");
+    os << "\nshort: " << (s.is_short() ? "true" : "false");
     return os;
 }
 

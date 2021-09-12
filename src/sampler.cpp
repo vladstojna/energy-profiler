@@ -44,6 +44,38 @@ const nrgprf::reader* sampler::reader() const
 }
 
 
+sampler_promise short_sampler::run()&
+{
+    nrgprf::error error = nrgprf::error::success();
+    _start = nrgprf::timed_sample(*reader(), error);
+    if (error)
+    {
+        auto promise = [e = std::move(error)]()
+        {
+            return sampler_expected(nonstd::unexpect, std::move(e));
+        };
+        return promise;
+    }
+    return [this]()
+    {
+        return results();
+    };
+}
+
+sampler_expected short_sampler::run()&&
+{
+    return std::move(*this).sampler::run();
+}
+
+sampler_expected short_sampler::results()
+{
+    nrgprf::error error = nrgprf::error::success();
+    _end = nrgprf::timed_sample(*reader(), error);
+    if (error)
+        return sampler_expected(nonstd::unexpect, std::move(error));
+    return timed_execution{ std::move(_start), std::move(_end) };
+}
+
 
 sync_sampler::sync_sampler(const nrgprf::reader* reader) :
     sampler(reader)

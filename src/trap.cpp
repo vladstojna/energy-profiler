@@ -204,7 +204,7 @@ bool start_trap::allow_concurrency() const
     return _allow_concurrency;
 }
 
-std::unique_ptr<async_sampler> start_trap::create_sampler() const
+std::unique_ptr<sampler> start_trap::create_sampler() const
 {
     return _creator();
 }

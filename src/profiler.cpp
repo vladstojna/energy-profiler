@@ -91,10 +91,20 @@ namespace
         } break;
         case config_data::profiling_method::energy_total:
         {
-            return [reader, interval]()
+            if (section.is_short())
             {
-                return std::make_unique<bounded_ps>(reader, interval);
-            };
+                return [reader]()
+                {
+                    return std::make_unique<short_sampler>(reader);
+                };
+            }
+            else
+            {
+                return [reader, interval]()
+                {
+                    return std::make_unique<bounded_ps>(reader, interval);
+                };
+            }
         } break;
         default:
             assert(false);
