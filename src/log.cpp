@@ -136,7 +136,7 @@ namespace
 
     template<typename Term>
     void write_single(
-        log::level lvl, const log::content& cnt, log::loc at, std::ostream& os, Term term)
+        log::level lvl, const log::content& cnt, log::loc at, Term term, std::ostream& os)
     {
         auto ts = timestamp{};
         if (ts && cnt)
@@ -147,10 +147,10 @@ namespace
 
     template<typename Term, typename... Args>
     void write_multiple(
-        log::level lvl, const log::content& cnt, log::loc at, Args&... streams, Term term)
+        log::level lvl, const log::content& cnt, log::loc at, Term term, Args&... streams)
     {
         std::ostringstream oss;
-        write_single(lvl, cnt, at, oss, term);
+        write_single(lvl, cnt, at, term, oss);
         std::string str = oss.str();
         ((streams << str), ...);
     }
@@ -159,9 +159,9 @@ namespace
     void write_impl(const log::content& cnt, log::loc at)
     {
         if constexpr (!sizeof...(other))
-            write_single(lvl, cnt, at, os, Term{});
+            write_single(lvl, cnt, at, Term{}, os);
         else
-            write_multiple(lvl, cnt, at, os, other..., Term{});
+            write_multiple(lvl, cnt, at, Term{}, os, other...);
     }
 
     template<auto& os>
