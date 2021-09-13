@@ -81,11 +81,14 @@ void ptrace_wrapper::thread_work() noexcept
         switch (_data.req)
         {
         case request::fork:
+            errno = 0;
             _data.fork.result = ::fork();
             if (_data.fork.result == 0)
+            {
                 _data.fork.callback(_data.fork.arg);
-            else if (_data.fork.result == -1)
-                _data.error = errno;
+                _exit(1);
+            }
+            _data.error = errno;
             break;
         case request::ptrace:
             errno = 0;
