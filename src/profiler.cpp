@@ -306,10 +306,6 @@ tracer_expected<profiling_results> profiler::run()
 {
     using rettype = tracer_expected<profiling_results>;
 
-    if (_flags.obtain_idle_readings())
-        if (tracer_error err = obtain_idle_results())
-            return rettype(nonstd::unexpect, std::move(err));
-
     auto system_error = [](pid_t tid, const char* comment)
     {
         return rettype(nonstd::unexpect,
@@ -325,7 +321,13 @@ tracer_expected<profiling_results> profiler::run()
     if (waited_pid == -1)
         return system_error(_tid, "waitpid");
     assert(waited_pid == _child);
-
+    if (WIFEXITED(wait_status))
+    {
+        log::logline(log::error, "[%d] failed to run target in child %d", _tid, waited_pid);
+        return rettype(nonstd::unexpect,
+            tracer_errcode::SIGNAL_DURING_SECTION_ERROR,
+            "Child failed to run target");
+    }
     log::logline(log::info, "[%d] started the profiling procedure for child %d", _tid, waited_pid);
     if (!WIFSTOPPED(wait_status))
     {
@@ -336,10 +338,12 @@ tracer_expected<profiling_results> profiler::run()
             "Tracee not stopped despite being attached with ptrace");
     }
 
+    if (_flags.obtain_idle_readings())
+        if (tracer_error err = obtain_idle_results())
+            return rettype(nonstd::unexpect, std::move(err));
     cpu_gp_regs regs(waited_pid);
     if (tracer_error err = regs.getregs())
         return move_error(err);
-
     uintptr_t entrypoint;
     switch (_dli.header().exec_type())
     {
