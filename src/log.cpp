@@ -56,6 +56,12 @@ namespace
     std::mutex _logmtx;
     std::ofstream _stream;
 
+    struct term_endl
+    {};
+
+    struct term_newline
+    {};
+
     class timestamp
     {
         char buff[128];
@@ -118,31 +124,44 @@ namespace
         return os;
     }
 
-    void write_single(log::level lvl, const log::content& cnt, log::loc at, std::ostream& os)
+    std::ostream& operator<<(std::ostream& os, term_endl)
+    {
+        return os << std::endl;
+    }
+
+    std::ostream& operator<<(std::ostream& os, term_newline)
+    {
+        return os << "\n";
+    }
+
+    template<typename Term>
+    void write_single(
+        log::level lvl, const log::content& cnt, log::loc at, std::ostream& os, Term term)
     {
         auto ts = timestamp{};
         if (ts && cnt)
-            os << timestamp{} << ": " << at << " " << lvl << ": " << cnt << "\n";
+            os << ts << ": " << at << " " << lvl << ": " << cnt << term;
         else
-            os << error_message << "\n";
+            os << error_message << term;
     }
 
-    template<typename... Args>
-    void write_multiple(log::level lvl, const log::content& cnt, log::loc at, Args&... streams)
+    template<typename Term, typename... Args>
+    void write_multiple(
+        log::level lvl, const log::content& cnt, log::loc at, Args&... streams, Term term)
     {
         std::ostringstream oss;
-        write_single(lvl, cnt, at, oss);
+        write_single(lvl, cnt, at, oss, term);
         std::string str = oss.str();
         ((streams << str), ...);
     }
 
-    template<log::level lvl, auto& os, auto&... other>
+    template<log::level lvl, typename Term, auto& os, auto&... other>
     void write_impl(const log::content& cnt, log::loc at)
     {
         if constexpr (!sizeof...(other))
-            write_single(lvl, cnt, at, os);
+            write_single(lvl, cnt, at, os, Term{});
         else
-            write_multiple(lvl, cnt, at, os, other...);
+            write_multiple(lvl, cnt, at, os, other..., Term{});
     }
 
     template<auto& os>
@@ -162,10 +181,10 @@ namespace
         std::pair{ do_nothing, getter_impl<_stream> }
     };
 
-    template<auto& os, log::level... lvl>
+    template<auto& os, typename Term, log::level... lvl>
     void set_funcs()
     {
-        ((funcs[lvl] = { write_impl<lvl, os>, getter_impl<os> }), ...);
+        ((funcs[lvl] = { write_impl<lvl, Term, os>, getter_impl<os> }), ...);
     }
 
     std::string error_opening_file(const std::string& file)
@@ -224,18 +243,20 @@ namespace tep
             std::call_once(oflag, [](bool quiet, const std::string& path)
                 {
                     if (quiet)
-                        set_funcs<std::cerr, error>();
+                        set_funcs<std::cerr, term_endl, error>();
                     else if (path.empty())
                     {
-                        set_funcs<std::cout, debug, info, success>();
-                        set_funcs<std::cerr, warning, error>();
+                        set_funcs<std::cout, term_newline, debug, info, success>();
+                        set_funcs<std::cerr, term_newline, warning>();
+                        set_funcs<std::cerr, term_endl, error>();
                     }
                     else
                     {
                         _stream.open(path);
                         if (!_stream)
                             throw std::runtime_error(error_opening_file(path));
-                        set_funcs<_stream, debug, info, success, warning, error>();
+                        set_funcs<_stream, term_newline, debug, info, success, warning>();
+                        set_funcs<_stream, term_endl, error>();
                     }
                 }, quiet, path);
         }
@@ -253,6 +274,11 @@ namespace tep
     std::ostream& log::stream(level lvl)
     {
         return (*funcs[lvl].second)();
+    }
+
+    std::ostream& log::flush(level lvl)
+    {
+        return stream(lvl).flush();
     }
 
     void log::write(level lvl, const content& cnt, loc at)
