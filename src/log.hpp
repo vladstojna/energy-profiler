@@ -50,6 +50,8 @@ namespace tep
 
         static std::ostream& stream(level lvl = info);
 
+        static std::ostream& flush(level lvl = info);
+
         static void write(level lvl, const content& cnt, loc at);
 
     #define logline(lvl, ...) \

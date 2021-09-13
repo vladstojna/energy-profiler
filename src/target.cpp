@@ -14,19 +14,20 @@
 
 int disable_aslr(pid_t pid)
 {
+    using namespace tep;
     int old = personality(0xffffffff);
     if (old == -1)
     {
-        tep::log(tep::log_lvl::error, "[%d] error retrieving current persona: %s", pid, strerror(errno));
+        log::logline(log::error, "[%d] error retrieving current persona: %s", pid, strerror(errno));
         return old;
     }
     int result = personality(old | ADDR_NO_RANDOMIZE);
     if (result == -1)
     {
-        tep::log(tep::log_lvl::error, "[%d] error disabling ASLR: %s", pid, strerror(errno));
+        log::logline(log::error, "[%d] error disabling ASLR: %s", pid, strerror(errno));
         return result;
     }
-    tep::log(tep::log_lvl::success, "[%d] disabled ASLR", pid);
+    log::logline(log::success, "[%d] disabled ASLR", pid);
     return result;
 }
 
@@ -55,6 +56,7 @@ void tep::run_target(char* const argv[])
     }
     if (disable_aslr(pid))
         return;
+    log::flush();
     // execute target executable
     if (execv(argv[0], argv) == -1)
         log::logline(log::error, "[%d] execv error: %s", pid, strerror(errno));
