@@ -1,7 +1,6 @@
 #! /usr/bin/env python3
 
 import fnmatch
-from io import TextIOWrapper
 import sys
 import csv
 import argparse
@@ -19,24 +18,20 @@ class argset_or_all(argparse.Action):
 
 
 def read_from(path):
-    if not path:
-        return sys.stdin
-    else:
-        return open(path, "r")
-
-
-def str_as_bool(s):
-    return bool(distutils.util.strtobool(s))
+    return sys.stdin if not path else open(path, "r")
 
 
 def add_arguments(parser: argparse.ArgumentParser):
+    def str_as_bool(s):
+        return bool(distutils.util.strtobool(s))
+
     parser.add_argument(
-        "source_file",
+        "source_files",
         action="store",
-        help="file to extract from, or stdin if not present",
-        nargs="?",
+        help="file(s) to extract from (default: stdin)",
+        nargs="*",
         type=str,
-        default=None,
+        default=[None],
     )
     parser.add_argument(
         "-w",
@@ -68,7 +63,7 @@ def add_arguments(parser: argparse.ArgumentParser):
     )
 
 
-def read_file(f: Union[TextIO, TextIOWrapper]) -> tuple[Iterable, Iterable]:
+def read_file(f) -> tuple[Iterable, Iterable]:
     def get_metadata(comments: list):
         return {c[0]: c[1:] for c in csv.reader(comments) if c}
 
@@ -94,13 +89,15 @@ def get_units(meta: dict) -> dict:
     return retval
 
 
-def print_format(formatrow: list, pattern: str, value: bool) -> None:
-    print(
-        " ".join("{}={}".format(m, value) for m in fnmatch.filter(formatrow, pattern))
+def print_format(fname: str, formatrow: list, pattern: str, value: bool) -> None:
+    prefix = "{}:".format(fname) if fname else fname
+    names = (
+        "{}{}={}".format(prefix, m, value) for m in fnmatch.filter(formatrow, pattern)
     )
+    print(" ".join(names))
 
 
-def print_units(formatrow: list, units: dict) -> None:
+def print_units(fname: str, formatrow: list, units: dict) -> None:
     def get_unit(text: str, units: dict) -> str:
         for k, v in units.items():
             if k in text:
@@ -110,45 +107,61 @@ def print_units(formatrow: list, units: dict) -> None:
     if not units:
         print()
     else:
-        dic = {}
-        for f in formatrow:
-            dic[f] = get_unit(f, units)
-        print(" ".join("{}={}".format(k, v) for k, v in dic.items()))
+        prefix = "{}:".format(fname) if fname else fname
+        to_join = (
+            "{}{}={}".format(prefix, k, v)
+            for k, v in ((f, get_unit(f, units)) for f in formatrow)
+        )
+        print(" ".join(to_join))
 
 
-def print_title(meta: dict) -> None:
-    if not meta.get("group") or not meta.get("section") or not meta.get("devices"):
-        print("<untitled>")
-    else:
-        retval = "{}, {}".format(next(iter(meta["group"])), next(iter(meta["section"])))
+def print_title(fname: str, meta: dict) -> None:
+    if fname or meta.get("group") or meta.get("section") or meta.get("devices"):
+        group = next(iter(meta["group"]))
+        section = next(iter(meta["section"]))
+        prefix = "{}:".format(fname) if fname else fname
+        retval = "{}{}:{}".format(
+            prefix,
+            group if group else "<unnamed group>",
+            section if section else "<unnamed section>",
+        )
         if len(meta["devices"]) == 1:
-            retval += ", {}".format(next(iter(meta["devices"])))
+            retval += ":{}".format(next(iter(meta["devices"])))
         print(retval)
+    else:
+        print("<untitled>")
 
 
 def main():
+    def is_candidate(w: str, s: str) -> bool:
+        return w == s or w == "all"
+
+    def get_filename(f) -> str:
+        return f.name if f.name != sys.stdin.name else ""
+
     parser = argparse.ArgumentParser(description="Helper script to extract values")
     add_arguments(parser)
     args = parser.parse_args()
-    if (args.what == "all" or args.what == "format") and not args.pattern:
+    if ("all" in args.what or "format" in args.what) and not args.pattern:
         parser.error("-w/--what all/format requires option -p/--pattern")
 
-    with read_from(args.source_file) as f:
-        metadata, formatrow = read_file(f)
-        units = get_units(metadata)
-        for what in args.what:
-            if what == "all":
-                print_format(formatrow, args.pattern, args.value)
-                print_units(formatrow, units)
-                print_title(metadata)
-            elif what == "format":
-                print_format(formatrow, args.pattern, args.value)
-            elif what == "units":
-                print_units(formatrow, units)
-            elif what == "title":
-                print_title(metadata)
-            else:
-                assert False
+    for sf in args.source_files:
+        with read_from(sf) as f:
+            metadata, formatrow = read_file(f)
+            fname = get_filename(f)
+            assert fname or not args.source_files[0]
+            if not fname and args.source_files[0]:
+                raise AssertionError("file name must be exist if 1 or more files")
+            if fname:
+                print(fname)
+            for what in args.what:
+                if is_candidate(what, "format"):
+                    print_format(fname, formatrow, args.pattern, args.value)
+                if is_candidate(what, "units"):
+                    units = get_units(metadata)
+                    print_units(fname, formatrow, units)
+                if is_candidate(what, "title"):
+                    print_title(fname, metadata)
 
 
 if __name__ == "__main__":
