@@ -12,10 +12,6 @@ def main():
     choices = ("energy", "power")
     targets = {"cpu": "socket", "gpu": "device"}
 
-    class data_type_not_found(Exception):
-        def __init__(self, message) -> None:
-            self.message = message
-
     class data_idx:
         def __init__(self, tp, idx):
             self.type = tp
@@ -237,10 +233,10 @@ def main():
         for tgt in targets:
             di = find_data_idx(fmt[tgt], choices)
             if not di:
-                raise data_type_not_found(
-                    "{} not found in format".format(" or ".join(choices))
-                )
-            if di.type != args.to:
+                s_choices = " or ".join(choices)
+                s_fmt = ",".join(fmt[tgt]) if fmt[tgt] else "empty"
+                log("{}: No {} data found in {} format".format(tgt, s_choices, s_fmt))
+            if di and di.type != args.to:
                 st = find_data_idx(fmt[tgt], ("sensor_time",))
                 conversions[tgt] = di, st
                 for ix in range(len(fmt[tgt])):
