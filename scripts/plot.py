@@ -170,6 +170,33 @@ class store_size(argparse.Action):
             raise argparse.ArgumentError(self, err.args[0] if err.args else "<empty>")
 
 
+class store_marker_style(argparse.Action):
+    _choices = ("const", "nonconst")
+    default = {"const": "x", "nonconst": "."}
+    default_str = ",".join("{}={}".format(k, v) for k, v in default.items())
+
+    def __init__(self, option_strings: Sequence[str], dest: str, **kwargs) -> None:
+        super().__init__(option_strings, dest, **kwargs)
+
+    def __call__(self, parser, namespace, values, option_string) -> None:
+        try:
+            retval = {}
+            for kv in values:
+                k, sep, v = kv.partition("=")
+                if not sep:
+                    raise ValueError("Format in key=value")
+                if not k:
+                    raise ValueError("Key cannot be empty")
+                if k not in self._choices:
+                    raise ValueError(
+                        "Invalid key: {} not in {}".format(k, ",".join(self._choices))
+                    )
+                retval[k] = v
+            setattr(namespace, self.dest, retval)
+        except (ValueError, TypeError, argparse.ArgumentTypeError) as err:
+            raise argparse.ArgumentError(self, err.args[0] if err.args else "<empty>")
+
+
 def read_from(path: Optional[str]):
     return sys.stdin if not path else open(path, "r")
 
@@ -244,6 +271,24 @@ def match_pattern(
 
 
 def add_arguments(parser: argparse.ArgumentParser) -> None:
+    def positive_int_or_float(s: str) -> Union[int, float]:
+        try:
+            val = int(s)
+            if val <= 0:
+                raise argparse.ArgumentTypeError("value must be positive")
+            return val
+        except ValueError:
+            try:
+                val = float(s)
+                if val <= 0:
+                    raise argparse.ArgumentTypeError("value must be positive")
+            except ValueError as err:
+                raise argparse.ArgumentTypeError(
+                    err.args[0] if len(err.args) else "could not convert value to float"
+                )
+
+    default_marker_size = 3
+
     parser.add_argument(
         "source_files",
         action="store",
@@ -366,10 +411,39 @@ def add_arguments(parser: argparse.ArgumentParser) -> None:
     )
     parser.add_argument(
         "--scatter",
-        action="store_true",
-        help="use markers instead of a continuous line",
+        action="store",
+        help="""use markers with size SIZE instead
+            of a continuous line (default: {})""".format(
+            default_marker_size
+        ),
         required=False,
-        default=False,
+        type=positive_int_or_float,
+        nargs="?",
+        metavar="SIZE",
+        default=None,
+        const=default_marker_size,
+    )
+    parser.add_argument(
+        "--marker-line",
+        action="store",
+        help="""draw a line between markers;
+            no effect if --scatter is not provided (default: all)""",
+        choices=("all", "const", "nonconst", "none"),
+        default="all",
+        required=False,
+        type=str,
+    )
+    parser.add_argument(
+        "--marker-style",
+        action=store_marker_style,
+        help="""set marker style as STYLE for SERIES series
+            (default: {})""".format(
+            store_marker_style.default_str
+        ),
+        required=False,
+        nargs="+",
+        metavar="SERIES=STYLE",
+        default=store_marker_style.default,
     )
     parser.add_argument(
         "-s",
@@ -533,6 +607,44 @@ def convert_input(
     return x_ret, y_ret
 
 
+def get_line_marker_style(
+    scatter: Optional[Union[float, int]],
+    marker_line: str,
+    marker_style: Dict[str, str],
+    x,
+    y,
+) -> Dict:
+    def _create_dict(ls: str, m: str) -> Dict:
+        return {"linestyle": ls, "marker": m}
+
+    def _line(m: str) -> Dict:
+        return _create_dict("dotted", m)
+
+    def _no_line(m: str) -> Dict:
+        return _create_dict("", m)
+
+    def _marker(mstyle, x, y) -> str:
+        if callable(x) or callable(y):
+            return mstyle["const"]
+        return mstyle["nonconst"]
+
+    if scatter is None:
+        return {}
+    if marker_line == "none":
+        return _no_line(_marker(marker_style, x, y))
+    if marker_line == "all":
+        return _line(_marker(marker_style, x, y))
+    if marker_line == "const":
+        if callable(x) or callable(y):
+            return _line(marker_style[marker_line])
+        return _no_line(marker_style[marker_line])
+    if marker_line == "nonconst":
+        if callable(x) or callable(y):
+            return _no_line(marker_style[marker_line])
+        return _line(marker_style[marker_line])
+    raise AssertionError("invalid marker_line value")
+
+
 def main():
     parser = argparse.ArgumentParser(description="Generate plot from CSV file")
     add_arguments(parser)
@@ -561,14 +673,11 @@ def main():
             if not found:
                 raise ValueError("File {} is not a valid source file".format(file))
 
-    style = {}
-    if args.scatter:
-        style["marker"] = "."
-        style["markersize"] = 2
-        style["linestyle"] = "dotted"
-        style["linewidth"] = 0.7
-    else:
-        style["linewidth"] = 1
+    style_common = (
+        {"markersize": args.scatter, "linewidth": 0.7}
+        if args.scatter is not None
+        else {"linewidth": 1}
+    )
 
     matplotlib.use(args.backend)
     with plt.ioff():
@@ -639,7 +748,10 @@ def main():
                     (line,) = ax.plot(
                         get_plot_values(xf, xval, yf, yval),
                         get_plot_values(yf, yval, xf, xval),
-                        **style,
+                        **style_common,
+                        **get_line_marker_style(
+                            args.scatter, args.marker_line, args.marker_style, xf, yf
+                        ),
                     )
                     if not args.no_legend:
                         next_legend = next(legend_iter, None)
