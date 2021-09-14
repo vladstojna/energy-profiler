@@ -170,6 +170,33 @@ class store_size(argparse.Action):
             raise argparse.ArgumentError(self, err.args[0] if err.args else "<empty>")
 
 
+class store_marker_style(argparse.Action):
+    _choices = ("const", "nonconst")
+    default = {"const": "x", "nonconst": "."}
+    default_str = ",".join("{}={}".format(k, v) for k, v in default.items())
+
+    def __init__(self, option_strings: Sequence[str], dest: str, **kwargs) -> None:
+        super().__init__(option_strings, dest, **kwargs)
+
+    def __call__(self, parser, namespace, values, option_string) -> None:
+        try:
+            retval = {}
+            for kv in values:
+                k, sep, v = kv.partition("=")
+                if not sep:
+                    raise ValueError("Format in key=value")
+                if not k:
+                    raise ValueError("Key cannot be empty")
+                if k not in self._choices:
+                    raise ValueError(
+                        "Invalid key: {} not in {}".format(k, ",".join(self._choices))
+                    )
+                retval[k] = v
+            setattr(namespace, self.dest, retval)
+        except (ValueError, TypeError, argparse.ArgumentTypeError) as err:
+            raise argparse.ArgumentError(self, err.args[0] if err.args else "<empty>")
+
+
 def read_from(path: Optional[str]):
     return sys.stdin if not path else open(path, "r")
 
@@ -407,6 +434,18 @@ def add_arguments(parser: argparse.ArgumentParser) -> None:
         type=str,
     )
     parser.add_argument(
+        "--marker-style",
+        action=store_marker_style,
+        help="""set marker style as STYLE for SERIES series
+            (default: {})""".format(
+            store_marker_style.default_str
+        ),
+        required=False,
+        nargs="+",
+        metavar="SERIES=STYLE",
+        default=store_marker_style.default,
+    )
+    parser.add_argument(
         "-s",
         "--size",
         action=store_size,
@@ -569,7 +608,11 @@ def convert_input(
 
 
 def get_line_marker_style(
-    scatter: Optional[Union[float, int]], marker_line: str, x, y
+    scatter: Optional[Union[float, int]],
+    marker_line: str,
+    marker_style: Dict[str, str],
+    x,
+    y,
 ) -> Dict:
     def _create_dict(ls: str, m: str) -> Dict:
         return {"linestyle": ls, "marker": m}
@@ -580,25 +623,25 @@ def get_line_marker_style(
     def _no_line(m: str) -> Dict:
         return _create_dict("", m)
 
-    def _marker(x, y) -> str:
+    def _marker(mstyle, x, y) -> str:
         if callable(x) or callable(y):
-            return "x"
-        return "."
+            return mstyle["const"]
+        return mstyle["nonconst"]
 
     if scatter is None:
         return {}
     if marker_line == "none":
-        return _no_line(_marker(x, y))
+        return _no_line(_marker(marker_style, x, y))
     if marker_line == "all":
-        return _line(_marker(x, y))
+        return _line(_marker(marker_style, x, y))
     if marker_line == "const":
         if callable(x) or callable(y):
-            return _line("x")
-        return _no_line(".")
+            return _line(marker_style[marker_line])
+        return _no_line(marker_style[marker_line])
     if marker_line == "nonconst":
         if callable(x) or callable(y):
-            return _no_line("x")
-        return _line(".")
+            return _no_line(marker_style[marker_line])
+        return _line(marker_style[marker_line])
     raise AssertionError("invalid marker_line value")
 
 
@@ -706,7 +749,9 @@ def main():
                         get_plot_values(xf, xval, yf, yval),
                         get_plot_values(yf, yval, xf, xval),
                         **style_common,
-                        **get_line_marker_style(args.scatter, args.marker_line, xf, yf),
+                        **get_line_marker_style(
+                            args.scatter, args.marker_line, args.marker_style, xf, yf
+                        ),
                     )
                     if not args.no_legend:
                         next_legend = next(legend_iter, None)
