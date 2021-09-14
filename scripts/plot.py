@@ -1,24 +1,45 @@
 #! /usr/bin/env python3
 
 import csv
+import copy
 import sys
 import argparse
 import itertools
 import fnmatch
 import distutils.util
 import os
-from typing import Any, Dict, Iterable, List, Optional, Sequence, Set, Tuple, Union
+from typing import (
+    Any,
+    Callable,
+    Dict,
+    Iterable,
+    List,
+    Optional,
+    Sequence,
+    Set,
+    Tuple,
+    Union,
+)
 import matplotlib
 import matplotlib.pyplot as plt
 
 
+PlotKeyPair = Tuple[str, bool]
+AnyKeyPair = Tuple[Any, Any]
+
 UnitKeyPairs = Dict[str, str]
-PlotKeyPairs = Dict[str, bool]
-AnyKeyPairs = Dict[str, Union[str, bool]]
+PlotKeyPairs = List[PlotKeyPair]
+AnyKeyPairs = List[AnyKeyPair]
+
+ConstValue = Union[int, float]
 
 UniqueLabel = Tuple[str, Optional[str]]
 CombinedLabel = Set[str]
 LabelType = Union[UniqueLabel, CombinedLabel]
+
+
+def log(*args: Any) -> None:
+    print("{}:".format(sys.argv[0]), *args, file=sys.stderr)
 
 
 def str_as_bool(s=None) -> bool:
@@ -29,8 +50,25 @@ def raise_empty_value() -> None:
     raise ValueError("Value cannot be empty")
 
 
-class store_key_pairs(argparse.Action):
+def generate_constant_series(value: ConstValue, count: int) -> Iterable[ConstValue]:
+    return (value,) * count
+
+
+class store_keypairs(argparse.Action):
     default_file = "default"
+
+    def store_file(
+        self, lhs: str, rhs: str, files: Dict[str, Any], create_container: Callable
+    ) -> Tuple[str, str]:
+        if lhs and not rhs:
+            lhs, rhs = self.default_file, lhs
+        elif not lhs:
+            lhs = self.default_file
+        if lhs not in files:
+            inserted = files[lhs] = create_container()
+        else:
+            inserted = files[lhs]
+        return lhs, rhs, inserted
 
     def __init__(
         self,
@@ -46,6 +84,11 @@ class store_key_pairs(argparse.Action):
         super().__init__(option_strings, dest, nargs, **kwargs)
 
     def __call__(self, parser, namespace, values, option_string) -> None:
+        raise NotImplementedError("__call__ not implemented")
+
+
+class store_keypairs_unique(store_keypairs):
+    def __call__(self, parser, namespace, values, option_string) -> None:
         retval = {}
         for kv in values:
             k, _, v = kv.partition("=")
@@ -53,20 +96,46 @@ class store_key_pairs(argparse.Action):
                 raise argparse.ArgumentError(self, "Key cannot be empty")
             try:
                 file, _, field = k.partition(":")
-                if file and not field:
-                    field = file
-                    file = self.default_file
-                elif not file:
-                    file = self.default_file
-                if file not in retval:
-                    retval[file] = {}
-                retval[file].update(
-                    {field: self.store_as(v) if v else self.empty_val()}
-                )
+                file, field, ins = self.store_file(file, field, retval, lambda: {})
+                ins.update({field: self.store_as(v) if v else self.empty_val()})
             except (ValueError, TypeError, argparse.ArgumentTypeError) as err:
                 raise argparse.ArgumentError(
                     self, err.args[0] if err.args else "<empty>"
                 )
+        setattr(namespace, self.dest, retval)
+
+
+class store_keypairs_or_scalar(store_keypairs):
+    def __call__(self, parser, namespace, values, option_string) -> None:
+        def inf_or_nan(value: float) -> bool:
+            return not (float("-inf") < value < float("inf"))
+
+        def append_field(field: str, current: List[str]) -> None:
+            current.append((field, self.store_as(value) if value else self.empty_val()))
+
+        retval = {}
+        try:
+            for fkv in values:
+                file, _, kv = fkv.partition(":")
+                file, kv, ins = self.store_file(file, kv, retval, lambda: [])
+                field, _, value = kv.partition("=")
+                if not field:
+                    raise argparse.ArgumentError(self, "Key cannot be empty")
+                # if value is not empty, assume field name
+                # otherwise, try and parse a constant
+                if value:
+                    append_field(field, ins)
+                else:
+                    try:
+                        const = float(field)
+                        if inf_or_nan(const):
+                            raise ValueError("Constant must be a real value")
+                        ins.append((generate_constant_series, const))
+                    # assume it is a field name and append to list
+                    except ValueError:
+                        append_field(field, ins)
+        except (ValueError, TypeError, argparse.ArgumentTypeError) as err:
+            raise argparse.ArgumentError(self, err.args[0] if err.args else "<empty>")
         setattr(namespace, self.dest, retval)
 
 
@@ -101,26 +170,77 @@ class store_size(argparse.Action):
             raise argparse.ArgumentError(self, err.args[0] if err.args else "<empty>")
 
 
-def read_from(path):
-    if not path:
-        return sys.stdin
+def read_from(path: Optional[str]):
+    return sys.stdin if not path else open(path, "r")
+
+
+def output_to(path: Optional[str]):
+    return sys.stdout if not path else open(path, "wb")
+
+
+def match_pattern(
+    patterns: Iterable,
+    names: Sequence[str],
+    use_fnmatch: Callable = lambda _: True,
+    no_matches: Callable = lambda _: None,
+) -> Union[List[AnyKeyPair], Dict]:
+    def _match_dict(pats, names, func):
+        def _add_or_update(cont, match, val):
+            if match in cont:
+                if isinstance(val, list):
+                    cont[match] += val
+                elif isinstance(val, dict):
+                    cont[match].update(val)
+                else:
+                    cont[match] = val
+            else:
+                if isinstance(val, list) or isinstance(val, dict):
+                    cont[match] = copy.deepcopy(val)
+                else:
+                    cont[match] = val
+
+        retval = {}
+        for k, v in pats.items():
+            if func(k):
+                matches = fnmatch.filter(names, k)
+                if not matches:
+                    no_matches(k, names)
+                else:
+                    for m in matches:
+                        _add_or_update(retval, m, v)
+            else:
+                retval[k] = v
+        return retval
+
+    def _match_list(pats, names, func):
+        def _add_or_update(cont, match, val):
+            idx, _ = next(
+                filter(lambda elem: elem[1][0] == match, enumerate(cont)), (None, None)
+            )
+            if idx is not None:
+                cont[idx] = (match, val)
+            else:
+                cont.append((match, val))
+
+        retval = []
+        for k, v in pats:
+            if func(k):
+                matches = fnmatch.filter(names, k)
+                if not matches:
+                    no_matches(k, names)
+                else:
+                    for m in matches:
+                        _add_or_update(retval, m, v)
+            else:
+                _add_or_update(retval, k, v)
+        return retval
+
+    if isinstance(patterns, dict):
+        return _match_dict(patterns, names, use_fnmatch)
+    elif isinstance(patterns, list):
+        return _match_list(patterns, names, use_fnmatch)
     else:
-        return open(path, "r")
-
-
-def output_to(path):
-    if not path:
-        return sys.stdout
-    else:
-        return open(path, "wb")
-
-
-def match_pattern(patterns: Dict[str, Any], names: Sequence[str]) -> Dict[str, Any]:
-    retval = {}
-    for k, v in patterns.items():
-        for m in fnmatch.filter(names, k):
-            retval[m] = v
-    return retval
+        raise AssertionError("match_pattern invalid type")
 
 
 def add_arguments(parser: argparse.ArgumentParser) -> None:
@@ -144,7 +264,7 @@ def add_arguments(parser: argparse.ArgumentParser) -> None:
     parser.add_argument(
         "-x",
         "--x-plots",
-        action=store_key_pairs,
+        action=store_keypairs_or_scalar,
         store_as=str_as_bool,
         empty_val=str_as_bool,
         help="""column(s) to use as the x values as keys,
@@ -169,7 +289,7 @@ def add_arguments(parser: argparse.ArgumentParser) -> None:
     parser.add_argument(
         "-y",
         "--y-plots",
-        action=store_key_pairs,
+        action=store_keypairs_or_scalar,
         store_as=str_as_bool,
         empty_val=str_as_bool,
         help="""column(s) to use as the y values as keys,
@@ -218,7 +338,7 @@ def add_arguments(parser: argparse.ArgumentParser) -> None:
     parser.add_argument(
         "-u",
         "--units",
-        action=store_key_pairs,
+        action=store_keypairs_unique,
         store_as=str,
         empty_val=raise_empty_value,
         help="plot units",
@@ -262,24 +382,10 @@ def add_arguments(parser: argparse.ArgumentParser) -> None:
     )
 
 
-def convert_input(fields, data) -> dict:
-    retval = {f: [] for f in fields}
-    first_row = None
-    for row in data:
-        if not first_row:
-            first_row = row
-        for k, v in row.items():
-            if k in fields:
-                retval[k].append(
-                    float(v) - float(first_row[k]) if fields[k] else float(v)
-                )
-    return retval
-
-
 def assert_key_pairs(kps, fieldnames) -> None:
-    for k in kps:
-        if k not in fieldnames:
-            raise ValueError("'{}' is not a valid column".format(k))
+    for fld, _ in kps:
+        if not callable(fld) and fld not in fieldnames:
+            raise ValueError("'{}' is not a valid column".format(fld))
 
 
 def unique_units(plots: Iterable[str], units: UnitKeyPairs) -> bool:
@@ -301,11 +407,11 @@ def generate_legend(x, y, prefix=None) -> str:
 
 
 def get_label(plots: PlotKeyPairs, units: UnitKeyPairs) -> LabelType:
-    def get_unique_label(plot: str, units: UnitKeyPairs) -> UniqueLabel:
-        return (plot, units.get(plot))
+    def get_unique_label(plot: PlotKeyPair, units: UnitKeyPairs) -> UniqueLabel:
+        return (plot[0], units.get(plot[0])) if not callable(plot[0]) else (None, None)
 
     def get_combined_units(plots: PlotKeyPairs, units: UnitKeyPairs) -> CombinedLabel:
-        return {units[p] for p in plots if p in units} if units else {}
+        return {units[p] for p, _ in plots if p in units} if units else set()
 
     if len(plots) == 1:
         return get_unique_label(next(iter(plots)), units)
@@ -341,7 +447,7 @@ def get_title(args) -> str:
     elif args.source_files and len(args.source_files) == 1:
         if args.source_files[0]:
             return os.path.basename(args.source_files[0])
-        return store_key_pairs.default_file
+        return store_keypairs.default_file
     return ",".join((os.path.basename(sf) for sf in args.source_files))
 
 
@@ -356,14 +462,14 @@ def plots_compatible(x: PlotKeyPairs, y: PlotKeyPairs) -> bool:
 
 def substitute_default_file(args) -> None:
     for kp_args in args.x, args.y, args.units:
-        if kp_args.get(store_key_pairs.default_file):
-            kp_args[args.source_files[0]] = kp_args[store_key_pairs.default_file]
-            del kp_args[store_key_pairs.default_file]
+        if kp_args.get(store_keypairs.default_file):
+            kp_args[args.source_files[0]] = kp_args[store_keypairs.default_file]
+            del kp_args[store_keypairs.default_file]
 
 
 def assert_files_provided(args) -> None:
     for kp_args in args.x, args.y, args.units:
-        if kp_args.get(store_key_pairs.default_file):
+        if kp_args.get(store_keypairs.default_file):
             raise ValueError(
                 (
                     "Multiple source files provided "
@@ -374,9 +480,57 @@ def assert_files_provided(args) -> None:
 
 
 def pattern_match_files(args) -> None:
-    args.x = match_pattern(args.x, args.source_files)
-    args.y = match_pattern(args.y, args.source_files)
-    args.units = match_pattern(args.units, args.source_files)
+    def _raise(pat, names):
+        raise ValueError(
+            "no matches found for file '{}' in {}".format(pat, ", ".join(names))
+        )
+
+    args.x = match_pattern(args.x, args.source_files, no_matches=_raise)
+    args.y = match_pattern(args.y, args.source_files, no_matches=_raise)
+    args.units = match_pattern(args.units, args.source_files, no_matches=_raise)
+
+
+def pattern_matching_error(
+    parser: argparse.ArgumentParser, dim: str, fname: str
+) -> None:
+    raise parser.error(
+        "Pattern matching for {} plots: no matches found in {}".format(dim, fname)
+    )
+
+
+def convert_input(
+    x_fields: Iterable[AnyKeyPairs], y_fields: Iterable[AnyKeyPairs], data: Iterable
+) -> List:
+    def _find_field(
+        fields: Iterable[AnyKeyPairs], data: List[AnyKeyPairs], key: Any
+    ) -> Tuple:
+        for (f, v), (_, d) in zip(fields, data):
+            if not callable(f) and f == key:
+                return v, d
+        return None, None
+
+    def _process_row(
+        x_fields, x_ret, y_fields, y_ret, first: Any, val: Any, key: str
+    ) -> None:
+        x_fieldval, x_datalist = _find_field(x_fields, x_ret, key)
+        y_fieldval, y_datalist = _find_field(y_fields, y_ret, key)
+        if x_fieldval is not None:
+            x_datalist.append(float(val) - float(first) if x_fieldval else float(val))
+        if y_fieldval is not None:
+            y_datalist.append(float(val) - float(first) if y_fieldval else float(val))
+
+    x_ret = [(f, [] if not callable(f) else v) for f, v in x_fields]
+    y_ret = [(f, [] if not callable(f) else v) for f, v in y_fields]
+
+    first_row = next(iter(data), None)
+    if first_row is None:
+        raise AssertionError("No rows in CSV file")
+    for k, v in first_row.items():
+        _process_row(x_fields, x_ret, y_fields, y_ret, v, v, k)
+    for row in data:
+        for k, v in row.items():
+            _process_row(x_fields, x_ret, y_fields, y_ret, first_row[k], v, k)
+    return x_ret, y_ret
 
 
 def main():
@@ -426,7 +580,7 @@ def main():
 
         ax.minorticks_on()
         ax.set_title(get_title(args))
-        ax.grid(which="major", axis="both", linestyle="dotted", alpha=0.5)
+        ax.grid(which="both", axis="both", linestyle="dotted", alpha=0.2)
 
         labels: Tuple[List[LabelType], List[LabelType]] = ([], [])
         legend_iter = iter(args.legends)
@@ -441,14 +595,27 @@ def main():
                 y_plots = args.y[f.name]
                 units = args.units.get(f.name, {})
                 lg_prefix = get_legend_prefix(args.source_files, f.name)
+                no_match = lambda k, _: log(
+                    "column {} not found in {}".format(k, f.name)
+                )
 
-                x_plots = match_pattern(x_plots, csvrdr.fieldnames)
+                x_plots: AnyKeyPairs = match_pattern(
+                    x_plots,
+                    csvrdr.fieldnames,
+                    use_fnmatch=lambda x: not callable(x),
+                    no_matches=no_match,
+                )
                 if not x_plots:
-                    raise parser.error("Pattern matching for x plots: no matches found")
+                    pattern_matching_error(parser, "x", f.name)
                 assert_key_pairs(x_plots, csvrdr.fieldnames)
-                y_plots = match_pattern(y_plots, csvrdr.fieldnames)
+                y_plots: AnyKeyPairs = match_pattern(
+                    y_plots,
+                    csvrdr.fieldnames,
+                    use_fnmatch=lambda x: not callable(x),
+                    no_matches=no_match,
+                )
                 if not y_plots:
-                    raise parser.error("Pattern matching for y plots: no matches found")
+                    pattern_matching_error(parser, "y", f.name)
                 assert_key_pairs(y_plots, csvrdr.fieldnames)
                 if not plots_compatible(x_plots, y_plots):
                     raise parser.error(
@@ -456,22 +623,34 @@ def main():
                             len(x_plots), len(y_plots)
                         )
                     )
-                units = match_pattern(units, csvrdr.fieldnames)
+                units: UnitKeyPairs = match_pattern(units, csvrdr.fieldnames)
                 if not unique_units(x_plots, units):
                     raise parser.error("units for x plots must be the same")
 
-                converted = convert_input({**x_plots, **y_plots}, csvrdr)
-
-                for x, y in itertools.zip_longest(
-                    x_plots, y_plots, fillvalue=next(iter(x_plots))
+                x_conv, y_conv = convert_input(x_plots, y_plots, csvrdr)
+                for (xf, xval), (yf, yval) in itertools.zip_longest(
+                    x_conv, y_conv, fillvalue=next(iter(x_conv))
                 ):
-                    (line,) = ax.plot(converted[x], converted[y], **style)
+                    get_plot_values = (
+                        lambda f1, v1, f2, v2: f1(v1, 1 if callable(f2) else len(v2))
+                        if callable(f1)
+                        else v1
+                    )
+                    (line,) = ax.plot(
+                        get_plot_values(xf, xval, yf, yval),
+                        get_plot_values(yf, yval, xf, xval),
+                        **style,
+                    )
                     if not args.no_legend:
                         next_legend = next(legend_iter, None)
                         line.set_label(
                             next_legend
                             if next_legend
-                            else generate_legend(x, y, lg_prefix)
+                            else generate_legend(
+                                xval if callable(xf) else xf,
+                                yval if callable(yf) else yf,
+                                lg_prefix,
+                            )
                         )
 
                 labels[0].append(get_label(x_plots, units))
