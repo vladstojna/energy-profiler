@@ -397,7 +397,7 @@ def add_arguments(parser: argparse.ArgumentParser) -> None:
         const=default_marker_size,
     )
     parser.add_argument(
-        "--markers-line",
+        "--marker-line",
         action="store",
         help="""draw a line between markers;
             no effect if --scatter is not provided (default: all)""",
@@ -568,35 +568,38 @@ def convert_input(
     return x_ret, y_ret
 
 
-def get_style(
-    scatter: Optional[Union[float, int]], style: Dict, markers_line: str, x, y
+def get_line_marker_style(
+    scatter: Optional[Union[float, int]], marker_line: str, x, y
 ) -> Dict:
+    def _create_dict(ls: str, m: str) -> Dict:
+        return {"linestyle": ls, "marker": m}
+
+    def _line(m: str) -> Dict:
+        return _create_dict("dotted", m)
+
+    def _no_line(m: str) -> Dict:
+        return _create_dict("", m)
+
+    def _marker(x, y) -> str:
+        if callable(x) or callable(y):
+            return "x"
+        return "."
+
     if scatter is None:
-        return style
-    if markers_line == "none":
-        style["linestyle"] = ""
+        return {}
+    if marker_line == "none":
+        return _no_line(_marker(x, y))
+    if marker_line == "all":
+        return _line(_marker(x, y))
+    if marker_line == "const":
         if callable(x) or callable(y):
-            style["marker"] = "x"
-    elif markers_line == "all":
-        style["marker"] = "."
-        style["linestyle"] = "dotted"
-    elif markers_line == "const":
+            return _line("x")
+        return _no_line(".")
+    if marker_line == "nonconst":
         if callable(x) or callable(y):
-            style["marker"] = "."
-            style["linestyle"] = "dotted"
-        else:
-            style["marker"] = "x"
-            style["linestyle"] = ""
-    elif markers_line == "nonconst":
-        if not callable(x) and not callable(y):
-            style["marker"] = "."
-            style["linestyle"] = "dotted"
-        else:
-            style["marker"] = "x"
-            style["linestyle"] = ""
-    else:
-        raise AssertionError("invalid markers_line value")
-    return style
+            return _no_line("x")
+        return _line(".")
+    raise AssertionError("invalid marker_line value")
 
 
 def main():
@@ -627,14 +630,11 @@ def main():
             if not found:
                 raise ValueError("File {} is not a valid source file".format(file))
 
-    style = {}
-    if args.scatter is not None:
-        style["marker"] = "."
-        style["markersize"] = args.scatter
-        style["linestyle"] = "dotted"
-        style["linewidth"] = 0.7
-    else:
-        style["linewidth"] = 1
+    style_common = (
+        {"markersize": args.scatter, "linewidth": 0.7}
+        if args.scatter is not None
+        else {"linewidth": 1}
+    )
 
     matplotlib.use(args.backend)
     with plt.ioff():
@@ -705,7 +705,8 @@ def main():
                     (line,) = ax.plot(
                         get_plot_values(xf, xval, yf, yval),
                         get_plot_values(yf, yval, xf, xval),
-                        **get_style(args.scatter, style, args.markers_line, xf, yf),
+                        **style_common,
+                        **get_line_marker_style(args.scatter, args.marker_line, xf, yf),
                     )
                     if not args.no_legend:
                         next_legend = next(legend_iter, None)
