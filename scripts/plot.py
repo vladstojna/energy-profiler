@@ -150,7 +150,7 @@ class store_marker_style(argparse.Action):
 
     def __call__(self, parser, namespace, values, option_string) -> None:
         try:
-            retval = {}
+            retval = copy.deepcopy(self.default)
             for kv in values:
                 k, sep, v = kv.partition("=")
                 if not sep:
