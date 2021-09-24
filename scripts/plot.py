@@ -1,4 +1,4 @@
-#! /usr/bin/env python3
+#!/usr/bin/env python3
 
 import csv
 import copy
@@ -6,6 +6,7 @@ import sys
 import argparse
 import itertools
 import fnmatch
+import pickle
 import distutils.util
 import os
 from typing import (
@@ -397,10 +398,10 @@ def add_arguments(parser: argparse.ArgumentParser) -> None:
         "--backend",
         action="store",
         type=str,
-        help="backend to use when generating plot",
+        help="backend to use when generating plot (default: serialize)",
         required=False,
-        choices=["agg", "pdf", "svg"],
-        default="agg",
+        choices=["agg", "pdf", "svg", "serialize"],
+        default="serialize",
     )
     parser.add_argument(
         "--dpi",
@@ -679,14 +680,8 @@ def main():
         else {"linewidth": 1}
     )
 
-    matplotlib.use(args.backend)
     with plt.ioff():
         fig, ax = plt.subplots()
-        if args.backend == "agg" and args.dpi:
-            fig.set_dpi(args.dpi)
-        if args.size:
-            fig.set_size_inches(cm2inch(args.size))
-
         ax.minorticks_on()
         ax.set_title(get_title(args))
         ax.grid(which="both", axis="both", linestyle="dotted", alpha=0.2)
@@ -789,7 +784,15 @@ def main():
 
         bbox_extra = () if args.no_legend else (legend,)
         with output_to(args.output) as of:
-            fig.savefig(of, bbox_extra_artists=bbox_extra, bbox_inches="tight")
+            if args.backend == "serialize":
+                pickle.dump((fig, ax), of)
+            else:
+                matplotlib.use(args.backend)
+                if args.backend == "agg" and args.dpi:
+                    fig.set_dpi(args.dpi)
+                if args.size:
+                    fig.set_size_inches(cm2inch(args.size))
+                fig.savefig(of, bbox_extra_artists=bbox_extra, bbox_inches="tight")
 
 
 if __name__ == "__main__":
