@@ -680,6 +680,8 @@ def main():
         else {"linewidth": 1}
     )
 
+    if args.backend != "serialize":
+        matplotlib.use(args.backend)
     with plt.ioff():
         fig, ax = plt.subplots()
         ax.minorticks_on()
@@ -787,7 +789,6 @@ def main():
             if args.backend == "serialize":
                 pickle.dump((fig, ax), of)
             else:
-                matplotlib.use(args.backend)
                 if args.backend == "agg" and args.dpi:
                     fig.set_dpi(args.dpi)
                 if args.size:
