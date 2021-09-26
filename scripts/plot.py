@@ -140,37 +140,6 @@ class store_keypairs_or_scalar(store_keypairs):
         setattr(namespace, self.dest, retval)
 
 
-class store_dpi(argparse.Action):
-    def __init__(self, option_strings: Sequence[str], dest: str, **kwargs) -> None:
-        super().__init__(option_strings, dest, **kwargs)
-
-    def __call__(self, parser, namespace, values, option_string) -> None:
-        try:
-            retval = int(values) if values else self.default
-            if retval <= 0:
-                raise ValueError("DPI must be a positive integer")
-            setattr(namespace, self.dest, retval)
-        except (ValueError, TypeError, argparse.ArgumentTypeError) as err:
-            raise argparse.ArgumentError(self, err.args[0] if err.args else "<empty>")
-
-
-class store_size(argparse.Action):
-    def __init__(self, option_strings: Sequence[str], dest: str, **kwargs) -> None:
-        super().__init__(option_strings, dest, **kwargs)
-
-    def __call__(self, parser, namespace, values, option_string) -> None:
-        try:
-            w, _, h = values.partition(",")
-            retval = float(w), float(h)
-            if retval[0] <= 0:
-                raise ValueError("Width must be a positive decimal")
-            if retval[1] <= 0:
-                raise ValueError("Height must be a positive decimal")
-            setattr(namespace, self.dest, retval)
-        except (ValueError, TypeError, argparse.ArgumentTypeError) as err:
-            raise argparse.ArgumentError(self, err.args[0] if err.args else "<empty>")
-
-
 class store_marker_style(argparse.Action):
     _choices = ("const", "nonconst")
     default = {"const": "x", "nonconst": "."}
@@ -203,7 +172,7 @@ def read_from(path: Optional[str]):
 
 
 def output_to(path: Optional[str]):
-    return sys.stdout if not path else open(path, "wb")
+    return sys.stdout.buffer if not path else open(path, "wb")
 
 
 def match_pattern(
@@ -394,23 +363,6 @@ def add_arguments(parser: argparse.ArgumentParser) -> None:
         default={},
     )
     parser.add_argument(
-        "-b",
-        "--backend",
-        action="store",
-        type=str,
-        help="backend to use when generating plot (default: serialize)",
-        required=False,
-        choices=["agg", "pdf", "svg", "serialize"],
-        default="serialize",
-    )
-    parser.add_argument(
-        "--dpi",
-        action=store_dpi,
-        help="image DPI (only has an effect when backend is agg)",
-        required=False,
-        default=0,
-    )
-    parser.add_argument(
         "--scatter",
         action="store",
         help="""use markers with size SIZE instead
@@ -445,15 +397,6 @@ def add_arguments(parser: argparse.ArgumentParser) -> None:
         nargs="+",
         metavar="SERIES=STYLE",
         default=store_marker_style.default,
-    )
-    parser.add_argument(
-        "-s",
-        "--size",
-        action=store_size,
-        help="image width and height, in cm",
-        metavar="WIDTH,HEIGHT",
-        required=False,
-        default=(),
     )
 
 
@@ -680,8 +623,6 @@ def main():
         else {"linewidth": 1}
     )
 
-    if args.backend != "serialize":
-        matplotlib.use(args.backend)
     with plt.ioff():
         fig, ax = plt.subplots()
         ax.minorticks_on()
@@ -772,28 +713,17 @@ def main():
             args.ylabel if args.ylabel is not None else combine_labels(labels[1])
         )
 
-        legend = (
-            None
-            if args.no_legend
-            else ax.legend(
+        if not args.no_legend:
+            ax.legend(
                 bbox_to_anchor=(0.0, 1.1, 1.0, 0.1),
                 loc="lower left",
                 ncol=1,
                 mode="expand",
                 borderaxespad=0.0,
             )
-        )
-
-        bbox_extra = () if args.no_legend else (legend,)
         with output_to(args.output) as of:
-            if args.backend == "serialize":
-                pickle.dump((fig, ax), of)
-            else:
-                if args.backend == "agg" and args.dpi:
-                    fig.set_dpi(args.dpi)
-                if args.size:
-                    fig.set_size_inches(cm2inch(args.size))
-                fig.savefig(of, bbox_extra_artists=bbox_extra, bbox_inches="tight")
+            pickle.dump((fig, ax), of)
+            of.flush()
 
 
 if __name__ == "__main__":
