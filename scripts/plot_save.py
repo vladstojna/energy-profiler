@@ -19,16 +19,21 @@ def output_to(path: str) -> Any:
 
 
 def add_arguments(parser: argparse.ArgumentParser) -> argparse.ArgumentParser:
-    def _positive_number(s: str, convert: Callable) -> Any:
+    def _conditional_number(s: str, convert: Callable, pred: Callable, msg: str) -> Any:
         try:
             val = convert(s)
-            if val <= 0:
-                raise argparse.ArgumentTypeError("value must be positive")
+            if not pred(val):
+                raise argparse.ArgumentTypeError(msg)
             return val
         except ValueError as err:
             raise argparse.ArgumentTypeError(
                 err.args[0] if len(err.args) else "could not convert value"
             )
+
+    def _positive_number(s: str, convert: Callable) -> Any:
+        return _conditional_number(
+            s, convert, lambda x: x > 0, "value must be positive"
+        )
 
     def positive_integer(s: str) -> int:
         return _positive_number(s, convert=int)
@@ -87,6 +92,15 @@ def add_arguments(parser: argparse.ArgumentParser) -> argparse.ArgumentParser:
         type=positive_decimal,
         default=0,
     )
+    parser.add_argument(
+        "--pad",
+        help="bounding box padding fraction (default: use library default)",
+        required=False,
+        type=lambda s: _conditional_number(
+            s, convert=float, pred=lambda x: x >= 1, msg="value must be >= 1"
+        ),
+        default=0,
+    )
     return parser
 
 
@@ -110,7 +124,10 @@ def main():
     with read_from(args.source_file) as f:
         with plt.ioff():
             fig, _ = deserialize(f)
-            fig.tight_layout()
+            if args.pad:
+                fig.tight_layout(pad=args.pad)
+            else:
+                fig.tight_layout()
             if args.backend == "agg" and args.dpi:
                 fig.set_dpi(args.dpi)
             if args.width and args.height:
