@@ -11,11 +11,11 @@ from typing import Any, Callable, Tuple
 
 
 def read_from(path: str) -> Any:
-    return sys.stdin if not path else open(path, "rb")
+    return sys.stdin.buffer if not path else open(path, "rb")
 
 
 def output_to(path: str) -> Any:
-    return sys.stdout if not path else open(path, "wb")
+    return sys.stdout.buffer if not path else open(path, "wb")
 
 
 def add_arguments(parser: argparse.ArgumentParser) -> argparse.ArgumentParser:
