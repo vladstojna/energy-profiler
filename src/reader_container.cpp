@@ -28,12 +28,12 @@ effective_readings_type(nrgprf::readings_type::type rt)
 }
 
 static nrgprf::reader_rapl
-create_cpu_reader(const config_data::params& params, tracer_error& err)
+create_cpu_reader(const flags& flags, const config_data::params& params, tracer_error& err)
 {
     nrgprf::error error = nrgprf::error::success();
     nrgprf::reader_rapl reader(
-        nrgprf::location_mask(params.domain_mask()),
-        nrgprf::socket_mask(params.socket_mask()),
+        flags.locations.any() ? flags.locations : nrgprf::location_mask(params.domain_mask()),
+        flags.sockets.any() ? flags.sockets : nrgprf::socket_mask(params.socket_mask()),
         error,
         log::stream());
     if (error)
@@ -44,10 +44,10 @@ create_cpu_reader(const config_data::params& params, tracer_error& err)
 }
 
 static nrgprf::reader_gpu
-create_gpu_reader(const config_data::params& params, tracer_error& err)
+create_gpu_reader(const flags& flags, const config_data::params& params, tracer_error& err)
 {
     nrgprf::error error = nrgprf::error::success();
-    auto devmask = nrgprf::device_mask(params.device_mask());
+    auto devmask = flags.devices.any() ? flags.devices : nrgprf::device_mask(params.device_mask());
     auto support = nrgprf::reader_gpu::support(devmask);
     if (!support)
         error = std::move(support.error());
@@ -65,9 +65,9 @@ create_gpu_reader(const config_data::params& params, tracer_error& err)
 
 // end helper functions
 
-reader_container::reader_container(const config_data& cd, tracer_error& err) :
-    _rdr_cpu(create_cpu_reader(cd.parameters(), err)),
-    _rdr_gpu(create_gpu_reader(cd.parameters(), err))
+reader_container::reader_container(const flags& flags, const config_data& cd, tracer_error& err) :
+    _rdr_cpu(create_cpu_reader(flags, cd.parameters(), err)),
+    _rdr_gpu(create_gpu_reader(flags, cd.parameters(), err))
 {
     // iterate all sections and insert hybrid readers
     for (auto sptr : cd.flat_sections())

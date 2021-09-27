@@ -254,7 +254,7 @@ profiler::profiler(pid_t child, const flags& flags,
     _flags(flags),
     _dli(dli),
     _cd(cd),
-    _readers(_cd, err)
+    _readers(_flags, _cd, err)
 {}
 
 profiler::profiler(pid_t child, const flags& flags,
@@ -264,7 +264,7 @@ profiler::profiler(pid_t child, const flags& flags,
     _flags(flags),
     _dli(dli),
     _cd(std::move(cd)),
-    _readers(_cd, err)
+    _readers(_flags, _cd, err)
 {}
 
 profiler::profiler(pid_t child, const flags& flags,
@@ -274,7 +274,7 @@ profiler::profiler(pid_t child, const flags& flags,
     _flags(flags),
     _dli(std::move(dli)),
     _cd(cd),
-    _readers(_cd, err)
+    _readers(_flags, _cd, err)
 {}
 
 profiler::profiler(pid_t child, const flags& flags,
@@ -284,7 +284,7 @@ profiler::profiler(pid_t child, const flags& flags,
     _flags(flags),
     _dli(std::move(dli)),
     _cd(std::move(cd)),
-    _readers(_cd, err)
+    _readers(_flags, _cd, err)
 {}
 
 const dbg_info& profiler::debug_line_info() const

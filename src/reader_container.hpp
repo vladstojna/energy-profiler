@@ -3,6 +3,7 @@
 #pragma once
 
 #include "config.hpp"
+#include "flags.hpp"
 
 #include <nrg/reader_gpu.hpp>
 #include <nrg/reader_rapl.hpp>
@@ -25,7 +26,7 @@ namespace tep
         > _hybrids;
 
     public:
-        reader_container(const config_data& cd, tracer_error& err);
+        reader_container(const flags& flags, const config_data& cd, tracer_error& err);
 
         ~reader_container(); // = default;
 
