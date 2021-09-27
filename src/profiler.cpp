@@ -338,7 +338,7 @@ tracer_expected<profiling_results> profiler::run()
             "Tracee not stopped despite being attached with ptrace");
     }
 
-    if (_flags.obtain_idle_readings())
+    if (_flags.obtain_idle)
         if (tracer_error err = obtain_idle_results())
             return rettype(nonstd::unexpect, std::move(err));
     cpu_gp_regs regs(waited_pid);

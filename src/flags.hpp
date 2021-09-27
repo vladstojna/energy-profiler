@@ -2,20 +2,19 @@
 
 #pragma once
 
+#include <nrg/types.hpp>
+
 #include <iosfwd>
 
 namespace tep
 {
 
-    class flags
+    struct flags
     {
-    private:
-        bool _obtain_idle;
-
-    public:
-        explicit flags(bool idle);
-
-        bool obtain_idle_readings() const;
+        bool obtain_idle;
+        nrgprf::location_mask locations;
+        nrgprf::socket_mask sockets;
+        nrgprf::device_mask devices;
     };
 
     std::ostream& operator<<(std::ostream& os, const flags& f);
