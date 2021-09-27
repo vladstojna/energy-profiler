@@ -119,7 +119,7 @@ void print_usage(const char* profiler_name)
     std::cout << "Usage:\n\n";
     std::cout << profiler_name << " [options] [--] [executable] [executable-args]\n\n";
 
-    auto pad = std::setw(25);
+    auto pad = std::setw(30);
     std::ios::fmtflags flags(std::cout.flags());
 
     std::cout << std::left << pad << "-h, --help"
@@ -153,15 +153,18 @@ void print_usage(const char* profiler_name)
         << "\n";
 
     std::cout << std::left << pad << "--cpu-sensors {MASK,all}"
-        << "mask of CPU sensors to read in hexadecimal (default: all)"
+        << "mask of CPU sensors to read in hexadecimal, "
+        << "overwrites config value (default: use value in config)"
         << "\n";
 
     std::cout << std::left << pad << "--cpu-sockets {MASK,all}"
-        << "mask of CPU sockets to profile in hexadecimal (default: all)"
+        << "mask of CPU sockets to profile in hexadecimal, "
+        << "overwrites config value (default: use value in config)"
         << "\n";
 
     std::cout << std::left << pad << "--gpu-devices {MASK,all}"
-        << "mask of GPU devices to profile in hexadecimal (default: all)"
+        << "mask of GPU devices to profile in hexadecimal, "
+        << "overwrites config value (default: use value in config)"
         << "\n";
 
     std::cout.flush();
