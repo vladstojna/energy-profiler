@@ -411,6 +411,8 @@ reader_rapl::impl::impl(location_mask dmask, socket_mask skt_mask, error& ec, st
             }
         }
     }
+    if (!num_events())
+        ec = { error_code::SETUP_ERROR, "No events were added" };
 }
 
 error reader_rapl::impl::read(sample& s) const
