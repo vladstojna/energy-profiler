@@ -194,10 +194,10 @@ std::optional<arguments> tep::parse_arguments(int argc, char* const argv[])
         { "output",               required_argument, nullptr, 'o' },
         { "quiet",                no_argument,       nullptr, 'q' },
         { "log",                  required_argument, nullptr, 'l' },
-        { cpu_sensors_str.data(), required_argument, nullptr, 0 },
-        { cpu_sockets_str.data(), required_argument, nullptr, 0 },
-        { gpu_devices_str.data(), required_argument, nullptr, 0 },
-        { nullptr,       0,                 nullptr, 0 }
+        { cpu_sensors_str.data(), required_argument, nullptr, 0x100 },
+        { cpu_sockets_str.data(), required_argument, nullptr, 0x101 },
+        { gpu_devices_str.data(), required_argument, nullptr, 0x102 },
+        { nullptr, 0, nullptr, 0 }
     };
 
     while ((c = getopt_long(argc, argv, "hqc:o:l:", long_options, &option_index)) != -1)
@@ -205,21 +205,29 @@ std::optional<arguments> tep::parse_arguments(int argc, char* const argv[])
         switch (c)
         {
         case 0:
+            // do nothing
+            break;
+        case 0x100:
         {
-            const char* opt = long_options[option_index].name;
-            if (auto parsed_value = parse_mask_argument(opt, optarg))
-            {
-                std::cout << *parsed_value << "\n";
-                if (opt == cpu_sensors_str)
-                    cpu_sensors = *parsed_value;
-                else if (opt == cpu_sockets_str)
-                    cpu_sockets = *parsed_value;
-                else if (opt == gpu_devices_str)
-                    gpu_devices = *parsed_value;
-                break;
-            }
-            return std::nullopt;
-        }
+            auto parsed_value = parse_mask_argument(long_options[option_index].name, optarg);
+            if (!parsed_value)
+                return std::nullopt;
+            cpu_sensors = *parsed_value;
+        } break;
+        case 0x101:
+        {
+            auto parsed_value = parse_mask_argument(long_options[option_index].name, optarg);
+            if (!parsed_value)
+                return std::nullopt;
+            cpu_sockets = *parsed_value;
+        } break;
+        case 0x102:
+        {
+            auto parsed_value = parse_mask_argument(long_options[option_index].name, optarg);
+            if (!parsed_value)
+                return std::nullopt;
+            gpu_devices = *parsed_value;
+        } break;
         case 'c':
             config = optarg;
             break;
