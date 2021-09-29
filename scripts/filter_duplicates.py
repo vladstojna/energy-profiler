@@ -111,8 +111,8 @@ def remove_indices(
             assert len(sample_times) == len(samples)
 
 
-def log(fmt: str, *other: Sequence[Any]):
-    print(fmt.format(*other), file=sys.stderr)
+def log(*args: Any) -> None:
+    print("{}:".format(sys.argv[0]), *args, file=sys.stderr)
 
 
 def filter_execution(e: Dict[str, Any], filters: Dict[str, bool], comment: str) -> None:
@@ -120,13 +120,13 @@ def filter_execution(e: Dict[str, Any], filters: Dict[str, bool], comment: str) 
     remove_ix = set()
     for tgt, readings in ((k, e[k]) for k, v in filters.items() if v and e.get(k)):
         remove_ix.update(get_removal_set(readings, sample_times, targets[tgt]))
-        log("found:{}:{}={}", comment, tgt, remove_ix if remove_ix else "{}")
+        log("found:{}:{}={}".format(comment, tgt, remove_ix if remove_ix else "{}"))
     if remove_ix:
         for ix in reversed(sorted(remove_ix)):
             del sample_times[ix]
         for tgt, rds in ((k, e[k]) for k, v in filters.items() if v and e.get(k)):
             remove_indices(remove_ix, rds, sample_times, targets[tgt])
-            log("removed:{}:{}={}", comment, tgt, remove_ix)
+            log("removed:{}:{}={}".format(comment, tgt, remove_ix))
 
 
 def main():
