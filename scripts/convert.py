@@ -251,7 +251,9 @@ def main():
                 json.dump(json_in, of)
                 return
         for i in json_in["idle"]:
-            for tgt, dev_key in ((k, v) for k, v in targets.items() if i.get(k)):
+            for tgt, dev_key in (
+                (k, v) for k, v in targets.items() if i.get(k) and conversions.get(k)
+            ):
                 di, st = conversions[tgt]
                 convert_execution(
                     i["sample_times"], i[tgt], dev_key, di, st, units_in, args.to
@@ -260,7 +262,9 @@ def main():
             for s in g["sections"]:
                 for e in s["executions"]:
                     for tgt, dev_key in (
-                        (k, v) for k, v in targets.items() if e.get(k)
+                        (k, v)
+                        for k, v in targets.items()
+                        if e.get(k) and conversions.get(k)
                     ):
                         di, st = conversions[tgt]
                         convert_execution(
