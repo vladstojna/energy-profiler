@@ -6,6 +6,10 @@ import argparse
 from typing import Any
 
 
+def log(*args: Any) -> None:
+    print("{}:".format(sys.argv[0]), *args, file=sys.stderr)
+
+
 def read_from(path: str) -> Any:
     return sys.stdin if not path else open(path, "r")
 
@@ -56,6 +60,66 @@ def main():
     args = add_arguments(parser).parse_args()
     with read_from(args.source_file) as f:
         json_in = json.load(f)
+
+        groups = json_in["groups"]
+        g_to_keep = []
+        for g in groups:
+            sections = g["sections"]
+            if not sections and not args.keep_group:
+                log("remove {}".format(g["label"]))
+            else:
+                g_to_keep.append(g)
+                s_to_keep = []
+                for s in sections:
+                    execs = s["executions"]
+                    if not execs and not args.keep_section:
+                        log("remove {}:{}".format(g["label"], s["label"]))
+                    else:
+                        s_to_keep.append(s)
+                        e_to_keep = []
+                        for eix, e in enumerate(execs):
+                            # empty sample_times means there are no readings
+                            if not e["sample_times"]:
+                                log(
+                                    "remove {}:{}:{}".format(
+                                        g["label"], s["label"], eix
+                                    )
+                                )
+                            else:
+                                e_to_keep.append(e)
+                                for tgt, sensors in (
+                                    (t, e[t]) for t in targets if e.get(t)
+                                ):
+                                    skt_readings_to_remove = []
+                                    for skt_readings in sensors:
+                                        for loc, samples in (
+                                            (l, s)
+                                            for l, s in skt_readings.items()
+                                            if isinstance(s, list)
+                                        ):
+                                            if not samples and not args.keep_location:
+                                                skt_readings_to_remove.append(loc)
+                                    for rm in skt_readings_to_remove:
+                                        log(
+                                            "remove {}:{}:{}:{}:{}".format(
+                                                g["label"],
+                                                s["label"],
+                                                eix,
+                                                tgt,
+                                                loc,
+                                            )
+                                        )
+                                        del skt_readings[rm]
+                        s["executions"] = e_to_keep
+
+                if not args.keep_section:
+                    g["sections"] = s_to_keep
+
+        if not args.keep_group:
+            json_in["groups"] = g_to_keep
+
+        with output_to(args.output) as of:
+            json.dump(json_in, of)
 
 
 if __name__ == "__main__":
