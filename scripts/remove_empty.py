@@ -24,6 +24,23 @@ def add_arguments(parser: argparse.ArgumentParser) -> argparse.ArgumentParser:
             default=False,
         )
 
+    parser.add_argument(
+        "source_file",
+        action="store",
+        help="file to extract from (default: stdin)",
+        nargs="?",
+        type=str,
+        default=None,
+    )
+    parser.add_argument(
+        "-o",
+        "--output",
+        action="store",
+        help="destination file (default: stdout)",
+        required=False,
+        type=str,
+        default=None,
+    )
     _add_bool_flag("--keep-group", "group")
     _add_bool_flag("--keep-section", "section")
     _add_bool_flag("--keep-location", "location")
