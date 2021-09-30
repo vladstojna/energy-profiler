@@ -3,7 +3,7 @@
 import json
 import sys
 import argparse
-from typing import Any
+from typing import Any, List, Tuple
 
 
 def log(*args: Any) -> None:
@@ -51,6 +51,30 @@ def add_arguments(parser: argparse.ArgumentParser) -> argparse.ArgumentParser:
     return parser
 
 
+def process_executions(
+    execs: Any, g_lbl: str, s_lbl: str, targets: Tuple[str, str], keep_location: bool
+) -> List[Any]:
+    e_to_keep = []
+    for eix, e in enumerate(execs):
+        # empty sample_times means there are no readings
+        if not e["sample_times"]:
+            log("remove {}:{}:{}".format(g_lbl, s_lbl, eix))
+        else:
+            e_to_keep.append(e)
+            for tgt, sensors in ((t, e[t]) for t in targets if e.get(t)):
+                skt_readings_to_remove = []
+                for skt_readings in sensors:
+                    for loc, samples in (
+                        (l, s) for l, s in skt_readings.items() if isinstance(s, list)
+                    ):
+                        if not samples and not keep_location:
+                            skt_readings_to_remove.append(loc)
+                for rm in skt_readings_to_remove:
+                    del skt_readings[rm]
+                    log("remove {}:{}:{}:{}:{}".format(g_lbl, s_lbl, eix, tgt, loc))
+    return e_to_keep
+
+
 def main():
     targets = ("cpu", "gpu")
 
@@ -61,8 +85,8 @@ def main():
     with read_from(args.source_file) as f:
         json_in = json.load(f)
 
-        groups = json_in["groups"]
-        g_to_keep = []
+        process_executions(json_in["idle"], "idle", "", targets, args.keep_location)
+        groups, g_to_keep = json_in["groups"], []
         for g in groups:
             g_lbl = g["label"]
             sections = g["sections"]
@@ -78,33 +102,9 @@ def main():
                         log("remove {}:{}".format(g_lbl, s_lbl))
                     else:
                         s_to_keep.append(s)
-                        e_to_keep = []
-                        for eix, e in enumerate(execs):
-                            # empty sample_times means there are no readings
-                            if not e["sample_times"]:
-                                log("remove {}:{}:{}".format(g_lbl, s_lbl, eix))
-                            else:
-                                e_to_keep.append(e)
-                                for tgt, sensors in (
-                                    (t, e[t]) for t in targets if e.get(t)
-                                ):
-                                    skt_readings_to_remove = []
-                                    for skt_readings in sensors:
-                                        for loc, samples in (
-                                            (l, s)
-                                            for l, s in skt_readings.items()
-                                            if isinstance(s, list)
-                                        ):
-                                            if not samples and not args.keep_location:
-                                                skt_readings_to_remove.append(loc)
-                                    for rm in skt_readings_to_remove:
-                                        del skt_readings[rm]
-                                        log(
-                                            "remove {}:{}:{}:{}:{}".format(
-                                                g_lbl, s_lbl, eix, tgt, loc
-                                            )
-                                        )
-                        s["executions"] = e_to_keep
+                        s["executions"] = process_executions(
+                            execs, g_lbl, s_lbl, targets, args.keep_location
+                        )
 
                 if not args.keep_section:
                     g["sections"] = s_to_keep
