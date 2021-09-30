@@ -45,6 +45,14 @@ def add_args(parser: argparse.ArgumentParser) -> None:
         choices=[*targets, "all", "auto"],
         default="auto",
     )
+    parser.add_argument(
+        "--filter-all",
+        action="store_true",
+        help="""filter all readings if all are duplicates
+            (default: do not filter first and last)""",
+        required=False,
+        default=False,
+    )
 
 
 def get_filters(target: str, fmt: Dict[str, Iterable[str]]) -> Dict[str, bool]:
@@ -79,7 +87,10 @@ def get_execution_with_target(
 
 
 def get_removal_set(
-    execution: Dict[str, Any], sample_times: Iterable[int], dev_key: str
+    execution: Dict[str, Any],
+    sample_times: Iterable[int],
+    dev_key: str,
+    filter_all: bool,
 ) -> Set[int]:
     remove_ix = set()
     # build the indices to remove as a union of all removals
@@ -93,7 +104,10 @@ def get_removal_set(
                 if samples[ix] == samples[ix - 1]:
                     rm_ix.append(ix)
             if len(rm_ix) == len(samples) - 1:
-                rm_ix.pop()
+                if filter_all:
+                    rm_ix.append(0)
+                else:
+                    rm_ix.pop()
             remove_ix.update(rm_ix)
     return remove_ix
 
@@ -115,11 +129,15 @@ def log(*args: Any) -> None:
     print("{}:".format(sys.argv[0]), *args, file=sys.stderr)
 
 
-def filter_execution(e: Dict[str, Any], filters: Dict[str, bool], comment: str) -> None:
+def filter_execution(
+    e: Dict[str, Any], filter_all: bool, filters: Dict[str, bool], comment: str
+) -> None:
     sample_times = e["sample_times"]
     remove_ix = set()
     for tgt, readings in ((k, e[k]) for k, v in filters.items() if v and e.get(k)):
-        remove_ix.update(get_removal_set(readings, sample_times, targets[tgt]))
+        remove_ix.update(
+            get_removal_set(readings, sample_times, targets[tgt], filter_all)
+        )
         log("found:{}:{}={}".format(comment, tgt, remove_ix if remove_ix else "{}"))
     if remove_ix:
         for ix in reversed(sorted(remove_ix)):
@@ -137,12 +155,15 @@ def main():
         json_in = json.load(f)
         filters = get_filters(args.target, json_in["format"])
         for e in json_in["idle"]:
-            filter_execution(e, filters, "idle")
+            filter_execution(e, args.filter_all, filters, "idle")
         for g in json_in["groups"]:
             for s in g["sections"]:
                 for idx, e in enumerate(s["executions"]):
                     filter_execution(
-                        e, filters, "{}:{}:{}".format(g["label"], s["label"], idx)
+                        e,
+                        args.filter_all,
+                        filters,
+                        "{}:{}:{}".format(g["label"], s["label"], idx),
                     )
         with output_to(args.output) as of:
             json.dump(json_in, of)
