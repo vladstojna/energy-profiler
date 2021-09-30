@@ -17,7 +17,7 @@ def output_to(path: str) -> Any:
 def add_arguments(parser: argparse.ArgumentParser) -> argparse.ArgumentParser:
     def _add_bool_flag(arg: str, obj_type: str) -> None:
         parser.add_argument(
-            "--keep-group",
+            arg,
             action="store_true",
             help=f"keep {obj_type} objects even if empty",
             required=False,
