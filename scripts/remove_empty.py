@@ -64,27 +64,25 @@ def main():
         groups = json_in["groups"]
         g_to_keep = []
         for g in groups:
+            g_lbl = g["label"]
             sections = g["sections"]
             if not sections and not args.keep_group:
-                log("remove {}".format(g["label"]))
+                log("remove {}".format(g_lbl))
             else:
                 g_to_keep.append(g)
                 s_to_keep = []
                 for s in sections:
+                    s_lbl = s["label"]
                     execs = s["executions"]
                     if not execs and not args.keep_section:
-                        log("remove {}:{}".format(g["label"], s["label"]))
+                        log("remove {}:{}".format(g_lbl, s_lbl))
                     else:
                         s_to_keep.append(s)
                         e_to_keep = []
                         for eix, e in enumerate(execs):
                             # empty sample_times means there are no readings
                             if not e["sample_times"]:
-                                log(
-                                    "remove {}:{}:{}".format(
-                                        g["label"], s["label"], eix
-                                    )
-                                )
+                                log("remove {}:{}:{}".format(g_lbl, s_lbl, eix))
                             else:
                                 e_to_keep.append(e)
                                 for tgt, sensors in (
@@ -100,16 +98,12 @@ def main():
                                             if not samples and not args.keep_location:
                                                 skt_readings_to_remove.append(loc)
                                     for rm in skt_readings_to_remove:
+                                        del skt_readings[rm]
                                         log(
                                             "remove {}:{}:{}:{}:{}".format(
-                                                g["label"],
-                                                s["label"],
-                                                eix,
-                                                tgt,
-                                                loc,
+                                                g_lbl, s_lbl, eix, tgt, loc
                                             )
                                         )
-                                        del skt_readings[rm]
                         s["executions"] = e_to_keep
 
                 if not args.keep_section:
