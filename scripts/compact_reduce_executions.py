@@ -3,7 +3,7 @@
 import argparse
 import json
 import sys
-from typing import Any, Dict, List, Union
+from typing import Any, Dict, List, Optional, Tuple, Union
 
 
 def log(*args: Any) -> None:
@@ -48,40 +48,79 @@ def add_arguments(parser: argparse.ArgumentParser) -> argparse.ArgumentParser:
     return parser
 
 
+Targets = Dict[str, str]
 Readings = Dict[str, Union[Dict[str, float], int]]
 Exec = Dict[str, Union[Dict[str, str], float, List[Readings]]]
 
 
-def reduce_max(execs: List[Any]) -> Exec:
+def get_delta(delta: Optional[float]) -> float:
+    return 0.0 if delta is None else delta
+
+
+def reduce_max(execs: List[Exec], targets: Targets) -> Exec:
     return {}
 
 
-def reduce_avg(execs: List[Any]) -> Exec:
+def reduce_avg(execs: List[Exec], targets: Targets) -> Exec:
     return {}
 
 
-def reduce_sum(execs: List[Any]) -> Exec:
-    return {}
+def reduce_sum(execs: List[Exec], targets: Targets) -> Exec:
+    def _find_readings_by_dev(
+        sensors: List[Readings], skt_readings: Readings, dev_key: str
+    ) -> Readings:
+        for s in sensors:
+            if s[dev_key] == skt_readings[dev_key]:
+                return s
+        raise ValueError("{} {} not found".format(dev_key, skt_readings[dev_key]))
+
+    multiple: str = "<multiple>"
+    retval: Optional[Exec] = next(iter(execs), None)
+    if retval is None:
+        raise AssertionError("Executions are empty")
+    for e in execs[1:]:
+        if retval["range"]["start"] != e["range"]["start"]:
+            retval["range"]["start"] = multiple
+        if retval["range"]["end"] != e["range"]["end"]:
+            retval["range"]["end"] = multiple
+        retval["time"] += e["time"]
+        for rsensors, dev_key, sensors in (
+            (retval[t], targets[t], e[t]) for t in targets if e.get(t)
+        ):
+            for skt_readings in sensors:
+                retval_readings = _find_readings_by_dev(rsensors, skt_readings, dev_key)
+                for rvalues, values in (
+                    (retval_readings[l], s)
+                    for l, s in skt_readings.items()
+                    if isinstance(s, dict)
+                ):
+                    rvalues["total"] += values["total"]
+                    rvalues["delta"] = get_delta(rvalues["delta"]) + get_delta(
+                        values["delta"]
+                    )
+    return retval
 
 
-def process_execs(op: str, execs: List[Any]) -> Exec:
+def process_execs(op: str, execs: List[Any], targets: Tuple[str, str]) -> Exec:
     if op == "sum":
-        return reduce_sum(execs)
+        return reduce_sum(execs, targets)
     if op == "avg":
-        return reduce_avg(execs)
+        return reduce_avg(execs, targets)
     if op == "max":
-        return reduce_max(execs)
+        return reduce_max(execs, targets)
     raise AssertionError("Invalid operation type {}".format(op))
 
 
 def main():
+    targets = {"cpu": "socket", "gpu": "device"}
     parser = argparse.ArgumentParser(description="Reduce executions")
     args = add_arguments(parser).parse_args()
     with read_from(args.source_file) as f:
         json_in = json.load(f)
         for g in json_in["groups"]:
             for s in g["sections"]:
-                s["executions"] = [process_execs(args.op, s["executions"])]
+                if s["executions"]:
+                    s["executions"] = [process_execs(args.op, s["executions"], targets)]
         with output_to(args.output) as of:
             json.dump(json_in, of)
 
