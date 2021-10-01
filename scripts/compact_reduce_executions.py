@@ -57,8 +57,14 @@ def get_delta(delta: Optional[float]) -> float:
     return 0.0 if delta is None else delta
 
 
-def reduce_max(execs: List[Exec], targets: Targets) -> Exec:
-    return {}
+def reduce_max(execs: List[Exec]) -> Exec:
+    retval: Optional[Exec] = next(iter(execs), None)
+    if retval is None:
+        raise AssertionError("Executions are empty")
+    for e in execs[1:]:
+        if e["time"] > retval["time"]:
+            retval = e
+    return retval
 
 
 def reduce_sum(execs: List[Exec], targets: Targets) -> Exec:
@@ -115,7 +121,7 @@ def process_execs(op: str, execs: List[Any], targets: Tuple[str, str]) -> Exec:
     if op == "avg":
         return reduce_avg(execs, targets)
     if op == "max":
-        return reduce_max(execs, targets)
+        return reduce_max(execs)
     raise AssertionError("Invalid operation type {}".format(op))
 
 
