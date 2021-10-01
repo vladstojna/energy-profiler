@@ -61,10 +61,6 @@ def reduce_max(execs: List[Exec], targets: Targets) -> Exec:
     return {}
 
 
-def reduce_avg(execs: List[Exec], targets: Targets) -> Exec:
-    return {}
-
-
 def reduce_sum(execs: List[Exec], targets: Targets) -> Exec:
     def _find_readings_by_dev(
         sensors: List[Readings], skt_readings: Readings, dev_key: str
@@ -98,6 +94,18 @@ def reduce_sum(execs: List[Exec], targets: Targets) -> Exec:
                     rvalues["delta"] = get_delta(rvalues["delta"]) + get_delta(
                         values["delta"]
                     )
+    return retval
+
+
+def reduce_avg(execs: List[Exec], targets: Targets) -> Exec:
+    count = len(execs)
+    retval = reduce_sum(execs, targets)
+    retval["time"] /= count
+    for sensors in (retval[t] for t in targets if retval.get(t)):
+        for skt_readings in sensors:
+            for values in (v for v in skt_readings.values() if isinstance(v, dict)):
+                values["total"] /= count
+                values["delta"] /= count
     return retval
 
 
