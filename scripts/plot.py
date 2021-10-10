@@ -56,7 +56,7 @@ def generate_constant_series(value: ConstValue, count: int) -> Iterable[ConstVal
 
 
 class store_keypairs(argparse.Action):
-    default_file = "default"
+    default_file = ""
 
     def store_file(
         self, lhs: str, rhs: str, files: Dict[str, Any], create_container: Callable
@@ -265,7 +265,7 @@ def add_arguments(parser: argparse.ArgumentParser) -> None:
         help="file to extract from (default: stdin)",
         nargs="*",
         type=str,
-        default=[None],
+        default=[store_keypairs.default_file],
     )
     parser.add_argument(
         "-o",
@@ -480,7 +480,10 @@ def plots_compatible(x: PlotKeyPairs, y: PlotKeyPairs) -> bool:
 
 def substitute_default_file(args) -> None:
     for kp_args in args.x, args.y, args.units:
-        if kp_args.get(store_keypairs.default_file):
+        if (
+            kp_args.get(store_keypairs.default_file) is not None
+            and store_keypairs.default_file != args.source_files[0]
+        ):
             kp_args[args.source_files[0]] = kp_args[store_keypairs.default_file]
             del kp_args[store_keypairs.default_file]
 
@@ -638,12 +641,12 @@ def main():
                 )
                 if not csvrdr.fieldnames:
                     raise AssertionError("Fieldnames cannot be empty or None")
-                x_plots = args.x[f.name]
-                y_plots = args.y[f.name]
-                units = args.units.get(f.name, {})
-                lg_prefix = get_legend_prefix(args.source_files, f.name)
+                x_plots = args.x[fname]
+                y_plots = args.y[fname]
+                units = args.units.get(fname, {})
+                lg_prefix = get_legend_prefix(args.source_files, fname)
                 no_match = lambda k, _: log(
-                    "column {} not found in {}".format(k, f.name)
+                    "column {} not found in {}".format(k, fname)
                 )
 
                 x_plots: AnyKeyPairs = match_pattern(
@@ -653,7 +656,7 @@ def main():
                     no_matches=no_match,
                 )
                 if not x_plots:
-                    pattern_matching_error(parser, "x", f.name)
+                    pattern_matching_error(parser, "x", fname)
                 assert_key_pairs(x_plots, csvrdr.fieldnames)
                 y_plots: AnyKeyPairs = match_pattern(
                     y_plots,
@@ -662,7 +665,7 @@ def main():
                     no_matches=no_match,
                 )
                 if not y_plots:
-                    pattern_matching_error(parser, "y", f.name)
+                    pattern_matching_error(parser, "y", fname)
                 assert_key_pairs(y_plots, csvrdr.fieldnames)
                 if not plots_compatible(x_plots, y_plots):
                     raise parser.error(
