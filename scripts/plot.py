@@ -21,7 +21,6 @@ from typing import (
     Tuple,
     Union,
 )
-import matplotlib
 import matplotlib.pyplot as plt
 
 
@@ -131,7 +130,7 @@ class store_keypairs_or_scalar(store_keypairs):
                         const = float(field)
                         if inf_or_nan(const):
                             raise ValueError("Constant must be a real value")
-                        ins.append((generate_constant_series, const))
+                        ins.append((lambda x, c: generate_constant_series(x, c), const))
                     # assume it is a field name and append to list
                     except ValueError:
                         append_field(field, ins)
