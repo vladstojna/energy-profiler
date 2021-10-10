@@ -20,7 +20,7 @@ sample::sample(const reader& reader, error& e) :
 
 bool sample::operator==(const sample& rhs) const
 {
-    return std::memcmp(this, &rhs, sizeof(rhs));
+    return !std::memcmp(this, &rhs, sizeof(rhs));
 }
 
 bool sample::operator!=(const sample& rhs) const
