@@ -3,7 +3,7 @@
 import csv
 import argparse
 import sys
-from typing import Any, Iterable, Optional, Tuple
+from typing import Any, Callable, Iterable, Optional, Tuple
 
 
 def log(*args: Any) -> None:
@@ -36,6 +36,13 @@ def add_arguments(parser: argparse.ArgumentParser) -> argparse.ArgumentParser:
         type=str,
         default=None,
     )
+    parser.add_argument(
+        "--zero",
+        action="store_true",
+        help="filter when any rows[n].val == 0 (default: any rows[n].val == rows[n-1].val)",
+        required=False,
+        default=False,
+    )
     return parser
 
 
@@ -50,11 +57,11 @@ def read_file(f) -> Tuple[csv.reader, csv.reader]:
     return csv.reader(comments), csv.reader(rest)
 
 
-def unique_row(prev_row: Iterable, curr_row: Iterable) -> bool:
+def unique_row(prev_row: Iterable, curr_row: Iterable, pred: Callable) -> bool:
     if len(prev_row) != len(curr_row):
         raise AssertionError("Malformed file, rows have a different number of columns")
     for v1, v2 in zip(prev_row, curr_row):
-        if v1 == v2:
+        if pred(v1, v2):
             return False
     return True
 
@@ -62,9 +69,11 @@ def unique_row(prev_row: Iterable, curr_row: Iterable) -> bool:
 def main():
     parser = argparse.ArgumentParser(
         description="""Filter duplicate readings from CSV file;
-            one equal reading is enough to make the row a candidate for removal"""
+            one field which satisfies the condition
+            is enough to make the row a candidate for removal"""
     )
     args = add_arguments(parser).parse_args()
+    pred = (lambda _, y: not float(y)) if args.zero else (lambda x, y: x == y)
     with read_from(args.source_file) as f:
         comments, data = read_file(f)
         line_num = 0
@@ -82,7 +91,7 @@ def main():
                 if prev_row is not None:
                     writer.writerow(prev_row)
                     for row in data:
-                        if unique_row(prev_row, row):
+                        if unique_row(prev_row, row, pred=pred):
                             writer.writerow(row)
                             prev_row = row
                         else:
