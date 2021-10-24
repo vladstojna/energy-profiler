@@ -105,3 +105,56 @@ void cpu_gp_regs::rewind_trap() noexcept
 {}
 
 #endif // __x86_64__ || __i386__
+
+#if defined(__x86_64__)
+
+syscall_entry cpu_gp_regs::get_syscall_entry() const noexcept
+{
+    return syscall_entry{
+        _regs.orig_rax,
+        {
+            _regs.rdi,
+            _regs.rsi,
+            _regs.rdx,
+            _regs.r10,
+            _regs.r8,
+            _regs.r9
+        }
+    };
+}
+
+#elif defined(__i386__)
+
+syscall_entry cpu_gp_regs::get_syscall_entry() const noexcept
+{
+    return syscall_entry{
+        _regs.orig_eax,
+        {
+            _regs.ebx,
+            _regs.ecx,
+            _regs.edx,
+            _regs.esi,
+            _regs.edi,
+            _regs.ebp
+        }
+    };
+}
+
+#elif defined(__powerpc64__)
+
+syscall_entry cpu_gp_regs::get_syscall_entry() const noexcept
+{
+    return syscall_data{
+        _regs.gpr[PT_R0],
+        {
+            _regs.gpr[PT_R3],
+            _regs.gpr[PT_R4],
+            _regs.gpr[PT_R5],
+            _regs.gpr[PT_R6],
+            _regs.gpr[PT_R7],
+            _regs.gpr[PT_R8]
+        }
+    };
+}
+
+#endif // defined(__x86_64__)

@@ -2,6 +2,8 @@
 
 #pragma once
 
+#include "syscall_types.hpp"
+
 #include <cstddef>
 #include <cstdint>
 #include <sys/user.h>
@@ -39,6 +41,7 @@ namespace tep
         uintptr_t get_ip() const noexcept;
         void set_ip(uintptr_t addr) noexcept;
         void rewind_trap() noexcept;
+        syscall_entry get_syscall_entry() const noexcept;
     };
 
 }
