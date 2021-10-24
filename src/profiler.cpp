@@ -312,7 +312,6 @@ tracer_error profiler::await_executable(const std::string& name) const
         return get_syserror(errnum, tracer_errcode::SYSTEM_ERROR, tid, comment);
     };
 
-    int opts = PTRACE_O_TRACESYSGOOD;
     int wait_status;
     pid_t waited_pid = waitpid(_child, &wait_status, 0);
     if (waited_pid == -1)
@@ -336,13 +335,14 @@ tracer_error profiler::await_executable(const std::string& name) const
     }
 
     if (int err; -1 == ptrace_wrapper::instance.ptrace(
-        err, PTRACE_SETOPTIONS, _child, 0, opts))
+        err, PTRACE_SETOPTIONS, _child, 0,
+        PTRACE_O_TRACESYSGOOD | get_ptrace_exitkill()))
     {
         return get_syserror(err, tracer_errcode::PTRACE_ERROR,
             _tid, "PTRACE_SETOPTIONS");
     }
 
-    for (bool entry = true, matching = false; ; )
+    for (bool entry = true, matched = false; ; )
     {
         if (int err; -1 == ptrace_wrapper::instance.ptrace(
             err, PTRACE_SYSCALL, _child, 0, 0))
@@ -356,36 +356,32 @@ tracer_error profiler::await_executable(const std::string& name) const
 
         if (is_syscall_trap(wait_status))
         {
+            entry = !entry;
+            if (matched)
+                break;
+            if (entry)
+                continue;
             cpu_gp_regs regs(_child);
             if (auto err = regs.getregs())
                 return err;
-
             const auto scdata = regs.get_syscall_entry();
             if (scdata.number != SYS_execve)
                 continue;
-            if (entry)
+            auto filename = get_string(_child, scdata.args[0]);
+            if (!filename)
+                return std::move(filename.error());
+            auto args = get_strings(_child, scdata.args[1]);
+            if (!args)
+                return std::move(args.error());
+            if (*filename == name)
             {
-                auto filename = get_string(_child, scdata.args[0]);
-                if (!filename)
-                    return std::move(filename.error());
-                auto args = get_strings(_child, scdata.args[1]);
-                if (!args)
-                    return std::move(args.error());
-                if (*filename == name)
-                {
-                    matching = true;
-                    log::logline(log::success, "[%d] found matching execve: %s",
-                        _tid, filename->c_str());
-                }
-                else
-                {
-                    log::logline(log::info, "[%d] found execve: %s",
-                        _tid, filename->c_str());
-                }
+                matched = true;
+                log::logline(log::success, "[%d] found matching execve: %s",
+                    _tid, filename->c_str());
             }
-            else if (matching)
-                break;
-            entry = !entry;
+            else
+                log::logline(log::debug, "[%d] found execve: %s",
+                    _tid, filename->c_str());
         }
         else if (WIFEXITED(wait_status))
         {
@@ -402,9 +398,6 @@ tracer_error profiler::await_executable(const std::string& name) const
                 cmmn::concat("Child signaled before executing ", name));
         }
     }
-    // send SIGSTOP to child for run() to behave transparently
-    if (kill(_child, SIGSTOP) == -1)
-        return system_error(_tid, "kill");
     // continue the tracee execution
     if (int err; -1 == ptrace_wrapper::instance.ptrace(
         err, PTRACE_CONT, _child, 0, 0))
