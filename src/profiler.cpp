@@ -30,6 +30,20 @@ using namespace tep;
 
 namespace
 {
+    std::ostream&
+        operator<<(std::ostream& os, const std::vector<std::string>& vec)
+    {
+        os << "[";
+        for (auto it = std::begin(vec); it != std::end(vec); it++)
+        {
+            os << "\"" << *it << "\"";
+            if (std::distance(it, std::end(vec)) > 1)
+                os << ", ";
+        }
+        os << "]";
+        return os;
+    }
+
     template<typename T>
     std::string to_string(const T& obj)
     {
@@ -376,12 +390,14 @@ tracer_error profiler::await_executable(const std::string& name) const
             if (*filename == name)
             {
                 matched = true;
-                log::logline(log::success, "[%d] found matching execve: %s",
-                    _tid, filename->c_str());
+                log::logline(log::success, "[%d] found matching execve: "
+                    "path=%s args=%s",
+                    _tid, filename->c_str(), to_string(*args).c_str());
             }
             else
-                log::logline(log::debug, "[%d] found execve: %s",
-                    _tid, filename->c_str());
+                log::logline(log::success, "[%d] found execve: "
+                    "path=%s args=%s",
+                    _tid, filename->c_str(), to_string(*args).c_str());
         }
         else if (WIFEXITED(wait_status))
         {
