@@ -2,6 +2,7 @@
 
 #include "cmdargs.hpp"
 
+#include <algorithm>
 #include <cassert>
 #include <cstring>
 #include <iostream>
@@ -315,7 +316,23 @@ std::optional<arguments> tep::parse_arguments(int argc, char* const argv[])
     }
 
     if (executable.empty())
+    {
         executable = argv[optind];
+    }
+    else
+    {
+        auto it = std::find_if(argv + optind, argv + argc,
+            [&executable](const char* arg)
+            {
+                return executable == arg;
+            });
+        if (it == argv + argc)
+        {
+            std::cerr << "Invalid --exec: '"
+                << executable << "' not found in executable arguments\n";
+            return std::nullopt;
+        }
+    }
 
     return arguments{
         flags{ bool(idle), cpu_sensors, cpu_sockets, gpu_devices },
