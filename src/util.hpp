@@ -32,5 +32,6 @@ namespace tep
 
     const char* sig_str(int signal);
 
+    int get_ptrace_exitkill();
     int get_ptrace_opts(bool trace_children);
 }
