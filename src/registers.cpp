@@ -144,7 +144,7 @@ syscall_entry cpu_gp_regs::get_syscall_entry() const noexcept
 
 syscall_entry cpu_gp_regs::get_syscall_entry() const noexcept
 {
-    return syscall_data{
+    return syscall_entry{
         _regs.gpr[PT_R0],
         {
             _regs.gpr[PT_R3],
