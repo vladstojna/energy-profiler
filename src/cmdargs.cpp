@@ -44,6 +44,19 @@ namespace
         }
         return retval;
     }
+
+    struct parameter
+    {
+        inline static const auto pad = std::setw(30);
+
+        const char* text;
+
+        friend std::ostream& operator<<(std::ostream& os, const parameter& p)
+        {
+            os << "  " << std::left << pad << p.text;
+            return os;
+        }
+    };
 }
 
 optional_output_file::optional_output_file(const std::string& path) :
@@ -70,6 +83,11 @@ optional_input_file::optional_input_file(const std::string& path) :
 {
     if (!path.empty())
         _file.open(path);
+}
+
+bool arguments::same_target() const
+{
+    return target == argv[0];
 }
 
 optional_input_file::operator bool() const
@@ -111,60 +129,68 @@ std::ostream& tep::operator<<(std::ostream& os, const arguments& args)
     os << "flags: " << args.profiler_flags;
     os << ", output: " << args.output;
     os << ", config: " << args.config;
+    os << ", exec: " << args.target;
     return os;
 }
 
 void print_usage(const char* profiler_name)
 {
     std::cout << "Usage:\n\n";
-    std::cout << profiler_name << " [options] [--] [executable] [executable-args]\n\n";
+    std::cout << profiler_name << " <options> [--] <executable>\n\n";
 
-    auto pad = std::setw(30);
     std::ios::fmtflags flags(std::cout.flags());
 
-    std::cout << std::left << pad << "-h, --help"
+    std::cout << "options:\n";
+
+    std::cout << parameter{ "-h, --help" }
         << "print this message and exit"
         << "\n";
 
-    std::cout << std::left << pad << "-c, --config <file>"
+    std::cout << parameter{ "-c, --config <file>" }
         << "(optional) read from configuration file <file>; "
         << "if <file> is 'stdin' then stdin is used (default: stdin)"
         << "\n";
 
-    std::cout << std::left << pad << "-o, --output <file>"
+    std::cout << parameter{ "-o, --output <file>" }
         << "(optional) write profiling results to <file>; "
         << "if <file> is 'stdout' then stdout is used (default: stdout)"
         << "\n";
 
-    std::cout << std::left << pad << "-q, --quiet"
+    std::cout << parameter{ "-q, --quiet" }
         << "suppress log messages except errors to stderr (default: off)"
         << "\n";
 
-    std::cout << std::left << pad << "-l, --log <file>"
+    std::cout << parameter{ "-l, --log <file>" }
         << "(optional) write log to <file> (default: stdout)"
         << "\n";
 
-    std::cout << std::left << pad << "--idle"
+    std::cout << parameter{ "--idle" }
         << "gather idle readings at startup (default)"
         << "\n";
 
-    std::cout << std::left << pad << "--no-idle"
+    std::cout << parameter{ "--no-idle" }
         << "opposite of --idle"
         << "\n";
 
-    std::cout << std::left << pad << "--cpu-sensors {MASK,all}"
+    std::cout << parameter{ "--cpu-sensors {MASK,all}" }
         << "mask of CPU sensors to read in hexadecimal, "
         << "overwrites config value (default: use value in config)"
         << "\n";
 
-    std::cout << std::left << pad << "--cpu-sockets {MASK,all}"
+    std::cout << parameter{ "--cpu-sockets {MASK,all}" }
         << "mask of CPU sockets to profile in hexadecimal, "
         << "overwrites config value (default: use value in config)"
         << "\n";
 
-    std::cout << std::left << pad << "--gpu-devices {MASK,all}"
+    std::cout << parameter{ "--gpu-devices {MASK,all}" }
         << "mask of GPU devices to profile in hexadecimal, "
         << "overwrites config value (default: use value in config)"
+        << "\n";
+
+    std::cout << parameter{ "--exec <path>" }
+        << "evaluate executable <path> instead of <executable>; "
+        << "used when <executable> is some wrapper program "
+        << "which launches <path> (default: <executable>)"
         << "\n";
 
     std::cout.flush();
@@ -180,6 +206,7 @@ std::optional<arguments> tep::parse_arguments(int argc, char* const argv[])
     std::string output;
     std::string config;
     std::string logpath;
+    std::string executable;
 
     unsigned long long cpu_sensors = 0;
     unsigned long long cpu_sockets = 0;
@@ -197,6 +224,7 @@ std::optional<arguments> tep::parse_arguments(int argc, char* const argv[])
         { cpu_sensors_str.data(), required_argument, nullptr, 0x100 },
         { cpu_sockets_str.data(), required_argument, nullptr, 0x101 },
         { gpu_devices_str.data(), required_argument, nullptr, 0x102 },
+        { "exec",                 required_argument, nullptr, 0x103 },
         { nullptr, 0, nullptr, 0 }
     };
 
@@ -228,6 +256,14 @@ std::optional<arguments> tep::parse_arguments(int argc, char* const argv[])
                 return std::nullopt;
             gpu_devices = *parsed_value;
         } break;
+        case 0x103:
+            executable = optarg;
+            if (executable.empty())
+            {
+                std::cerr << "--" << long_options[option_index].name << " cannot be empty\n";
+                return std::nullopt;
+            }
+            break;
         case 'c':
             config = optarg;
             break;
@@ -278,12 +314,15 @@ std::optional<arguments> tep::parse_arguments(int argc, char* const argv[])
         return std::nullopt;
     }
 
+    if (executable.empty())
+        executable = argv[optind];
+
     return arguments{
         flags{ bool(idle), cpu_sensors, cpu_sockets, gpu_devices },
         std::move(config),
         std::move(of),
         log_args{ bool(quiet), std::move(logpath) },
-        std::string(argv[optind]),
+        std::move(executable),
         &argv[optind]
     };
 }

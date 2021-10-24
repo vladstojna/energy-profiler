@@ -47,6 +47,8 @@ namespace tep
         log_args logargs;
         std::string target;
         char* const* argv;
+
+        bool same_target() const;
     };
 
     std::ostream& operator<<(std::ostream& os, const optional_output_file& f);

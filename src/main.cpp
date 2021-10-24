@@ -59,6 +59,15 @@ int main(int argc, char* argv[])
             return 1;
         }
 
+        if (!args->same_target())
+        {
+            if (auto err = profiler->await_executable(args->target))
+            {
+                std::cerr << err << std::endl;
+                return 1;
+            }
+        }
+
         expected<profiling_results, tracer_error> results = profiler->run();
         if (!results)
         {

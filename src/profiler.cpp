@@ -302,6 +302,14 @@ const registered_traps& profiler::traps() const
     return _traps;
 }
 
+
+tracer_error profiler::await_executable(const std::string& name) const
+{
+    (void)name;
+    return tracer_error(tracer_errcode::UNSUPPORTED, "Not implemented");
+}
+
+
 tracer_expected<profiling_results> profiler::run()
 {
     using rettype = tracer_expected<profiling_results>;
