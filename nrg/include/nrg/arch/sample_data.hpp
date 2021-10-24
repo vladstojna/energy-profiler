@@ -24,7 +24,7 @@ namespace nrgprf
             std::array<uint16_t, max_cpu_events> cpu;
             std::array<uint32_t, max_devices> gpu_power;
             std::array<uint64_t, max_devices> gpu_energy;
-    };
+        };
     #endif
-}
+    }
 }
