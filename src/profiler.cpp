@@ -7,6 +7,7 @@
 #include "log.hpp"
 #include "tracer.hpp"
 #include "registers.hpp"
+#include "ptrace_misc.hpp"
 
 #include <algorithm>
 #include <cassert>
@@ -18,6 +19,7 @@
 #include <sys/ptrace.h>
 #include <sys/wait.h>
 #include <sys/user.h>
+#include <sys/syscall.h>
 
 #include <util/concat.hpp>
 #include <nonstd/expected.hpp>
@@ -305,8 +307,119 @@ const registered_traps& profiler::traps() const
 
 tracer_error profiler::await_executable(const std::string& name) const
 {
-    (void)name;
-    return tracer_error(tracer_errcode::UNSUPPORTED, "Not implemented");
+    auto system_error = [](pid_t tid, const char* comment, int errnum = errno)
+    {
+        return get_syserror(errnum, tracer_errcode::SYSTEM_ERROR, tid, comment);
+    };
+
+    int opts = PTRACE_O_TRACESYSGOOD;
+    int wait_status;
+    pid_t waited_pid = waitpid(_child, &wait_status, 0);
+    if (waited_pid == -1)
+        return system_error(_tid, "waitpid");
+    assert(waited_pid == _child);
+    if (WIFEXITED(wait_status))
+    {
+        log::logline(log::error, "[%d] failed to run target in child %d",
+            _tid, _child);
+        return tracer_error(tracer_errcode::SIGNAL_DURING_SECTION_ERROR,
+            "Child failed to run target");
+    }
+    log::logline(log::info, "[%d] started the profiling procedure for child %d",
+        _tid, _child);
+    if (!WIFSTOPPED(wait_status))
+    {
+        log::logline(log::error, "[%d] ptrace(PTRACE_TRACEME, ...) "
+            "called but target was not stopped", _tid);
+        return tracer_error(tracer_errcode::PTRACE_ERROR,
+            "Tracee not stopped despite being attached with ptrace");
+    }
+
+    if (int err; -1 == ptrace_wrapper::instance.ptrace(
+        err, PTRACE_SETOPTIONS, _child, 0, opts))
+    {
+        return get_syserror(err, tracer_errcode::PTRACE_ERROR,
+            _tid, "PTRACE_SETOPTIONS");
+    }
+
+    for (bool entry = true, matching = false; ; )
+    {
+        if (int err; -1 == ptrace_wrapper::instance.ptrace(
+            err, PTRACE_SYSCALL, _child, 0, 0))
+        {
+            return get_syserror(err, tracer_errcode::PTRACE_ERROR,
+                _tid, "PTRACE_SYSCALL");
+        }
+
+        if (pid_t waited = waitpid(_child, &wait_status, 0); waited == -1)
+            return system_error(_tid, "waitpid");
+
+        if (is_syscall_trap(wait_status))
+        {
+            user_regs_struct regs;
+            if (int err; -1 == ptrace_wrapper::instance.ptrace(
+                err, PTRACE_GETREGS, _child, 0, &regs))
+            {
+                return get_syserror(err, tracer_errcode::PTRACE_ERROR,
+                    _tid, "PTRACE_SYSCALL");
+            }
+            if (regs.orig_rax != SYS_execve)
+                continue;
+
+            if (entry)
+            {
+                auto filename = get_string(_child, regs.rdi);
+                if (!filename)
+                    return std::move(filename.error());
+                auto args = get_strings(_child, regs.rsi);
+                if (!args)
+                    return std::move(args.error());
+                if (*filename == name)
+                {
+                    matching = true;
+                    log::logline(log::success, "[%d] found matching execve: %s",
+                        _tid, filename->c_str());
+                }
+                else
+                {
+                    log::logline(log::info, "[%d] found execve: %s",
+                        _tid, filename->c_str());
+                }
+            }
+            else if (matching)
+            {
+                if (!(-regs.rax))
+                    break;
+                return system_error(_tid, "matching execve error on return",
+                    -regs.rax);
+            }
+            entry = !entry;
+        }
+        else if (WIFEXITED(wait_status))
+        {
+            log::logline(log::error, "[%d] child %d exited with status %d",
+                _tid, _child, WEXITSTATUS(wait_status));
+            return tracer_error(tracer_errcode::UNKNOWN_ERROR,
+                cmmn::concat("Child exited before executing ", name));
+        }
+        else if (WIFSIGNALED(wait_status))
+        {
+            log::logline(log::error, "[%d] child %d signaled: %s",
+                _tid, _child, sig_str(WTERMSIG(wait_status)));
+            return tracer_error(tracer_errcode::UNKNOWN_ERROR,
+                cmmn::concat("Child signaled before executing ", name));
+        }
+    }
+    // send SIGSTOP to child for run() to behave transparently
+    if (kill(_child, SIGSTOP) == -1)
+        return system_error(_tid, "kill");
+    // continue the tracee execution
+    if (int err; -1 == ptrace_wrapper::instance.ptrace(
+        err, PTRACE_CONT, _child, 0, 0))
+    {
+        return system_error(_tid, "waitpid");
+    }
+    return tracer_error::success();
 }
 
 
