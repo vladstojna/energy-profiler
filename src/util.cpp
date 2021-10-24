@@ -121,6 +121,12 @@ bool tep::is_breakpoint_trap(int wait_status)
         (WSTOPSIG(wait_status) == SIGTRAP);
 }
 
+bool tep::is_syscall_trap(int wait_status)
+{
+    return WIFSTOPPED(wait_status) &&
+        WSTOPSIG(wait_status) == (SIGTRAP | 0x80);
+}
+
 int tep::get_ptrace_opts(bool trace_children)
 {
     // TODO: find a way to always set option PTRACE_O_EXITKILL
