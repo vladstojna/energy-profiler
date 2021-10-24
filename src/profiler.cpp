@@ -356,22 +356,19 @@ tracer_error profiler::await_executable(const std::string& name) const
 
         if (is_syscall_trap(wait_status))
         {
-            user_regs_struct regs;
-            if (int err; -1 == ptrace_wrapper::instance.ptrace(
-                err, PTRACE_GETREGS, _child, 0, &regs))
-            {
-                return get_syserror(err, tracer_errcode::PTRACE_ERROR,
-                    _tid, "PTRACE_SYSCALL");
-            }
-            if (regs.orig_rax != SYS_execve)
-                continue;
+            cpu_gp_regs regs(_child);
+            if (auto err = regs.getregs())
+                return err;
 
+            const auto scdata = regs.get_syscall_entry();
+            if (scdata.number != SYS_execve)
+                continue;
             if (entry)
             {
-                auto filename = get_string(_child, regs.rdi);
+                auto filename = get_string(_child, scdata.args[0]);
                 if (!filename)
                     return std::move(filename.error());
-                auto args = get_strings(_child, regs.rsi);
+                auto args = get_strings(_child, scdata.args[1]);
                 if (!args)
                     return std::move(args.error());
                 if (*filename == name)
@@ -387,12 +384,7 @@ tracer_error profiler::await_executable(const std::string& name) const
                 }
             }
             else if (matching)
-            {
-                if (!(-regs.rax))
-                    break;
-                return system_error(_tid, "matching execve error on return",
-                    -regs.rax);
-            }
+                break;
             entry = !entry;
         }
         else if (WIFEXITED(wait_status))
