@@ -35,7 +35,7 @@ void signaler::wait_for(const std::chrono::milliseconds& ms)
     _open = false;
 }
 
-void signaler::wait_until(const std::chrono::high_resolution_clock::time_point& tp)
+void signaler::wait_until(const std::chrono::steady_clock::time_point& tp)
 {
     std::unique_lock lock(_m);
     _cv.wait_until(lock, tp, [this] { return _open == true; });

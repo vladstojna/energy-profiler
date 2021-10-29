@@ -20,6 +20,6 @@ namespace tep
         void post();
         void wait();
         void wait_for(const std::chrono::milliseconds& ms);
-        void wait_until(const std::chrono::high_resolution_clock::time_point& tp);
+        void wait_until(const std::chrono::steady_clock::time_point& tp);
     };
 }
