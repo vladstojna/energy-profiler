@@ -41,7 +41,7 @@ namespace nrgprf
     class timed_sample
     {
     public:
-        using time_point = std::chrono::time_point<std::chrono::high_resolution_clock>;
+        using time_point = std::chrono::time_point<std::chrono::steady_clock>;
         using duration = std::chrono::nanoseconds;
 
     private:

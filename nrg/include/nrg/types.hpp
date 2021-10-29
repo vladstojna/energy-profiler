@@ -14,7 +14,6 @@ namespace nrgprf
 {
     using units_energy = microjoules<uintmax_t>;
     using units_power = microwatts<uintmax_t>;
-    using time_point = std::chrono::time_point<std::chrono::high_resolution_clock>;
 
     using sensor_value = detail::reader_return;
 
