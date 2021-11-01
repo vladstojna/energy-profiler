@@ -727,7 +727,6 @@ namespace
 
         struct sensor_structure_common
         {
-            using time_point = std::chrono::time_point<std::chrono::high_resolution_clock>;
             uint16_t gsid;
             uint64_t timestamp;
         };
@@ -1312,10 +1311,11 @@ namespace
 
     // OCC timestamps have a resolution of 512 MHz
     // this means that each value incremented in the counter corresponds to 1000/512 ns
-    time_point canonicalize_timestamp(uint64_t timestamp)
+    sensor_value::time_point canonicalize_timestamp(uint64_t timestamp)
     {
         std::chrono::duration<uint64_t, std::ratio<1, 512000000UL>> dur(timestamp);
-        return time_point({ std::chrono::duration_cast<time_point::duration>(dur) });
+        return sensor_value::time_point(
+            std::chrono::duration_cast<sensor_value::time_point::duration>(dur));
     }
 
     struct event_data
@@ -1645,7 +1645,7 @@ result<sensor_value> reader_rapl::impl::value(const sample& s, uint8_t skt) cons
         if (sensor_entry.gsid == to_sensor_gsid<Location>())
         {
             watts<double> power = canonicalize_power(value_sample, sensor_entry);
-            time_point tp = canonicalize_timestamp(value_timestamp);
+            sensor_value::time_point tp = canonicalize_timestamp(value_timestamp);
             if (!power.count())
                 return rettype(nonstd::unexpect,
                     error_code::NOT_IMPL, "Unsupported power units found");

@@ -12,7 +12,8 @@ namespace nrgprf
     #elif defined NRG_PPC64
         struct reader_return_st
         {
-            std::chrono::time_point<std::chrono::high_resolution_clock> timestamp;
+            using time_point = std::chrono::time_point<std::chrono::steady_clock>;
+            time_point timestamp;
             microwatts<uintmax_t> power;
         };
         using reader_return = reader_return_st;
