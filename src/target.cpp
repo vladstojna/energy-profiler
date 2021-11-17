@@ -58,6 +58,6 @@ void tep::run_target(char* const argv[])
         return;
     log::flush();
     // execute target executable
-    if (execv(argv[0], argv) == -1)
+    if (execvp(argv[0], argv) == -1)
         log::logline(log::error, "[%d] execv error: %s", pid, strerror(errno));
 }

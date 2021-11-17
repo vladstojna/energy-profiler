@@ -70,6 +70,7 @@ namespace tep
         const config_data& config() const;
         const registered_traps& traps() const;
 
+        tracer_error await_executable(const std::string& name) const;
         nonstd::expected<profiling_results, tracer_error> run();
 
     private:

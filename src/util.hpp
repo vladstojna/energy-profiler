@@ -28,8 +28,10 @@ namespace tep
     bool is_child_event(int wait_status);
     bool is_exit_event(int wait_status);
     bool is_breakpoint_trap(int wait_status);
+    bool is_syscall_trap(int wait_status);
 
     const char* sig_str(int signal);
 
+    int get_ptrace_exitkill();
     int get_ptrace_opts(bool trace_children);
 }

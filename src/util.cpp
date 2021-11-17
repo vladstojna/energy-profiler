@@ -121,17 +121,27 @@ bool tep::is_breakpoint_trap(int wait_status)
         (WSTOPSIG(wait_status) == SIGTRAP);
 }
 
-int tep::get_ptrace_opts(bool trace_children)
+bool tep::is_syscall_trap(int wait_status)
+{
+    return WIFSTOPPED(wait_status) &&
+        WSTOPSIG(wait_status) == (SIGTRAP | 0x80);
+}
+
+int tep::get_ptrace_exitkill()
 {
     // TODO: find a way to always set option PTRACE_O_EXITKILL
     // should be present since Linux 3.8 but not always defined in ptrace headers
 #if !defined(PTRACE_O_EXITKILL)
 #define PTRACE_O_EXITKILL (1 << 20)
 #endif
+    return PTRACE_O_EXITKILL;
+}
 
+int tep::get_ptrace_opts(bool trace_children)
+{
     int opts = 0;
     // kill the tracee when the profiler errors
-    opts = PTRACE_O_EXITKILL;
+    opts = get_ptrace_exitkill();
     if (trace_children)
     {
         // trace threads being spawned using clone()
