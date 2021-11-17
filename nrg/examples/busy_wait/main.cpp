@@ -7,6 +7,11 @@
 #include <stdexcept>
 #include <thread>
 
+// Example using a busy wait/polling technique, similar to the one
+// described in https://dl.acm.org/doi/10.1145/2425248.2425252
+
+// Usage: ./main.out [microseconds sleep] [calibration iterations]
+
 namespace
 {
     template<typename T>
@@ -20,6 +25,7 @@ namespace
         return value;
     }
 
+    // Get the energy consumed from two readings, i.e., subtract both samples.
     template<typename Location>
     nrgprf::joules<double> total_energy(
         const nrgprf::reader_rapl& reader,
@@ -37,6 +43,9 @@ namespace
         return *energy_last - *energy_first;
     }
 
+    // Calibrates the busy wait technique by executing a loop <iters> times.
+    // The idea is to get the energy consumed per iteration and
+    // use this value when subtracting from the total energy consumed.
     nrgprf::joules<double> calibrate_busy_wait(
         const nrgprf::reader_rapl& reader,
         std::uint8_t socket = 0,
@@ -76,6 +85,10 @@ namespace
         return per_iter;
     }
 
+    // Implementation of the busy polling.
+    // Samples the sensors and then loops until the value read changes, which implies
+    // that the sensor has refreshed.
+    // Returns the last sample read and the number of iterations the sensor took to refresh.
     std::pair<std::size_t, nrgprf::sample> wait(const nrgprf::reader_rapl& reader)
     {
         using namespace nrgprf;
