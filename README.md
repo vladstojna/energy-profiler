@@ -206,4 +206,4 @@ The profiler does not yet support profiling:
 
 ## Additional Information
 
-More information (like sensor masks) can be found in `nrg/README.md`
+More information (like sensor masks) can be found in [`nrg/README.md`](nrg/README.md)
