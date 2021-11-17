@@ -2,6 +2,29 @@
 
 ## The Tool
 
+The energy profiler is a tool which measures the energy/power consumption of the
+function(s) or code sections of a program.
+On the CPU side, it supports both the x86_64 and POWER9 (powerpc64) architectures
+and uses their respective platform sensors to obtain energy/power data.
+On the GPU side, it supports NVIDIA and AMD GPUs, although the latter has not
+been properly tested at the time of writing.
+Support for FPGAs is still being looked into.
+
+The general usage procedure is as follows:
+
+1. Compile the target executable with debugging symbols.
+2. Write a configuration file for the profiler in XML format.
+3. Use said XML file as input for the profiler, alongside the executable to profile.
+4. Analyse the output JSON file.
+
+### Components
+
+This project can be divided into three components:
+
+* The profiler application
+* The library and API for reading the power/energy sensors (located in `nrg`)
+* A suite of Python scripts to aid with the post-processing of results (located in `scripts`)
+
 ## Building the Profiler
 
 ### Requirements
@@ -33,8 +56,9 @@ make cpp="MY_MACRO_DEFINITION"
 
 Supported preprocessor definitions are:
 
-* `TEP_USE_LIBDWARF` - enable support for source line profiling (requires `libdwarf`)
-* `NO_ASLR` - disable ASLR for the target executable
+* `TEP_USE_LIBDWARF` - enable support for source line profiling
+  (requires `libdwarf` and is disabled by default)
+* `NO_ASLR` - disable ASLR for the target executable (enabled by default)
 
 Running `make` will create an executable `profiler` in `bin`.
 
@@ -171,6 +195,15 @@ $ ./profiler \
     -- numactl --cpunodebind=0 --physcpubind=3 --membind=0 $my_exec [arguments]
 ```
 
-### Additional Information
+## Limitations
+
+The profiler does not yet support profiling:
+
+* Sections/functions which require inter-thread communication during their execution.
+  This is only the case when `<allow_concurrency/>` is omitted in the configuration file.
+* Functions which have been inlined by the compiler.
+* Functions whose return instructions have been optimised out.
+
+## Additional Information
 
 More information (like sensor masks) can be found in `nrg/README.md`
