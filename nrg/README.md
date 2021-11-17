@@ -4,7 +4,7 @@
 
 NRG (pronounced "energy") is a small helper library used in the energy profiler project as a way to
 read the platform's energy/power sensors.
-It is fully standalone and supports both x86 and POWER9 CPUs, and both NVIDIA and AMD GPUs.
+It is fully standalone and supports both x86_64 and POWER9 CPUs, and both NVIDIA and AMD GPUs.
 
 ## Prerequisites
 
@@ -64,5 +64,36 @@ make dbg=1
 
 ## Usage Examples
 
-Basic example of using the library on x86:
-**TODO**
+Basic example on x86:
+
+```cpp
+// construct reader of package sensors of socket 0
+reader_rapl reader(locmask::pkg, 0x1, err);
+if (err)
+{
+    std::cerr << err << "\n";
+    return 1;
+}
+sample smp;
+if (auto err = reader.read(smp))
+{
+    std::cerr << err << "\n";
+    return 1;
+}
+// get the package value read for socket 0
+auto energy = reader.value<loc::pkg>(smp, 0);
+if (!energy)
+{
+    std::cerr << energy.error() << "\n";
+    return 1;
+}
+std::cout << "Energy: " << joules<double>{ *energy }.count() << " J\n";
+```
+
+The library interface changes depending on whether the target architecture is
+x86_64 or PPC64 due to inherent differences in the available power/energy
+interfaces. For example, RAPL (x86_64) counts the accumulated energy without
+any timestamp data, while the OCC interfaces on POWER9 processors read the power
+in Watts but provide timestamp information as well.
+
+More examples can be found in `examples`, for both x86_64 and PPC64.
