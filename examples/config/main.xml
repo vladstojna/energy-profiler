@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="utf-8"?>
+
+<config>
+    <sections>
+        <!-- read from the CPU energy/power interfaces -->
+        <section target="cpu">
+            <bounds>
+                <!-- measure the 'main' function -->
+                <func name="main"/>
+            </bounds>
+            <!-- allow execution of other threads during the profiling -->
+            <allow_concurrency/>
+            <!-- save all samples, useful for plotting -->
+            <!-- other method is 'total', which only saves the first and last samples -->
+            <method>profile</method>
+            <!-- sample every 100 ms -->
+            <interval>100</interval>
+        </section>
+    </sections>
+</config>
