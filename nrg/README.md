@@ -129,3 +129,24 @@ any timestamp data, while the OCC interfaces on POWER9 processors read the power
 in Watts but provide timestamp information as well.
 
 More examples can be found in `examples`, for both x86_64 and PPC64.
+
+## Masks
+
+### Socket & GPU Device
+
+Socket and GPU device mask is straightforward: the non-zero bits represent
+the respective CPU socket or GPU device. For example, `0x1` is socket/device 0.
+
+### Sensor Mask
+
+| Sensor Location |  Alias   | Value (hex) |   Platform   |
+| --------------- | :------: | :---------: | :----------: |
+| Package         |  `pkg`   |   `0x01`    | x86_64/PPC64 |
+| Cores           | `cores`  |   `0x02`    | x86_64/PPC64 |
+| Uncore          | `uncore` |   `0x04`    | x86_64/PPC64 |
+| Memory          |  `mem`   |   `0x08`    | x86_64/PPC64 |
+| System          |  `sys`   |   `0x10`    |    PPC64     |
+| GPU             |  `gpu`   |   `0x20`    |    PPC64     |
+| All             |  `all`   |   `0x3f`    |      -       |
+
+The definitions can be found [here](include/nrg/constants.hpp).
