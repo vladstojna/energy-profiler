@@ -60,6 +60,12 @@ Supported preprocessor definitions are:
   (requires `libdwarf` and is disabled by default)
 * `NO_ASLR` - disable ASLR for the target executable (enabled by default)
 
+Build just the dependencies:
+
+```shell
+make libs
+```
+
 Running `make` will create an executable `profiler` in `bin`.
 
 ## Examples
