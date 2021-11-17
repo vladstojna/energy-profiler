@@ -60,7 +60,39 @@ Generate a debug build:
 make dbg=1
 ```
 
-**TODO** preprocessor definitions
+Other Make variables which can be overriden:
+
+* `gpu=<value>`, where `<value>` can be:
+  * `GPU_NV` - if using NVIDIA GPUs
+  * `GPU_AMD` - if using AMD GPUs
+  * `GPU_NONE` - requests do nothing; useful when, for example, the system has
+    no dedicated GPU or the user is not interested in GPU results
+* `cpu=<value>` where `<value>` can be:
+  * `CPU_NONE` - requests do nothing; useful when, for example, the user is
+    not interested in CPU results or does not have the required
+    permissions to read the sensors
+* `rocm_ver=<version>`, used when the ROCm installation path is versioned
+  (no effect if `gpu` is not `GPU_AMD`)
+
+Additionally, some options are provided as preprocessor definitions.
+To enable them, use `make` with the `cpp` argument:
+
+```shell
+make cpp="MY_MACRO_DEFINITION"
+```
+
+Supported preprocessor definitions are:
+
+* `NRG_X86_64` - force x86_64 code for testing purposes
+* `NRG_PPC64` - force PowerPC64 code for testing purposes
+* `NRG_OCC_USE_DUMMY_FILE=path` - use a custom path
+  to the `occ_inband_sensors` file; has no effect unless using PowerPC64 systems or
+  `NRG_PPC64` was provided
+  (for testing purposes if the user has no appropriate permissions)
+* `NRG_OCC_DEBUG_PRINTS` - prints all current sensor readings during initialisation
+
+By default, both GPU and CPU vendors are autodetected.
+Running `make` will create `libnrg.so` and/or `libnrg.a` in `lib`.
 
 ## Usage Examples
 
