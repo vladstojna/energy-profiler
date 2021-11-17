@@ -70,9 +70,7 @@ Running `make` will create an executable `profiler` in `bin`.
 
 ## Examples
 
-### Configuration File
-
-Example of a configuration file used for profiling the main function:
+Configuration file used for profiling the main function:
 
 ```xml
 <config>
@@ -197,8 +195,8 @@ $ ./profiler \
     --cpu-sensors 1 \
     --output my-output.json \
     --config my-config.xml \
-    --exec $my_exec \
-    -- numactl --cpunodebind=0 --physcpubind=3 --membind=0 $my_exec [arguments]
+    --exec "$my_exec" \
+    -- numactl --cpunodebind=0 --physcpubind=3 --membind=0 "$my_exec" [arguments]
 ```
 
 ## Limitations
