@@ -13,7 +13,7 @@ On the GPU side, the library uses the following interfaces, depending on the GPU
 * NVIDIA Management Library (NVML) - for reading GPU sensors on NVIDIA GPUs (Fermi and later)
 * ROCm System Management Interface (SMI) - for reading GPU sensors on AMD GPUs (Vega 10 and later)
 
-On the CPU side, the library uses the Powercap interface in Linux on x86. Powercap is available since
+On the x86_64 CPU side, the library uses the Powercap interface in Linux. Powercap is available since
 Linux 3.13 on Intel CPUs and since Linux 5.11 on AMD Zen CPUs.
 Make sure the files in `/sys/class/powercap` have appropriate read permissions.
 The POWER9 implementation uses the OCC sensor interfaces
@@ -92,11 +92,11 @@ Supported preprocessor definitions are:
 * `NRG_OCC_DEBUG_PRINTS` - prints all current sensor readings during initialisation
 
 By default, both GPU and CPU vendors are autodetected.
-Running `make` will create `libnrg.so` and/or `libnrg.a` in `lib`.
+The building procedure will create `libnrg.so` and/or `libnrg.a` in `lib`.
 
 ## Usage Examples
 
-Basic example on x86:
+Basic example on x86_64:
 
 ```cpp
 // construct reader of package sensors of socket 0
