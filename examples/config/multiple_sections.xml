@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="utf-8"?>
+
+<config>
+    <sections>
+        <!--
+            label is required when there are multiple sections
+            in order to distinguish them
+        -->
+        <!-- read from the CPU energy/power interfaces -->
+        <section target="cpu" label="section_foo">
+            <bounds>
+                <func name="foo"/>
+            </bounds>
+            <!-- save all samples -->
+            <method>profile</method>
+            <!-- sample every 50 ms -->
+            <interval>50</interval>
+        </section>
+        <section target="gpu" label="section_bar">
+            <bounds>
+                <func name="bar"/>
+            </bounds>
+            <!-- save all samples -->
+            <method>profile</method>
+            <!-- sample every 75 ms -->
+            <interval>75</interval>
+        </section>
+    </sections>
+</config>
