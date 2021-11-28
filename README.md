@@ -25,15 +25,17 @@ This project can be divided into three components:
 * The library and API for reading the power/energy sensors (located in `nrg`)
 * A suite of Python scripts to aid with the post-processing of results (located in `scripts`)
 
-## Building the Profiler
+## Prerequisites
 
-### Requirements
-
-* `libdwarf` - for source code line profiling (optional)
 * `wget` - for downloading the necessary dependencies
 * `cmake` - for building the necessary dependencies
 * `gcc` - any version with C++17 support or later (tested with 10.1 and later)
-* `nrg` - for reading the energy/power sensors
+* `libdwarf` - for source code line profiling (optional)
+* `libnrg` - for reading the energy/power sensors (located in `nrg`)
+
+Make sure to build [`libnrg`](nrg/README.md) before proceeding further.
+
+## Building the Profiler
 
 To build the profiler, execute:
 
