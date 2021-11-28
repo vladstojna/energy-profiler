@@ -100,7 +100,7 @@ Basic example on x86_64:
 
 ```cpp
 // construct reader of package sensors of socket 0
-reader_rapl reader(locmask::pkg, 0x1, err);
+reader_rapl reader{ locmask::pkg, 0x1, err };
 if (err)
 {
     std::cerr << err << "\n";
