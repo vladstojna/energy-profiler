@@ -1,0 +1,37 @@
+<?xml version="1.0" encoding="utf-8"?>
+
+<config>
+    <sections>
+        <!-- when target is not present, read from CPU interfaces -->
+        <section>
+            <!-- extra information which is forwarded as raw data -->
+            <extra>more info</extra>
+            <!-- sampling frequency in Hz -->
+            <freq>50</freq>
+            <!--
+                sampling interval in ms;
+                overwrites <freq></freq> if both are present
+            -->
+            <interval>20</interval>
+            <!--
+                number of samples expected to be
+                generated during the section execution
+            -->
+            <samples>100</samples>
+            <!--
+                expected section duration in ms;
+                used to optimise sampling
+                by calculating the number of samples as
+                being <samples> = <duration> / <interval>
+                or <samples> = <duration> * <freq>;
+                overwrites <samples></samples> if both are defined
+            -->
+            <duration>5000</duration>
+            <!-- save all samples -->
+            <method>profile</method>
+            <bounds>
+                <!-- measure the 'main' function -->
+                <func name="main"/>
+            </bounds>
+        </section>
+</config>

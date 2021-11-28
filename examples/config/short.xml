@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="utf-8"?>
+
+<config>
+    <sections>
+        <!-- read from the CPU energy/power interfaces -->
+        <section target="cpu">
+            <bounds>
+                <!-- measure the 'main' function -->
+                <func name="main"/>
+            </bounds>
+            <!-- allow execution of other threads during the profiling -->
+            <allow_concurrency/>
+            <!--
+                avoid creating a background thread and
+                gather a sample at the start and at the end;
+                as the name implies, it is used for short running tasks that
+                guarantee not to overflow the energy counters;
+                best used with RAPL because of its monotonic energy counters
+            -->
+            <short/>
+        </section>
+    </sections>
+</config>

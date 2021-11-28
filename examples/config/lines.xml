@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="utf-8"?>
+
+<config>
+    <sections>
+        <!-- read from both CPU and GPU interfaces during the execution -->
+        <section target="cpu,gpu">
+            <bounds>
+                <!-- measure between lines 15 and 50 in file main.cpp -->
+                <start cu="main.cpp" line="15"/>
+                <end cu="main.cpp" line="50"/>
+            </bounds>
+            <!-- save all samples -->
+            <method>profile</method>
+            <!-- sample at a frequency of 50 Hz -->
+            <freq>50</freq>
+        </section>
+    </sections>
+</config>

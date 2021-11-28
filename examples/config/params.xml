@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="utf-8"?>
+
+<config>
+    <params>
+        <!-- sensor mask for CPU interfaces -->
+        <!-- values available in nrg/README.md -->
+        <domain_mask>0xff</domain_mask>
+        <!-- socket mask: which sockets to evaluate -->
+        <socket_mask>0x01</socket_mask>
+        <!-- device mask: which GPU devices to evaluate -->
+        <device_mask>0x01</device_mask>
+    </params>
+
+    <sections>
+        <section target="cpu">
+            <bounds>
+                <func name="main"/>
+            </bounds>
+            <allow_concurrency/>
+            <method>profile</method>
+            <interval>100</interval>
+        </section>
+    </sections>
+</config>
