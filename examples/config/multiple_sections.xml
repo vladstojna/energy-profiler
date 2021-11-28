@@ -3,8 +3,8 @@
 <config>
     <sections>
         <!--
-            label is required when there are multiple sections
-            in order to distinguish them
+            label attribute in <section></section> tag is required when
+            there are multiple sections in order to distinguish them
         -->
         <!-- read from the CPU energy/power interfaces -->
         <section target="cpu" label="section_foo">

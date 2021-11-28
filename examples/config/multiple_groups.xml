@@ -2,11 +2,14 @@
 
 <config>
     <!--
-        labels are required when there are multiple groups
-        in order to distinguish them
+        label attribute in <sections></sections> tag is required when
+        there are multiple sections in order to distinguish them
     -->
     <sections label="group_foo">
-        <!-- label is optional seeing as each group has only one section -->
+        <!--
+            label attribute in <section></section> tag is optional
+            seeing as each group has only one section
+        -->
         <!-- read from the CPU energy/power interfaces -->
         <section target="cpu">
             <bounds>
@@ -19,7 +22,10 @@
         </section>
     </sections>
     <sections label="group_bar">
-        <!-- label is optional seeing as each group has only one section -->
+        <!--
+            label attribute in <section></section> tag is optional
+            seeing as each group has only one section
+        -->
         <!-- read from the GPU energy/power interfaces -->
         <section target="gpu">
             <bounds>
