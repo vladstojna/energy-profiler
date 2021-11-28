@@ -149,4 +149,8 @@ the respective CPU socket or GPU device. For example, `0x1` is socket/device 0.
 | GPU             |  `gpu`   |   `0x20`    |    PPC64     |
 | All             |  `all`   |   `0x3f`    |      -       |
 
+The mask does not require valid values to work.
+For example, `0xff` will be interpreted as `all` and invalid or non-existent
+values will be ignored.
+
 The definitions can be found [here](include/nrg/constants.hpp).
