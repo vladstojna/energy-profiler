@@ -4,7 +4,7 @@
     <sections>
         <!-- when target is not present, read from CPU interfaces -->
         <section>
-            <!-- extra information which forwarded as raw data -->
+            <!-- extra information which is forwarded as raw data -->
             <extra>more info</extra>
             <!-- sampling frequency in Hz -->
             <freq>50</freq>
