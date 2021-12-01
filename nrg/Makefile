@@ -82,6 +82,11 @@ ifdef cpu
 cflags += $(addprefix -D, $(cpu))
 endif
 
+system_clock ?=
+ifdef system_clock
+cflags += -DNRG_USE_SYSTEM_CLOCK
+endif
+
 # archive
 ar := ar
 arflags := -crs

@@ -41,7 +41,11 @@ namespace nrgprf
     class timed_sample
     {
     public:
+    #ifdef NRG_USE_SYSTEM_CLOCK
+        using time_point = std::chrono::time_point<std::chrono::system_clock>;
+    #else
         using time_point = std::chrono::time_point<std::chrono::steady_clock>;
+    #endif
         using duration = std::chrono::nanoseconds;
 
     private:
