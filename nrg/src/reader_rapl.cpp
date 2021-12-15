@@ -446,7 +446,7 @@ reader_rapl::impl::impl(location_mask dmask, socket_mask skt_mask, error& ec, st
         for (uint8_t domain_count = 0; domain_count < max_domains - 1; domain_count++)
         {
             snprintf(base + written, sizeof(base) - written,
-                "/intel-rapl:%u:%u", *package_num, domain_count);
+                "/intel-rapl:%u:%u", skt, domain_count);
             // only consider the domain if the file exists
             if (file_exists(base) && (ec = add_event(base, dmask, skt, os)))
                 return;
