@@ -25,6 +25,7 @@
 #include "util.hpp"
 
 #include <cassert>
+#include <charconv>
 #include <cstring>
 #include <fstream>
 #include <iostream>
@@ -287,9 +288,14 @@ namespace
         return -1;
     }
 
+    bool is_package_domain(const char* name)
+    {
+        return !std::strncmp(EVENT_PKG_PREFIX, name, sizeof(EVENT_PKG_PREFIX) - 1);
+    }
+
     int32_t domain_index_from_name(const char* name)
     {
-        if (!std::strncmp(EVENT_PKG_PREFIX, name, sizeof(EVENT_PKG_PREFIX) - 1))
+        if (is_package_domain(name))
             return loc::pkg::value;
         if (!std::strncmp(EVENT_PP0, name, sizeof(EVENT_PP0) - 1))
             return loc::cores::value;
@@ -322,6 +328,40 @@ namespace
         return didx;
     }
 
+    result<uint32_t> get_package_number(const char* base)
+    {
+        using rettype = decltype(get_package_number(nullptr));
+        char name[64];
+        char filename[256];
+        // read the <domain>/name content
+        snprintf(filename, sizeof(filename), "%s/name", base);
+        auto filed = file_descriptor::create(filename);
+        if (!filed)
+            return rettype(nonstd::unexpect, std::move(filed.error()));
+        ssize_t namelen = read_buff(filed->value, name, sizeof(name));
+        if (namelen < 0)
+            return rettype(nonstd::unexpect, error_code::SYSTEM,
+                system_error_str(filename));
+        // check whether the contents follow the package-<number> pattern
+        if (!is_package_domain(name))
+            return rettype(nonstd::unexpect, error_code::SETUP_ERROR,
+                "Attempted retrieval of the package number on a non-package domain");
+        // offset package- to point to the package number;
+        // null-terminator counts as the dash
+        const char* pkg_num_start = name + sizeof(EVENT_PKG_PREFIX);
+        uint32_t pkg_num;
+        auto [p, ec] = std::from_chars(pkg_num_start, name + namelen, pkg_num, 10);
+        if (auto code = std::make_error_code(ec))
+            return rettype(nonstd::unexpect, error_code::SETUP_ERROR,
+                cmmn::concat("Error reading the package number ", code.message()));
+        // package numbers start at 0, so the maximum is max_sockets - 1
+        if (pkg_num >= max_sockets)
+            return rettype(nonstd::unexpect, error_code::TOO_MANY_SOCKETS, cmmn::concat(
+                "Package number greater than maximum number of supported sockets, got ",
+                std::to_string(pkg_num)));
+        return pkg_num;
+    }
+
     result<event_data> get_event_data(const char* base)
     {
         // open the */max_energy_range_uj file and save the max value
@@ -342,6 +382,11 @@ namespace
         if (!filed)
             return rettype(nonstd::unexpect, std::move(filed.error()));
         return event_data{ std::move(*filed), max_value };
+    }
+
+    bool file_exists(std::string_view path)
+    {
+        return !access(path.data(), F_OK);
     }
 }
 
@@ -383,32 +428,28 @@ reader_rapl::impl::impl(location_mask dmask, socket_mask skt_mask, error& ec, st
     os << fileline(cmmn::concat("found ", std::to_string(*num_skts), " sockets\n"));
     for (uint8_t skt = 0; skt < *num_skts; skt++)
     {
-        if (!skt_mask[skt])
-            continue;
-        os << fileline(cmmn::concat("registered socket: ", std::to_string(skt), "\n"));
-
         char base[96];
-        int written = snprintf(base, sizeof(base), "/sys/class/powercap/intel-rapl/intel-rapl:%u", skt);
-        error err = add_event(base, dmask, skt, os);
-        if (err)
-        {
-            ec = std::move(err);
+        int written = snprintf(base, sizeof(base),
+            "/sys/class/powercap/intel-rapl/intel-rapl:%u", skt);
+        // if domain does not exist, no need to consider the remaining domains
+        if (!file_exists(base))
+            continue;
+        result<uint32_t> package_num = get_package_number(base);
+        if (!package_num && (ec = std::move(package_num.error())))
             return;
-        }
+        if (!skt_mask[*package_num])
+            continue;
+        os << fileline(cmmn::concat("registered socket: ", std::to_string(*package_num), "\n"));
+        if (ec = add_event(base, dmask, *package_num, os))
+            return;
         // already found one domain above
         for (uint8_t domain_count = 0; domain_count < max_domains - 1; domain_count++)
         {
-            snprintf(base + written, sizeof(base) - written, "/intel-rapl:%u:%u", skt, domain_count);
+            snprintf(base + written, sizeof(base) - written,
+                "/intel-rapl:%u:%u", *package_num, domain_count);
             // only consider the domain if the file exists
-            if (access(base, F_OK) != -1)
-            {
-                err = add_event(base, dmask, skt, os);
-                if (err)
-                {
-                    ec = std::move(err);
-                    return;
-                }
-            }
+            if (file_exists(base) && (ec = add_event(base, dmask, skt, os)))
+                return;
         }
     }
     if (!num_events())
