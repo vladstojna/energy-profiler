@@ -1,5 +1,3 @@
-// util.hpp
-
 #pragma once
 
 #include "visibility.hpp"

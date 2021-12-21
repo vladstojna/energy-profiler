@@ -1,6 +1,6 @@
 #include "../common/gpu/reader.hpp"
 #include "../common/gpu/funcs.hpp"
-#include "../util.hpp"
+#include "../fileline.hpp"
 
 #include <nrg/sample.hpp>
 
