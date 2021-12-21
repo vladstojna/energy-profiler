@@ -3,6 +3,7 @@
 #pragma once
 
 #include <nrg/reader.hpp>
+#include <nrg/readings_type.hpp>
 #include <nrg/types.hpp>
 
 #include <iostream>
@@ -14,21 +15,6 @@ namespace nrgprf
 
     class error;
     class sample;
-
-    namespace readings_type
-    {
-        enum type
-        {
-            power = 1 << 0,
-            energy = 1 << 1
-        };
-
-        type operator|(type lhs, type rhs);
-        type operator&(type lhs, type rhs);
-        type operator^(type lhs, type rhs);
-
-        extern const type all;
-    }
 
     class reader_gpu : public reader
     {
