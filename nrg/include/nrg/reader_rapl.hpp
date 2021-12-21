@@ -3,6 +3,7 @@
 #pragma once
 
 #include <nrg/constants.hpp>
+#include <nrg/location.hpp>
 #include <nrg/reader.hpp>
 #include <nrg/types.hpp>
 
@@ -12,17 +13,6 @@
 
 namespace nrgprf
 {
-
-    namespace loc
-    {
-        struct sys;
-        struct pkg;
-        struct cores;
-        struct uncore;
-        struct mem;
-        struct gpu;
-    }
-
     class error;
     class sample;
 
@@ -63,5 +53,4 @@ namespace nrgprf
         const impl* pimpl() const;
         impl* pimpl();
     };
-
 }
