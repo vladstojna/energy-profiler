@@ -59,26 +59,24 @@ int main()
             get_readings<loc::pkg>(reader, first, last, socket);
 
         std::cout << "Before sleep: " << before.second.count()
-            << " W at (" << before.first.time_since_epoch().count() << ")\n";
+            << " W @ " << before.first.time_since_epoch().count() << "\n";
         std::cout << "After sleep: " << after.second.count()
-            << " W at (" << after.first.time_since_epoch().count() << ")\n";
+            << " W @ " << after.first.time_since_epoch().count() << "\n";
 
-        auto delta = std::chrono::duration<double>{
-            after.first.time_since_epoch() - before.first.time_since_epoch()
-        };
-
+        auto delta = std::chrono::duration<double>{ after.first - before.first };
         std::cout << "Time between samples: " << delta.count() << " s\n";
         if (!delta.count())
         {
-            std::cout << "Average power: n/a, samples are the same\n";
+            std::cout << "Average power: n/a (samples are the same)\n";
+            std::cout << "Energy consumed: n/a (samples are the same)\n";
         }
         else
         {
             std::cout << "Average power: "
-                << ((after.second + before.second) / delta.count()).count() << " W\n";
+                << ((after.second + before.second) / 2).count() << " W\n";
+            std::cout << "Energy consumed: "
+                << ((after.second + before.second) / 2 * delta).count() << " J\n";
         }
-        std::cout << "Energy consumed: "
-            << ((after.second + before.second) / 2 * delta).count() << " J\n";
     }
     catch (const std::exception& e)
     {
