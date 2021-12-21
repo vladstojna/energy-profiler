@@ -32,14 +32,8 @@ namespace
             return rettype(nonstd::unexpect,
                 error_code::READER_GPU,
                 error_str("Failed to obtain device count", result));
-        if (devcount > nrgprf::max_devices)
-            return rettype(nonstd::unexpect,
-                error_code::TOO_MANY_DEVICES,
-                "Too many devices (a maximum of 8 is supported)");
-        if (!devcount)
-            return rettype(nonstd::unexpect,
-                error_code::NO_DEVICES,
-                "No devices found");
+        if (error err = nrgprf::assert_device_count(devcount))
+            return rettype(nonstd::unexpect, std::move(err));
         return devcount;
     }
 }

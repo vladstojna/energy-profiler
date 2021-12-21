@@ -42,4 +42,18 @@ namespace nrgprf
             " supports ", to_string(rt),
             " queries, but not adding event due to lack of support in previous device(s)"));
     }
+
+    error assert_device_count(unsigned int devcount)
+    {
+        if (devcount > nrgprf::max_devices)
+            return { error_code::TOO_MANY_DEVICES,
+                cmmn::concat(
+                    "Too many devices: got ",
+                    std::to_string(devcount),
+                    ", maximum supported is ",
+                    std::to_string(nrgprf::max_devices)) };
+        if (!devcount)
+            return { error_code::NO_DEVICES, "No devices found" };
+        return error::success();
+    }
 }
