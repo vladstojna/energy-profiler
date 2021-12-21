@@ -95,7 +95,8 @@ cflags += $(addprefix -D, $(cpp))
 ifdef dbg
 cflags += -O0
 else
-cflags += -O3 -DNDEBUG
+cflags += -O3 -DNDEBUG -flto
+ldflags += -flto
 endif
 
 ifdef gpu
