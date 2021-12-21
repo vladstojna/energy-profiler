@@ -38,21 +38,25 @@ endif # (CPU_NONE,$(cpu))
 
 # include GPU vendor specific source files
 ifeq (GPU_NONE,$(gpu)) # force no-op GPU reader
-	src += $(wildcard $(src_dir)/none/reader_gpu.cpp)
+# empty
 else ifeq (GPU_NV,$(gpu)) # force NVIDIA
 	gpu_vendor := nvidia
 else ifeq (GPU_AMD,$(gpu)) # force AMD
 	gpu_vendor := amd
-else ifneq ($(shell command -v nvcc),)
+else ifneq ($(shell command -v nvcc;),)
 	gpu := GPU_NV
 	gpu_vendor := nvidia
-else ifneq ($(shell command -v hipcc),)
+else ifneq ($(shell command -v hipcc;),)
 	gpu := GPU_AMD
 	gpu_vendor := amd
+else # no GPU
+	gpu := GPU_NONE
 endif # (GPU_NONE,$(gpu))
 ifneq (GPU_NONE,$(gpu))
 	src += $(wildcard $(src_dir)/common/gpu/*.cpp)
 	src += $(wildcard $(src_dir)/$(gpu_vendor)/*.cpp)
+else # ifeq (GPU_NONE,$(gpu))
+	src += $(wildcard $(src_dir)/none/reader_gpu.cpp)
 endif # (GPU_NONE,$(cpu))
 
 obj  := $(patsubst $(src_dir)/%.cpp, $(obj_dir)/%.o, $(src))
