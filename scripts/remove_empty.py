@@ -71,7 +71,7 @@ def process_executions(
                             skt_readings_to_remove.append(loc)
                 for rm in skt_readings_to_remove:
                     del skt_readings[rm]
-                    log("remove {}:{}:{}:{}:{}".format(g_lbl, s_lbl, eix, tgt, loc))
+                    log("remove {}:{}:{}:{}:{}".format(g_lbl, s_lbl, eix, tgt, rm))
     return e_to_keep
 
 
@@ -86,28 +86,27 @@ def main():
         json_in = json.load(f)
 
         process_executions(json_in["idle"], "idle", "", targets, args.keep_location)
-        groups, g_to_keep = json_in["groups"], []
-        for g in groups:
+        g_to_keep = []
+        for g in json_in["groups"]:
             g_lbl = g["label"]
-            sections = g["sections"]
-            if not sections and not args.keep_group:
-                log("remove {}".format(g_lbl))
-            else:
-                g_to_keep.append(g)
-                s_to_keep = []
-                for s in sections:
-                    s_lbl = s["label"]
-                    execs = s["executions"]
-                    if not execs and not args.keep_section:
-                        log("remove {}:{}".format(g_lbl, s_lbl))
-                    else:
-                        s_to_keep.append(s)
-                        s["executions"] = process_executions(
-                            execs, g_lbl, s_lbl, targets, args.keep_location
-                        )
+            s_to_keep = []
+            for s in g["sections"]:
+                s_lbl = s["label"]
+                s["executions"] = process_executions(
+                    s["executions"], g_lbl, s_lbl, targets, args.keep_location
+                )
+                if s["executions"] or args.keep_section:
+                    s_to_keep.append(s)
+                else:
+                    log("remove {}:{}".format(g_lbl, s_lbl))
 
-                if not args.keep_section:
-                    g["sections"] = s_to_keep
+            if not args.keep_section:
+                g["sections"] = s_to_keep
+
+            if g["sections"] or args.keep_group:
+                g_to_keep.append(g)
+            else:
+                log("remove {}".format(g_lbl))
 
         if not args.keep_group:
             json_in["groups"] = g_to_keep
