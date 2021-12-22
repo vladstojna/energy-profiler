@@ -6,7 +6,6 @@
 #include <nrg/types.hpp>
 
 #include <iosfwd>
-#include <sstream>
 
 namespace nrgprf
 {
@@ -17,14 +16,6 @@ namespace nrgprf
         while ((val >>= 1) & 0x1)
             pos++;
         return pos;
-    }
-
-    template<typename T>
-    NRG_LOCAL std::string to_string(const T& item)
-    {
-        std::ostringstream os;
-        os << item;
-        return os.str();
     }
 
     NRG_LOCAL std::ostream& operator<<(std::ostream&, readings_type::type);

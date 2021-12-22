@@ -4,6 +4,19 @@
 
 #include <util/concat.hpp>
 
+#include <sstream>
+
+namespace
+{
+    template<typename T>
+    std::string to_string(const T& item)
+    {
+        std::ostringstream os;
+        os << item;
+        return os.str();
+    }
+}
+
 namespace nrgprf
 {
     std::ostream& operator<<(std::ostream& os, readings_type::type rt)
