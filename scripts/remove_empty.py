@@ -3,7 +3,7 @@
 import json
 import sys
 import argparse
-from typing import Any, List, Tuple
+from typing import Any, Dict, Generator, List, Tuple
 
 
 def log(*args: Any) -> None:
@@ -54,6 +54,14 @@ def add_arguments(parser: argparse.ArgumentParser) -> argparse.ArgumentParser:
 def process_executions(
     execs: Any, g_lbl: str, s_lbl: str, targets: Tuple[str, str], keep_location: bool
 ) -> List[Any]:
+    def get_socketORdevice(skt_readings: Dict) -> int:
+        return next(
+            filter(lambda x: not isinstance(x, list), skt_readings.values()), None
+        )
+
+    def readings_generator(skt_readings: Dict) -> Generator:
+        return ((l, s) for l, s in skt_readings.items() if isinstance(s, list))
+
     e_to_keep = []
     for eix, e in enumerate(execs):
         # empty sample_times means there are no readings
@@ -62,16 +70,16 @@ def process_executions(
         else:
             e_to_keep.append(e)
             for tgt, sensors in ((t, e[t]) for t in targets if e.get(t)):
-                skt_readings_to_remove = []
                 for skt_readings in sensors:
-                    for loc, samples in (
-                        (l, s) for l, s in skt_readings.items() if isinstance(s, list)
-                    ):
+                    dev = get_socketORdevice(skt_readings)
+                    skt_readings_to_remove = []
+                    for loc, samples in readings_generator(skt_readings):
                         if not samples and not keep_location:
                             skt_readings_to_remove.append(loc)
-                for rm in skt_readings_to_remove:
-                    del skt_readings[rm]
-                    log("remove {}:{}:{}:{}:{}".format(g_lbl, s_lbl, eix, tgt, rm))
+                    for rm in skt_readings_to_remove:
+                        del skt_readings[rm]
+                        args = g_lbl, s_lbl, eix, tgt, dev, rm
+                        log("remove {}:{}:{}:{}:{}:{}".format(*args))
     return e_to_keep
 
 
