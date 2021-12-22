@@ -6,6 +6,7 @@
 #include <nrg/constants.hpp>
 #include <nrg/error.hpp>
 #include <nrg/hybrid_reader.hpp>
+#include <nrg/hybrid_reader_tp.hpp>
 #include <nrg/location.hpp>
 #include <nrg/reader_gpu.hpp>
 #include <nrg/reader_rapl.hpp>
