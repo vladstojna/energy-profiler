@@ -23,10 +23,10 @@ namespace nrgprf
         std::unique_ptr<impl> _impl;
 
     public:
-        reader_rapl(location_mask, socket_mask, error&, std::ostream & = std::cout);
-        reader_rapl(location_mask, error&, std::ostream & = std::cout);
-        reader_rapl(socket_mask, error&, std::ostream & = std::cout);
-        reader_rapl(error&, std::ostream & = std::cout);
+        explicit reader_rapl(location_mask, socket_mask, error&, std::ostream & = std::cout);
+        explicit reader_rapl(location_mask, error&, std::ostream & = std::cout);
+        explicit reader_rapl(socket_mask, error&, std::ostream & = std::cout);
+        explicit reader_rapl(error&, std::ostream & = std::cout);
 
         reader_rapl(const reader_rapl& other);
         reader_rapl& operator=(const reader_rapl& other);

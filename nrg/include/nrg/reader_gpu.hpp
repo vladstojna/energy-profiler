@@ -27,10 +27,10 @@ namespace nrgprf
         static result<readings_type::type> support();
 
     public:
-        reader_gpu(readings_type::type, device_mask, error&, std::ostream & = std::cout);
-        reader_gpu(readings_type::type, error&, std::ostream & = std::cout);
-        reader_gpu(device_mask, error&, std::ostream & = std::cout);
-        reader_gpu(error&, std::ostream & = std::cout);
+        explicit reader_gpu(readings_type::type, device_mask, error&, std::ostream & = std::cout);
+        explicit reader_gpu(readings_type::type, error&, std::ostream & = std::cout);
+        explicit reader_gpu(device_mask, error&, std::ostream & = std::cout);
+        explicit reader_gpu(error&, std::ostream & = std::cout);
 
         reader_gpu(const reader_gpu& other);
         reader_gpu& operator=(const reader_gpu& other);
