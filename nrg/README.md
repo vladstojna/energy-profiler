@@ -33,7 +33,7 @@ make lib/expected
 Or (in the current directory):
 
 ```shell
-make -c .. lib/expected
+make -C .. lib/expected
 ```
 
 Build the library (dynamic), execute:

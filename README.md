@@ -185,7 +185,7 @@ Example of running the profiler for socket 0 (`--cpu-sockets`),
 reading the CPU package counters (`--cpu-sensors`):
 
 ```shell
-./profiler --cpu-sockets 0 --cpu-sensors 1 --output my-output.json --config my-config.xml -- [executable]
+./profiler --cpu-sockets 1 --cpu-sensors 1 --output my-output.json --config my-config.xml -- [executable]
 ```
 
 Example of running the profiler in a multi-socket system with forced affinity using `numactl`:
@@ -193,7 +193,7 @@ Example of running the profiler in a multi-socket system with forced affinity us
 ```shell
 $ my_exec=path/to/my/application
 $ ./profiler \
-    --cpu-sockets 0 \
+    --cpu-sockets 1 \
     --cpu-sensors 1 \
     --output my-output.json \
     --config my-config.xml \
