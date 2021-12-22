@@ -26,7 +26,19 @@ namespace nrgprf
         static result<readings_type::type> support(device_mask);
         static result<readings_type::type> support();
 
-    public:
+        static result<reader_gpu> create(
+            readings_type::type,
+            device_mask,
+            std::ostream & = std::cout);
+        static result<reader_gpu> create(
+            readings_type::type,
+            std::ostream & = std::cout);
+        static result<reader_gpu> create(
+            device_mask,
+            std::ostream & = std::cout);
+        static result<reader_gpu> create(
+            std::ostream & = std::cout);
+
         explicit reader_gpu(readings_type::type, device_mask, error&, std::ostream & = std::cout);
         explicit reader_gpu(readings_type::type, error&, std::ostream & = std::cout);
         explicit reader_gpu(device_mask, error&, std::ostream & = std::cout);

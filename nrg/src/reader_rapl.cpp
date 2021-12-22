@@ -2,6 +2,7 @@
 
 #include "reader_cpu.hpp"
 #include "visibility.hpp"
+#include "create_reader.hpp"
 
 #include <nrg/reader_rapl.hpp>
 
@@ -15,6 +16,27 @@ struct NRG_LOCAL reader_rapl::impl : reader_impl
 {
     using reader_impl::reader_impl;
 };
+
+result<reader_rapl> reader_rapl::create(
+    location_mask lm, socket_mask sm, std::ostream& os)
+{
+    return create_reader_impl<reader_rapl>(os, lm, sm);
+}
+
+result<reader_rapl> reader_rapl::create(location_mask lm, std::ostream& os)
+{
+    return create_reader_impl<reader_rapl>(os, lm);
+}
+
+result<reader_rapl> reader_rapl::create(socket_mask sm, std::ostream& os)
+{
+    return create_reader_impl<reader_rapl>(os, sm);
+}
+
+result<reader_rapl> reader_rapl::create(std::ostream& os)
+{
+    return create_reader_impl<reader_rapl>(os);
+}
 
 reader_rapl::reader_rapl(location_mask dmask, socket_mask skt_mask, error& ec, std::ostream& os) :
     _impl(std::make_unique<reader_rapl::impl>(dmask, skt_mask, ec, os))

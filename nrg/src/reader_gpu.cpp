@@ -2,6 +2,7 @@
 
 #include "visibility.hpp"
 #include "reader_gpu.hpp"
+#include "create_reader.hpp"
 
 #include <nrg/reader_gpu.hpp>
 
@@ -13,6 +14,27 @@ struct NRG_LOCAL reader_gpu::impl : reader_gpu_impl
 {
     using reader_gpu_impl::reader_gpu_impl;
 };
+
+result<reader_gpu> reader_gpu::create(
+    readings_type::type rt, device_mask dm, std::ostream& os)
+{
+    return create_reader_impl<reader_gpu>(os, rt, dm);
+}
+
+result<reader_gpu> reader_gpu::create(readings_type::type rt, std::ostream& os)
+{
+    return create_reader_impl<reader_gpu>(os, rt);
+}
+
+result<reader_gpu> reader_gpu::create(device_mask dm, std::ostream& os)
+{
+    return create_reader_impl<reader_gpu>(os, dm);
+}
+
+result<reader_gpu> reader_gpu::create(std::ostream& os)
+{
+    return create_reader_impl<reader_gpu>(os);
+}
 
 result<readings_type::type> reader_gpu::support(device_mask devmask)
 {

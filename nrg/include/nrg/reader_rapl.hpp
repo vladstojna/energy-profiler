@@ -23,6 +23,19 @@ namespace nrgprf
         std::unique_ptr<impl> _impl;
 
     public:
+        static result<reader_rapl> create(
+            location_mask,
+            socket_mask,
+            std::ostream & = std::cout);
+        static result<reader_rapl> create(
+            location_mask,
+            std::ostream & = std::cout);
+        static result<reader_rapl> create(
+            socket_mask,
+            std::ostream & = std::cout);
+        static result<reader_rapl> create(
+            std::ostream & = std::cout);
+
         explicit reader_rapl(location_mask, socket_mask, error&, std::ostream & = std::cout);
         explicit reader_rapl(location_mask, error&, std::ostream & = std::cout);
         explicit reader_rapl(socket_mask, error&, std::ostream & = std::cout);
