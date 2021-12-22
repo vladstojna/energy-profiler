@@ -5,6 +5,7 @@
 #include "create_reader.hpp"
 
 #include <nrg/reader_rapl.hpp>
+#include <nrg/sample.hpp>
 
 #include <nonstd/expected.hpp>
 
@@ -76,6 +77,22 @@ error reader_rapl::read(sample & s) const
 error reader_rapl::read(sample & s, uint8_t idx) const
 {
     return pimpl()->read(s, idx);
+}
+
+result<sample> reader_rapl::read() const
+{
+    sample s;
+    if (error err = read(s))
+        return result<sample>{ nonstd::unexpect, std::move(err) };
+    return s;
+}
+
+result<sample> reader_rapl::read(uint8_t idx) const
+{
+    sample s;
+    if (error err = read(s, idx))
+        return result<sample>{ nonstd::unexpect, std::move(err) };
+    return s;
 }
 
 size_t reader_rapl::num_events() const

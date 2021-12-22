@@ -5,6 +5,7 @@
 #include "create_reader.hpp"
 
 #include <nrg/reader_gpu.hpp>
+#include <nrg/sample.hpp>
 
 #include <nonstd/expected.hpp>
 
@@ -84,6 +85,22 @@ error reader_gpu::read(sample & s) const
 error reader_gpu::read(sample & s, uint8_t ev_idx) const
 {
     return pimpl()->read(s, ev_idx);
+}
+
+result<sample> reader_gpu::read() const
+{
+    sample s;
+    if (error err = read(s))
+        return result<sample>{ nonstd::unexpect, std::move(err) };
+    return s;
+}
+
+result<sample> reader_gpu::read(uint8_t idx) const
+{
+    sample s;
+    if (error err = read(s, idx))
+        return result<sample>{ nonstd::unexpect, std::move(err) };
+    return s;
 }
 
 int8_t reader_gpu::event_idx(readings_type::type rt, uint8_t device) const

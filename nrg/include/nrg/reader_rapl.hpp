@@ -51,6 +51,8 @@ namespace nrgprf
 
         error read(sample& s) const override;
         error read(sample& s, uint8_t ev_idx) const override;
+        result<sample> read() const override;
+        result<sample> read(uint8_t) const override;
         size_t num_events() const override;
 
         template<typename Tag>
