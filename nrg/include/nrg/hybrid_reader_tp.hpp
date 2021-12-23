@@ -55,6 +55,8 @@ namespace nrgprf
 
         error read(sample&) const override;
         error read(sample&, uint8_t) const override;
+        result<sample> read() const override;
+        result<sample> read(uint8_t) const override;
         size_t num_events() const override;
     };
 

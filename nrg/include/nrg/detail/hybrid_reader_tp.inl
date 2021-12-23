@@ -1,6 +1,9 @@
 #include <nrg/hybrid_reader_tp.hpp>
 
 #include <nrg/error.hpp>
+#include <nrg/sample.hpp>
+
+#include <nonstd/expected.hpp>
 
 namespace nrgprf
 {
@@ -73,6 +76,23 @@ namespace nrgprf
     {
         return error(error_code::NOT_IMPL,
             "Reading specific events not supported");
+    }
+
+    template<typename... Ts>
+    result<sample> hybrid_reader_tp<Ts...>::read() const
+    {
+        sample s;
+        if (error err = read(s))
+            return result<sample>{ nonstd::unexpect, std::move(err) };
+        return s;
+    }
+
+    template<typename... Ts>
+    result<sample> hybrid_reader_tp<Ts...>::read(uint8_t) const
+    {
+        return result<sample>{ nonstd::unexpect,
+            error_code::NOT_IMPL,
+            "Reading specific events not supported" };
     }
 
     template<typename... Ts>

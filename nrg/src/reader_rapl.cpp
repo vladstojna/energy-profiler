@@ -2,8 +2,10 @@
 
 #include "reader_cpu.hpp"
 #include "visibility.hpp"
+#include "create_reader.hpp"
 
 #include <nrg/reader_rapl.hpp>
+#include <nrg/sample.hpp>
 
 #include <nonstd/expected.hpp>
 
@@ -15,6 +17,27 @@ struct NRG_LOCAL reader_rapl::impl : reader_impl
 {
     using reader_impl::reader_impl;
 };
+
+result<reader_rapl> reader_rapl::create(
+    location_mask lm, socket_mask sm, std::ostream& os)
+{
+    return create_reader_impl<reader_rapl>(os, lm, sm);
+}
+
+result<reader_rapl> reader_rapl::create(location_mask lm, std::ostream& os)
+{
+    return create_reader_impl<reader_rapl>(os, lm);
+}
+
+result<reader_rapl> reader_rapl::create(socket_mask sm, std::ostream& os)
+{
+    return create_reader_impl<reader_rapl>(os, sm);
+}
+
+result<reader_rapl> reader_rapl::create(std::ostream& os)
+{
+    return create_reader_impl<reader_rapl>(os);
+}
 
 reader_rapl::reader_rapl(location_mask dmask, socket_mask skt_mask, error& ec, std::ostream& os) :
     _impl(std::make_unique<reader_rapl::impl>(dmask, skt_mask, ec, os))
@@ -54,6 +77,22 @@ error reader_rapl::read(sample & s) const
 error reader_rapl::read(sample & s, uint8_t idx) const
 {
     return pimpl()->read(s, idx);
+}
+
+result<sample> reader_rapl::read() const
+{
+    sample s;
+    if (error err = read(s))
+        return result<sample>{ nonstd::unexpect, std::move(err) };
+    return s;
+}
+
+result<sample> reader_rapl::read(uint8_t idx) const
+{
+    sample s;
+    if (error err = read(s, idx))
+        return result<sample>{ nonstd::unexpect, std::move(err) };
+    return s;
 }
 
 size_t reader_rapl::num_events() const

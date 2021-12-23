@@ -2,8 +2,10 @@
 
 #include "visibility.hpp"
 #include "reader_gpu.hpp"
+#include "create_reader.hpp"
 
 #include <nrg/reader_gpu.hpp>
+#include <nrg/sample.hpp>
 
 #include <nonstd/expected.hpp>
 
@@ -13,6 +15,27 @@ struct NRG_LOCAL reader_gpu::impl : reader_gpu_impl
 {
     using reader_gpu_impl::reader_gpu_impl;
 };
+
+result<reader_gpu> reader_gpu::create(
+    readings_type::type rt, device_mask dm, std::ostream& os)
+{
+    return create_reader_impl<reader_gpu>(os, rt, dm);
+}
+
+result<reader_gpu> reader_gpu::create(readings_type::type rt, std::ostream& os)
+{
+    return create_reader_impl<reader_gpu>(os, rt);
+}
+
+result<reader_gpu> reader_gpu::create(device_mask dm, std::ostream& os)
+{
+    return create_reader_impl<reader_gpu>(os, dm);
+}
+
+result<reader_gpu> reader_gpu::create(std::ostream& os)
+{
+    return create_reader_impl<reader_gpu>(os);
+}
 
 result<readings_type::type> reader_gpu::support(device_mask devmask)
 {
@@ -62,6 +85,22 @@ error reader_gpu::read(sample & s) const
 error reader_gpu::read(sample & s, uint8_t ev_idx) const
 {
     return pimpl()->read(s, ev_idx);
+}
+
+result<sample> reader_gpu::read() const
+{
+    sample s;
+    if (error err = read(s))
+        return result<sample>{ nonstd::unexpect, std::move(err) };
+    return s;
+}
+
+result<sample> reader_gpu::read(uint8_t idx) const
+{
+    sample s;
+    if (error err = read(s, idx))
+        return result<sample>{ nonstd::unexpect, std::move(err) };
+    return s;
 }
 
 int8_t reader_gpu::event_idx(readings_type::type rt, uint8_t device) const
