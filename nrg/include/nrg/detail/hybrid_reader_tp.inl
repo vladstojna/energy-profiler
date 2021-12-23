@@ -30,6 +30,25 @@ namespace nrgprf
     {}
 
     template<typename... Ts>
+    hybrid_reader_tp<Ts...>::~hybrid_reader_tp() = default;
+    template<typename... Ts>
+    hybrid_reader_tp<Ts...>::hybrid_reader_tp(const hybrid_reader_tp&) = default;
+    template<typename... Ts>
+    hybrid_reader_tp<Ts...>::hybrid_reader_tp(hybrid_reader_tp&) = default;
+    template<typename... Ts>
+    hybrid_reader_tp<Ts...>::hybrid_reader_tp(hybrid_reader_tp&&) = default;
+
+    template<typename... Ts>
+    hybrid_reader_tp<Ts...>& hybrid_reader_tp<Ts...>::operator=(
+        const hybrid_reader_tp&) = default;
+    template<typename... Ts>
+    hybrid_reader_tp<Ts...>& hybrid_reader_tp<Ts...>::operator=(
+        hybrid_reader_tp&) = default;
+    template<typename... Ts>
+    hybrid_reader_tp<Ts...>& hybrid_reader_tp<Ts...>::operator=(
+        hybrid_reader_tp&&) = default;
+
+    template<typename... Ts>
     template<typename T>
     const T& hybrid_reader_tp<Ts...>::get() const
     {
