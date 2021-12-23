@@ -22,13 +22,8 @@ namespace nrgprf
     public:
         using value_type = uint64_t;
 
-        friend reader_rapl;
-        friend reader_gpu;
-
-    private:
         detail::sample_data data;
 
-    public:
         sample();
         sample(const reader& reader, error& e);
 

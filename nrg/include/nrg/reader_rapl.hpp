@@ -3,6 +3,7 @@
 #pragma once
 
 #include <nrg/constants.hpp>
+#include <nrg/location.hpp>
 #include <nrg/reader.hpp>
 #include <nrg/types.hpp>
 
@@ -12,17 +13,6 @@
 
 namespace nrgprf
 {
-
-    namespace loc
-    {
-        struct sys;
-        struct pkg;
-        struct cores;
-        struct uncore;
-        struct mem;
-        struct gpu;
-    }
-
     class error;
     class sample;
 
@@ -33,10 +23,10 @@ namespace nrgprf
         std::unique_ptr<impl> _impl;
 
     public:
-        reader_rapl(location_mask, socket_mask, error&, std::ostream & = std::cout);
-        reader_rapl(location_mask, error&, std::ostream & = std::cout);
-        reader_rapl(socket_mask, error&, std::ostream & = std::cout);
-        reader_rapl(error&, std::ostream & = std::cout);
+        explicit reader_rapl(location_mask, socket_mask, error&, std::ostream & = std::cout);
+        explicit reader_rapl(location_mask, error&, std::ostream & = std::cout);
+        explicit reader_rapl(socket_mask, error&, std::ostream & = std::cout);
+        explicit reader_rapl(error&, std::ostream & = std::cout);
 
         reader_rapl(const reader_rapl& other);
         reader_rapl& operator=(const reader_rapl& other);
@@ -63,5 +53,4 @@ namespace nrgprf
         const impl* pimpl() const;
         impl* pimpl();
     };
-
 }
