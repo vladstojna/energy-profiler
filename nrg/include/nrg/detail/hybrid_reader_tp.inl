@@ -24,7 +24,7 @@ namespace nrgprf
     }
 
     template<typename... Ts>
-    template<typename... Readers, detail::all_reader_ptrs<Readers...>>
+    template<typename... Readers, std::enable_if_t<detail::all_reader_ptrs_v<Readers...>, bool>>
     hybrid_reader_tp<Ts...>::hybrid_reader_tp(Readers&&... reader) :
         _readers(std::make_tuple(std::forward<Readers>(reader)...))
     {}

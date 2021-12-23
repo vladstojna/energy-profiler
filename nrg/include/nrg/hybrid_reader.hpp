@@ -18,8 +18,10 @@ namespace nrgprf
         std::vector<const reader*> _readers;
 
     public:
-        template<typename... Readers, detail::all_reader_ptrs<Readers...> = true>
-        hybrid_reader(const Readers&... reader);
+        template<
+            typename... Readers,
+            std::enable_if_t<detail::all_reader_ptrs_v<Readers...>, bool> = true
+        > hybrid_reader(const Readers&... reader);
 
         void push_back(const reader& r);
 
@@ -28,8 +30,10 @@ namespace nrgprf
         size_t num_events() const override;
     };
 
-    template<typename... Readers, detail::all_reader_ptrs<Readers...>>
-    hybrid_reader::hybrid_reader(const Readers&... reader) :
+    template<
+        typename... Readers,
+        std::enable_if_t<detail::all_reader_ptrs_v<Readers...>, bool>
+    > hybrid_reader::hybrid_reader(const Readers&... reader) :
         _readers({ &reader... })
     {}
 }

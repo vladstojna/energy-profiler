@@ -4,6 +4,7 @@
 #include <nrg/detail/all_reader_ptrs.hpp>
 
 #include <tuple>
+#include <type_traits>
 
 namespace nrgprf
 {
@@ -14,6 +15,10 @@ namespace nrgprf
     template<typename... Ts>
     class hybrid_reader_tp : public reader
     {
+        static_assert(std::conjunction_v<
+            std::is_same<Ts, detail::remove_cvref_t<Ts>>...>,
+            "Ts must be non-const, non-volatile, non-reference types");
+
     private:
         std::tuple<Ts...> _readers;
 
@@ -28,8 +33,9 @@ namespace nrgprf
         };
 
     public:
-        template<typename... Readers, detail::all_reader_ptrs<Readers...> = true>
-        hybrid_reader_tp(Readers&&...);
+        template<typename... Readers,
+            std::enable_if_t<detail::all_reader_ptrs_v<Readers...>, bool> = true
+        > hybrid_reader_tp(Readers&&...);
 
         template<typename T>
         const T& get() const;
@@ -42,7 +48,7 @@ namespace nrgprf
     };
 
     template<typename... Ts>
-    hybrid_reader_tp(Ts&&...)->hybrid_reader_tp<Ts...>;
+    hybrid_reader_tp(Ts&&...)->hybrid_reader_tp<std::remove_reference_t<Ts>...>;
 }
 
 #include <nrg/detail/hybrid_reader_tp.inl>
