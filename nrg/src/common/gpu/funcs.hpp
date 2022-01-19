@@ -18,7 +18,6 @@ namespace nrgprf
         return pos;
     }
 
-    NRG_LOCAL std::ostream& operator<<(std::ostream&, readings_type::type);
     NRG_LOCAL std::string event_added(unsigned int, readings_type::type);
     NRG_LOCAL std::string event_not_added(unsigned int, readings_type::type);
     NRG_LOCAL std::string event_not_supported(unsigned int, readings_type::type);
