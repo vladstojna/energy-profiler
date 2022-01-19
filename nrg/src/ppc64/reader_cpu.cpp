@@ -16,50 +16,31 @@
 #include <iostream>
 #include <sstream>
 
-namespace nrgprf::loc
-{
-    struct pkg : std::integral_constant<int, bitnum(locmask::pkg)> {};
-    struct cores : std::integral_constant<int, bitnum(locmask::cores)> {};
-    struct uncore : std::integral_constant<int, bitnum(locmask::uncore)> {};
-    struct mem : std::integral_constant<int, bitnum(locmask::mem)> {};
-    struct sys : std::integral_constant<int, bitnum(locmask::sys)> {};
-    struct gpu : std::integral_constant<int, bitnum(locmask::gpu)> {};
-}
+#if !defined(NRG_OCC_USE_DUMMY_FILE)
+#define NRG_OCC_USE_DUMMY_FILE "/sys/firmware/opal/exports/occ_inband_sensors"
+#endif
 
-namespace nrgprf::occ
-{
-    static std::istream& operator>>(std::istream&, sensor_buffers&);
-    static std::istream& operator>>(std::istream&, sensor_names_entry&);
-    static std::ostream& operator<<(std::ostream&, sensor_type);
-    static std::ostream& operator<<(std::ostream&, sensor_loc);
-    static std::ostream& operator<<(std::ostream&, const sensor_names_entry&);
-}
+// Specification reference
+// https://github.com/open-power/docs/blob/master/occ/OCC_P9_FW_Interfaces.pdf
 
 namespace
 {
-#ifdef NRG_OCC_USE_DUMMY_FILE
-    constexpr char sensors_file[] = NRG_OCC_USE_DUMMY_FILE;
-#else
-    constexpr char sensors_file[] = "/sys/firmware/opal/exports/occ_inband_sensors";
-#endif
-
     namespace occ
     {
-        using ::nrgprf::occ::sensor_buffer_gap;
-        using ::nrgprf::occ::sensor_readings_size;
-        using ::nrgprf::occ::sensor_ping_buffer_offset;
-        using ::nrgprf::occ::sensor_ping_buffer_size;
-        using ::nrgprf::occ::sensor_pong_buffer_offset;
-        using ::nrgprf::occ::sensor_pong_buffer_size;
+        // inject these types into the occ namespace
+        using ::nrgprf::sensor_type;
+        using ::nrgprf::sensor_loc;
+        using ::nrgprf::sensor_buffers;
+        using ::nrgprf::sensor_names_entry;
 
-        using ::nrgprf::occ::sensor_type;
-        using ::nrgprf::occ::sensor_loc;
-        using ::nrgprf::occ::sensor_readings_buffer;
-        using ::nrgprf::occ::sensor_buffers;
-        using ::nrgprf::occ::sensor_names_entry;
+        constexpr char sensors_file[] = NRG_OCC_USE_DUMMY_FILE;
 
-        // Specification reference
-        // https://github.com/open-power/docs/blob/master/occ/OCC_P9_FW_Interfaces.pdf
+        constexpr size_t sensor_buffer_gap = 4096; // 4 kB
+        constexpr size_t sensor_readings_size = 40 * 1024; // 40 kB
+        constexpr size_t sensor_ping_buffer_offset = 0xdc00;
+        constexpr size_t sensor_ping_buffer_size = sensor_readings_size;
+        constexpr size_t sensor_pong_buffer_offset = 0x18c00;
+        constexpr size_t sensor_pong_buffer_size = sensor_ping_buffer_size;
 
         constexpr size_t max_count = 8;
         constexpr size_t bar2_offset = 0x580000;
@@ -71,43 +52,14 @@ namespace
         constexpr size_t sensor_names_offset = 0x400;
         constexpr size_t sensor_names_size = 50 * 1024; // 50 kB
 
-        bool assert_sensor_type(sensor_type type)
-        {
-            switch (type)
-            {
-            case sensor_type::generic:
-            case sensor_type::current:
-            case sensor_type::voltage:
-            case sensor_type::temp:
-            case sensor_type::util:
-            case sensor_type::time:
-            case sensor_type::freq:
-            case sensor_type::power:
-            case sensor_type::perf:
-                return true;
-            }
-            assert(false);
-            return false;
-        }
-
-        bool assert_sensor_location(sensor_loc loc)
-        {
-            switch (loc)
-            {
-            case sensor_loc::system:
-            case sensor_loc::proc:
-            case sensor_loc::partition:
-            case sensor_loc::memory:
-            case sensor_loc::vrm:
-            case sensor_loc::occ:
-            case sensor_loc::core:
-            case sensor_loc::gpu:
-            case sensor_loc::quad:
-                return true;
-            }
-            assert(false);
-            return false;
-        }
+        // TODO: Need to confirm whether sensor GSIDs are constant or dynamically assigned
+        // (at reboot, for example)
+        constexpr uint16_t gsid_pwrsys = 20;
+        constexpr uint16_t gsid_pwrgpu = 24;
+        constexpr uint16_t gsid_pwrproc = 48;
+        constexpr uint16_t gsid_pwrmem = 49;
+        constexpr uint16_t gsid_pwrvdd = 56;
+        constexpr uint16_t gsid_pwrvdn = 57;
 
         struct sensor_data_header_block
         {
@@ -164,6 +116,93 @@ namespace
             sensor_structure_v1 sv1;
             sensor_structure_v2 sv2;
         };
+
+        struct sensor_readings_buffer
+        {
+            constexpr static size_t size = sensor_readings_size;
+            constexpr static size_t pad = 8; // valid byte + 7 bytes reserved
+            uint8_t valid;
+            uint8_t __reserved[7];
+            uint8_t readings[size - pad];
+        } __attribute__((__packed__));
+    }
+}
+
+namespace nrgprf::loc
+{
+    struct pkg : std::integral_constant<int, bitnum(locmask::pkg)> {};
+    struct cores : std::integral_constant<int, bitnum(locmask::cores)> {};
+    struct uncore : std::integral_constant<int, bitnum(locmask::uncore)> {};
+    struct mem : std::integral_constant<int, bitnum(locmask::mem)> {};
+    struct sys : std::integral_constant<int, bitnum(locmask::sys)> {};
+    struct gpu : std::integral_constant<int, bitnum(locmask::gpu)> {};
+}
+
+namespace nrgprf
+{
+    static std::istream& operator>>(std::istream&, sensor_buffers&);
+    static std::istream& operator>>(std::istream&, sensor_names_entry&);
+    static std::ostream& operator<<(std::ostream&, sensor_type);
+    static std::ostream& operator<<(std::ostream&, sensor_loc);
+    static std::ostream& operator<<(std::ostream&, const sensor_names_entry&);
+
+    enum class sensor_type : uint16_t
+    {
+        generic = 0x0001,
+        current = 0x0002,
+        voltage = 0x0004,
+        temp = 0x0008,
+        util = 0x0010,
+        time = 0x0020,
+        freq = 0x0040,
+        power = 0x0080,
+        perf = 0x0200
+    };
+
+    enum class sensor_loc : uint16_t
+    {
+        system = 0x0001,
+        proc = 0x0002,
+        partition = 0x0004,
+        memory = 0x0008,
+        vrm = 0x0010,
+        occ = 0x0020,
+        core = 0x0040,
+        gpu = 0x0080,
+        quad = 0x0100
+    };
+
+    struct sensor_buffers
+    {
+        constexpr static size_t size = occ::sensor_pong_buffer_offset -
+            occ::sensor_ping_buffer_offset + occ::sensor_pong_buffer_size;
+
+        static_assert(size == occ::sensor_ping_buffer_size +
+            occ::sensor_pong_buffer_size +
+            occ::sensor_buffer_gap);
+
+        occ::sensor_readings_buffer ping;
+        uint8_t __reserved[occ::sensor_buffer_gap];
+        occ::sensor_readings_buffer pong;
+    } __attribute__((__packed__));
+}
+
+namespace
+{
+    namespace occ
+    {
+        static_assert(24 == sensor_data_header_block::size,
+            "occ::sensor_data_header_block::size != 24");
+        static_assert(48 == sensor_names_entry::size,
+            "occ::sensor_names_entry::size != 48");
+        static_assert(48 == sensor_structure_v1::size,
+            "occ::sensor_structure_v1::size != 48");
+        static_assert(24 == sensor_structure_v2::size,
+            "occ::sensor_structure_v2::size != 24");
+        static_assert(sizeof(sensor_readings_buffer) == sensor_readings_buffer::size,
+            "occ::sensor_readings_buffer::size != 40960");
+        static_assert(sizeof(sensor_buffers) == sensor_buffers::size,
+            "occ::sensor_buffers::size != 86016");
 
         namespace detail
         {
@@ -225,6 +264,44 @@ namespace
                     *into = *static_cast<const char*>(from);
                 return sz;
             }
+        }
+
+        bool assert_sensor_type(sensor_type type)
+        {
+            switch (type)
+            {
+            case sensor_type::generic:
+            case sensor_type::current:
+            case sensor_type::voltage:
+            case sensor_type::temp:
+            case sensor_type::util:
+            case sensor_type::time:
+            case sensor_type::freq:
+            case sensor_type::power:
+            case sensor_type::perf:
+                return true;
+            }
+            assert(false);
+            return false;
+        }
+
+        bool assert_sensor_location(sensor_loc loc)
+        {
+            switch (loc)
+            {
+            case sensor_loc::system:
+            case sensor_loc::proc:
+            case sensor_loc::partition:
+            case sensor_loc::memory:
+            case sensor_loc::vrm:
+            case sensor_loc::occ:
+            case sensor_loc::core:
+            case sensor_loc::gpu:
+            case sensor_loc::quad:
+                return true;
+            }
+            assert(false);
+            return false;
         }
 
         std::istream& operator>>(std::istream& is, sensor_data_header_block& hb)
@@ -456,28 +533,85 @@ namespace
             return true;
         }
 
-        static_assert(24 == sensor_data_header_block::size,
-            "occ::sensor_data_header_block::size != 24");
-        static_assert(48 == sensor_names_entry::size,
-            "occ::sensor_names_entry::size != 48");
-        static_assert(48 == sensor_structure_v1::size,
-            "occ::sensor_structure_v1::size != 48");
-        static_assert(24 == sensor_structure_v2::size,
-            "occ::sensor_structure_v2::size != 24");
-        static_assert(sizeof(sensor_readings_buffer) == sensor_readings_buffer::size,
-            "occ::sensor_readings_buffer::size != 40960");
-        static_assert(sizeof(sensor_buffers) == sensor_buffers::size,
-            "occ::sensor_buffers::size != 86016");
-    }
+    #if defined NRG_OCC_DEBUG_PRINTS
+        std::ostream& operator<<(std::ostream& os, const sensor_data_header_block& hb)
+        {
+            std::ios::fmtflags flags(os.flags());
+            os << std::boolalpha << "valid: " << bool(hb.valid) << "\n";
+            os.flags(flags);
 
-    // TODO: Need to confirm whether sensor GSIDs are constant or dynamically assigned
-    // (at reboot, for example)
-    constexpr uint16_t gsid_pwrsys = 20;
-    constexpr uint16_t gsid_pwrgpu = 24;
-    constexpr uint16_t gsid_pwrproc = 48;
-    constexpr uint16_t gsid_pwrmem = 49;
-    constexpr uint16_t gsid_pwrvdd = 56;
-    constexpr uint16_t gsid_pwrvdn = 57;
+            os << "header version: " << +hb.header_version << "\n";
+            os << "number of sensors: " << hb.sensor_count << "\n";
+            os << "readings version: " << +hb.readings_version << "\n";
+
+            flags = os.flags();
+            os << std::hex << "names offset: 0x" << hb.names_offset << "\n";
+            os.flags(flags);
+
+            os << "names version: " << +hb.names_version << "\n";
+            os << "names length: " << +hb.name_length << "\n";
+
+            flags = os.flags();
+            os << std::hex;
+            os << "ping buffer offset: 0x" << hb.readings_ping_buffer_offset << "\n";
+            os << "pong buffer offset: 0x" << hb.readings_pong_buffer_offset;
+            os.flags(flags);
+
+            return os;
+        }
+
+        std::ostream& operator<<(std::ostream& os, const sensor_structure_v1& s)
+        {
+            os << "v1";
+            os << ":" << s.gsid << ":" << s.timestamp;
+            os << ":s=" << s.sample << ":m=" << s.sample_min << ":M=" << s.sample_max;
+            os << ":csmm=" << s.csm_sample_min << ":csmM=" << s.csm_sample_max;
+            os << ":pm=" << s.profiler_sample_min << ":pM=" << s.profiler_sample_max;
+            os << ":jm=" << s.job_s_sample_min << ":jM=" << s.job_s_sample_max;
+            os << ":a=" << s.accumulator << ":u=" << s.update_tag;
+            return os;
+        }
+
+        std::ostream& operator<<(std::ostream& os, const sensor_structure_v2& s)
+        {
+            os << "v2";
+            os << ":" << s.gsid << ":" << s.timestamp;
+            os << ":a=" << s.accumulator;
+            os << ":" << +s.sample;
+            return os;
+        }
+
+        void debug_print(const sensor_data_header_block& header)
+        {
+            std::cout << header << std::endl;
+        }
+
+        bool debug_print(const sensor_names_entry& entry, const sensor_structure& record)
+        {
+            std::cout << entry << "\n";
+            switch (entry.structure_version)
+            {
+            case 1:
+                std::cout << "  " << record.sv1 << "\n";
+                return true;
+            case 2:
+                std::cout << "  " << record.sv2 << "\n";
+                return true;
+            default:
+                assert(false);
+                return false;
+            }
+        }
+    #else // !defined NRG_OCC_DEBUG_PRINTS
+        void debug_print(const sensor_data_header_block&)
+        {}
+
+        bool debug_print(const sensor_names_entry&, const sensor_structure&)
+        {
+            return true;
+        }
+    #endif // defined NRG_OCC_DEBUG_PRINTS
+    }
 
     struct sensor_static_data
     {
@@ -488,12 +622,12 @@ namespace
 
     constexpr sensor_static_data bit_to_sensor_data[] =
     {
-        { gsid_pwrproc, occ::sensor_type::power, occ::sensor_loc::proc },
-        { gsid_pwrvdd,  occ::sensor_type::power, occ::sensor_loc::proc },
-        { gsid_pwrvdn,  occ::sensor_type::power, occ::sensor_loc::proc },
-        { gsid_pwrmem,  occ::sensor_type::power, occ::sensor_loc::memory },
-        { gsid_pwrsys,  occ::sensor_type::power, occ::sensor_loc::system },
-        { gsid_pwrgpu,  occ::sensor_type::power, occ::sensor_loc::gpu }
+        { occ::gsid_pwrproc, occ::sensor_type::power, occ::sensor_loc::proc },
+        { occ::gsid_pwrvdd,  occ::sensor_type::power, occ::sensor_loc::proc },
+        { occ::gsid_pwrvdn,  occ::sensor_type::power, occ::sensor_loc::proc },
+        { occ::gsid_pwrmem,  occ::sensor_type::power, occ::sensor_loc::memory },
+        { occ::gsid_pwrsys,  occ::sensor_type::power, occ::sensor_loc::system },
+        { occ::gsid_pwrgpu,  occ::sensor_type::power, occ::sensor_loc::gpu }
     };
 
     constexpr int32_t sensor_gsid_to_index(uint16_t gsid)
@@ -501,17 +635,17 @@ namespace
         using namespace nrgprf;
         switch (gsid)
         {
-        case gsid_pwrsys:
+        case occ::gsid_pwrsys:
             return loc::sys::value;
-        case gsid_pwrgpu:
+        case occ::gsid_pwrgpu:
             return loc::gpu::value;
-        case gsid_pwrproc:
+        case occ::gsid_pwrproc:
             return loc::pkg::value;
-        case gsid_pwrmem:
+        case occ::gsid_pwrmem:
             return loc::mem::value;
-        case gsid_pwrvdd:
+        case occ::gsid_pwrvdd:
             return loc::cores::value;
-        case gsid_pwrvdn:
+        case occ::gsid_pwrvdn:
             return loc::uncore::value;
         default:
             assert(false);
@@ -531,17 +665,17 @@ namespace
             std::is_same_v<T, loc::gpu>,
             "T must be of type sys, pkg, cores, uncore, mem or gpu");
         if constexpr (std::is_same_v<T, loc::sys>)
-            return gsid_pwrsys;
+            return occ::gsid_pwrsys;
         if constexpr (std::is_same_v<T, loc::gpu>)
-            return gsid_pwrgpu;
+            return occ::gsid_pwrgpu;
         if constexpr (std::is_same_v<T, loc::pkg>)
-            return gsid_pwrproc;
+            return occ::gsid_pwrproc;
         if constexpr (std::is_same_v<T, loc::cores>)
-            return gsid_pwrvdd;
+            return occ::gsid_pwrvdd;
         if constexpr (std::is_same_v<T, loc::uncore>)
-            return gsid_pwrvdn;
+            return occ::gsid_pwrvdn;
         if constexpr (std::is_same_v<T, loc::mem>)
-            return gsid_pwrmem;
+            return occ::gsid_pwrmem;
     }
 
     nrgprf::watts<double> canonicalize_power(uint16_t value, const occ::sensor_names_entry& entry)
@@ -564,85 +698,6 @@ namespace
         return sensor_value::time_point(
             std::chrono::duration_cast<sensor_value::time_point::duration>(dur));
     }
-
-#if defined NRG_OCC_DEBUG_PRINTS
-    std::ostream& operator<<(std::ostream& os, const occ::sensor_data_header_block& hb)
-    {
-        std::ios::fmtflags flags(os.flags());
-        os << std::boolalpha << "valid: " << bool(hb.valid) << "\n";
-        os.flags(flags);
-
-        os << "header version: " << +hb.header_version << "\n";
-        os << "number of sensors: " << hb.sensor_count << "\n";
-        os << "readings version: " << +hb.readings_version << "\n";
-
-        flags = os.flags();
-        os << std::hex << "names offset: 0x" << hb.names_offset << "\n";
-        os.flags(flags);
-
-        os << "names version: " << +hb.names_version << "\n";
-        os << "names length: " << +hb.name_length << "\n";
-
-        flags = os.flags();
-        os << std::hex;
-        os << "ping buffer offset: 0x" << hb.readings_ping_buffer_offset << "\n";
-        os << "pong buffer offset: 0x" << hb.readings_pong_buffer_offset;
-        os.flags(flags);
-
-        return os;
-    }
-
-    std::ostream& operator<<(std::ostream& os, const occ::sensor_structure_v1& s)
-    {
-        os << "v1";
-        os << ":" << s.gsid << ":" << s.timestamp;
-        os << ":s=" << s.sample << ":m=" << s.sample_min << ":M=" << s.sample_max;
-        os << ":csmm=" << s.csm_sample_min << ":csmM=" << s.csm_sample_max;
-        os << ":pm=" << s.profiler_sample_min << ":pM=" << s.profiler_sample_max;
-        os << ":jm=" << s.job_s_sample_min << ":jM=" << s.job_s_sample_max;
-        os << ":a=" << s.accumulator << ":u=" << s.update_tag;
-        return os;
-    }
-
-    std::ostream& operator<<(std::ostream& os, const occ::sensor_structure_v2& s)
-    {
-        os << "v2";
-        os << ":" << s.gsid << ":" << s.timestamp;
-        os << ":a=" << s.accumulator;
-        os << ":" << +s.sample;
-        return os;
-    }
-
-    void debug_print(const occ::sensor_data_header_block& header)
-    {
-        std::cout << header << std::endl;
-    }
-
-    bool debug_print(const occ::sensor_names_entry& entry, const occ::sensor_structure& record)
-    {
-        std::cout << entry << "\n";
-        switch (entry.structure_version)
-        {
-        case 1:
-            std::cout << "  " << record.sv1 << "\n";
-            return true;
-        case 2:
-            std::cout << "  " << record.sv2 << "\n";
-            return true;
-        default:
-            assert(false);
-            return false;
-        }
-    }
-#else // !defined NRG_OCC_DEBUG_PRINTS
-    void debug_print(const occ::sensor_data_header_block&)
-    {}
-
-    bool debug_print(const occ::sensor_names_entry&, const occ::sensor_structure&)
-    {
-        return true;
-    }
-#endif // defined NRG_OCC_DEBUG_PRINTS
 
     nrgprf::error get_sensor_buffers(std::ifstream& ifs,
         uint32_t occ_num,
@@ -721,7 +776,8 @@ namespace
         ifs.seekg(occ_offset + occ::sensor_names_offset);
         if (!ifs)
             return { error_code::SYSTEM, system_error_str(
-                cmmn::concat("Error seeking to OCC ", occ_num_str, " sensor names")) };
+                cmmn::concat("Error seeking to OCC ", occ_num_str, " sensor names"))
+        };
         for (auto& entry : entries)
         {
             if (!(ifs >> entry))
@@ -765,138 +821,135 @@ namespace
 
 namespace nrgprf
 {
-    namespace occ
+    std::istream& operator>>(std::istream& is, sensor_buffers& buffs)
     {
-        std::istream& operator>>(std::istream& is, occ::sensor_buffers& buffs)
-        {
-            return is.read(reinterpret_cast<std::istream::char_type*>(&buffs), sizeof(buffs));
-        }
+        return is.read(reinterpret_cast<std::istream::char_type*>(&buffs), sizeof(buffs));
+    }
 
-        std::istream& operator>>(std::istream& is, occ::sensor_names_entry& entry)
-        {
-            using namespace ::occ::detail;
-            std::istream::char_type buffer[occ::sensor_names_entry::size];
-            std::istream::char_type* curr = buffer;
-            if (!is.read(buffer, sizeof(buffer)))
-                return is;
-
-            curr += retrieve_field<sizeof(entry.name)>(entry.name, curr);
-            curr += retrieve_field<sizeof(entry.units)>(entry.units, curr);
-            curr += retrieve_field(&entry.gsid, curr);
-
-            uint32_t placeholder;
-            curr += retrieve_field(&placeholder, curr);
-            entry.freq = to_double(placeholder);
-            curr += retrieve_field(&placeholder, curr);
-            entry.scaling_factor = to_double(placeholder);
-
-            curr += retrieve_field(&entry.type, curr);
-            curr += retrieve_field(&entry.location, curr);
-            curr += retrieve_field(&entry.structure_version, curr);
-            curr += retrieve_field(&entry.reading_offset, curr);
-            retrieve_field(&entry.specific_info1, curr);
-
-            // null-terminate name and units fields, just in case
-            entry.name[sizeof(entry.name) - 1] = '\0';
-            entry.units[sizeof(entry.units) - 1] = '\0';
+    std::istream& operator>>(std::istream& is, sensor_names_entry& entry)
+    {
+        using namespace occ::detail;
+        std::istream::char_type buffer[occ::sensor_names_entry::size];
+        std::istream::char_type* curr = buffer;
+        if (!is.read(buffer, sizeof(buffer)))
             return is;
-        }
 
-        std::ostream& operator<<(std::ostream& os, occ::sensor_type type)
-        {
-            using occ::sensor_type;
-            using cast_type = std::underlying_type_t<sensor_type>;
-            switch (type)
-            {
-            case sensor_type::generic:
-                os << "generic[" << static_cast<cast_type>(sensor_type::generic) << "]";
-                break;
-            case sensor_type::current:
-                os << "current[" << static_cast<cast_type>(sensor_type::current) << "]";
-                break;
-            case sensor_type::voltage:
-                os << "voltage[" << static_cast<cast_type>(sensor_type::voltage) << "]";
-                break;
-            case sensor_type::temp:
-                os << "temp[" << static_cast<cast_type>(sensor_type::temp) << "]";
-                break;
-            case sensor_type::util:
-                os << "util[" << static_cast<cast_type>(sensor_type::util) << "]";
-                break;
-            case sensor_type::time:
-                os << "time[" << static_cast<cast_type>(sensor_type::time) << "]";
-                break;
-            case sensor_type::freq:
-                os << "freq[" << static_cast<cast_type>(sensor_type::freq) << "]";
-                break;
-            case sensor_type::power:
-                os << "power[" << static_cast<cast_type>(sensor_type::power) << "]";
-                break;
-            case sensor_type::perf:
-                os << "perf[" << static_cast<cast_type>(sensor_type::perf) << "]";
-                break;
-            default:
-                assert(false);
-                os << "unknown sensor type";
-                break;
-            }
-            return os;
-        }
+        curr += retrieve_field<sizeof(entry.name)>(entry.name, curr);
+        curr += retrieve_field<sizeof(entry.units)>(entry.units, curr);
+        curr += retrieve_field(&entry.gsid, curr);
 
-        std::ostream& operator<<(std::ostream& os, occ::sensor_loc loc)
-        {
-            using occ::sensor_loc;
-            using cast_type = std::underlying_type_t<sensor_loc>;
-            switch (loc)
-            {
-            case sensor_loc::system:
-                os << "system[" << static_cast<cast_type>(sensor_loc::system) << "]";
-                break;
-            case sensor_loc::proc:
-                os << "proc[" << static_cast<cast_type>(sensor_loc::proc) << "]";
-                break;
-            case sensor_loc::partition:
-                os << "partition[" << static_cast<cast_type>(sensor_loc::partition) << "]";
-                break;
-            case sensor_loc::memory:
-                os << "memory[" << static_cast<cast_type>(sensor_loc::memory) << "]";
-                break;
-            case sensor_loc::vrm:
-                os << "vrm[" << static_cast<cast_type>(sensor_loc::vrm) << "]";
-                break;
-            case sensor_loc::occ:
-                os << "occ[" << static_cast<cast_type>(sensor_loc::occ) << "]";
-                break;
-            case sensor_loc::core:
-                os << "core[" << static_cast<cast_type>(sensor_loc::core) << "]";
-                break;
-            case sensor_loc::gpu:
-                os << "gpu[" << static_cast<cast_type>(sensor_loc::gpu) << "]";
-                break;
-            case sensor_loc::quad:
-                os << "quad[" << static_cast<cast_type>(sensor_loc::quad) << "]";
-                break;
-            default:
-                assert(false);
-                os << "unknown sensor location";
-                break;
-            }
-            return os;
-        }
+        uint32_t placeholder;
+        curr += retrieve_field(&placeholder, curr);
+        entry.freq = to_double(placeholder);
+        curr += retrieve_field(&placeholder, curr);
+        entry.scaling_factor = to_double(placeholder);
 
-        std::ostream& operator<<(std::ostream& os, const occ::sensor_names_entry& ne)
+        curr += retrieve_field(&entry.type, curr);
+        curr += retrieve_field(&entry.location, curr);
+        curr += retrieve_field(&entry.structure_version, curr);
+        curr += retrieve_field(&entry.reading_offset, curr);
+        retrieve_field(&entry.specific_info1, curr);
+
+        // null-terminate name and units fields, just in case
+        entry.name[sizeof(entry.name) - 1] = '\0';
+        entry.units[sizeof(entry.units) - 1] = '\0';
+        return is;
+    }
+
+    std::ostream& operator<<(std::ostream& os, sensor_type type)
+    {
+        using occ::sensor_type;
+        using cast_type = std::underlying_type_t<sensor_type>;
+        switch (type)
         {
-            os << ne.name << ":" << ne.units << ":" << ne.gsid;
-            os << ":f=" << ne.freq;
-            os << ":s=" << ne.scaling_factor;
-            os << ":" << ne.type << ":" << ne.location;
-            os << ":v=" << +ne.structure_version;
-            std::ios::fmtflags flags(os.flags());
-            os << std::hex << ":0x" << ne.reading_offset;
-            os.flags(flags);
-            os << ":" << +ne.specific_info1;
-            return os;
+        case sensor_type::generic:
+            os << "generic[" << static_cast<cast_type>(sensor_type::generic) << "]";
+            break;
+        case sensor_type::current:
+            os << "current[" << static_cast<cast_type>(sensor_type::current) << "]";
+            break;
+        case sensor_type::voltage:
+            os << "voltage[" << static_cast<cast_type>(sensor_type::voltage) << "]";
+            break;
+        case sensor_type::temp:
+            os << "temp[" << static_cast<cast_type>(sensor_type::temp) << "]";
+            break;
+        case sensor_type::util:
+            os << "util[" << static_cast<cast_type>(sensor_type::util) << "]";
+            break;
+        case sensor_type::time:
+            os << "time[" << static_cast<cast_type>(sensor_type::time) << "]";
+            break;
+        case sensor_type::freq:
+            os << "freq[" << static_cast<cast_type>(sensor_type::freq) << "]";
+            break;
+        case sensor_type::power:
+            os << "power[" << static_cast<cast_type>(sensor_type::power) << "]";
+            break;
+        case sensor_type::perf:
+            os << "perf[" << static_cast<cast_type>(sensor_type::perf) << "]";
+            break;
+        default:
+            assert(false);
+            os << "unknown sensor type";
+            break;
         }
+        return os;
+    }
+
+    std::ostream& operator<<(std::ostream& os, sensor_loc loc)
+    {
+        using occ::sensor_loc;
+        using cast_type = std::underlying_type_t<sensor_loc>;
+        switch (loc)
+        {
+        case sensor_loc::system:
+            os << "system[" << static_cast<cast_type>(sensor_loc::system) << "]";
+            break;
+        case sensor_loc::proc:
+            os << "proc[" << static_cast<cast_type>(sensor_loc::proc) << "]";
+            break;
+        case sensor_loc::partition:
+            os << "partition[" << static_cast<cast_type>(sensor_loc::partition) << "]";
+            break;
+        case sensor_loc::memory:
+            os << "memory[" << static_cast<cast_type>(sensor_loc::memory) << "]";
+            break;
+        case sensor_loc::vrm:
+            os << "vrm[" << static_cast<cast_type>(sensor_loc::vrm) << "]";
+            break;
+        case sensor_loc::occ:
+            os << "occ[" << static_cast<cast_type>(sensor_loc::occ) << "]";
+            break;
+        case sensor_loc::core:
+            os << "core[" << static_cast<cast_type>(sensor_loc::core) << "]";
+            break;
+        case sensor_loc::gpu:
+            os << "gpu[" << static_cast<cast_type>(sensor_loc::gpu) << "]";
+            break;
+        case sensor_loc::quad:
+            os << "quad[" << static_cast<cast_type>(sensor_loc::quad) << "]";
+            break;
+        default:
+            assert(false);
+            os << "unknown sensor location";
+            break;
+        }
+        return os;
+    }
+
+    std::ostream& operator<<(std::ostream& os, const sensor_names_entry& ne)
+    {
+        os << ne.name << ":" << ne.units << ":" << ne.gsid;
+        os << ":f=" << ne.freq;
+        os << ":s=" << ne.scaling_factor;
+        os << ":" << ne.type << ":" << ne.location;
+        os << ":v=" << +ne.structure_version;
+        std::ios::fmtflags flags(os.flags());
+        os << std::hex << ":0x" << ne.reading_offset;
+        os.flags(flags);
+        os << ":" << +ne.specific_info1;
+        return os;
     }
 
     reader_impl::reader_impl(
@@ -905,14 +958,14 @@ namespace nrgprf
         error& err,
         std::ostream& os)
         :
-        _file(std::make_shared<std::ifstream>(sensors_file, std::ios::in | std::ios::binary)),
+        _file(std::make_shared<std::ifstream>(occ::sensors_file, std::ios::in | std::ios::binary)),
         _event_map(),
         _active_events()
     {
         if (!*_file)
         {
             err = { error_code::SYSTEM, system_error_str(
-                cmmn::concat("Error opening ", sensors_file)) };
+                cmmn::concat("Error opening ", occ::sensors_file)) };
             return;
         }
 
@@ -932,7 +985,7 @@ namespace nrgprf
                 continue;
             os << fileline(cmmn::concat("Registered socket: ", std::to_string(occ_num), "\n"));
 
-            ::occ::sensor_data_header_block hb{};
+            occ::sensor_data_header_block hb{};
             if (err = get_header(*_file, occ_num, hb))
                 return;
 
@@ -944,7 +997,7 @@ namespace nrgprf
             if (err = get_sensor_buffers(*_file, occ_num, sbuffs))
                 return;
 
-            std::vector<::occ::sensor_structure> structs;
+            std::vector<occ::sensor_structure> structs;
             structs.reserve(entries.size());
             if (err = get_sensor_structs(sbuffs, entries, structs))
                 return;
@@ -954,7 +1007,7 @@ namespace nrgprf
                 if (!lmask[loc])
                     continue;
                 // the system power sensor only exists in the master OCC which is OCC 0
-                if (occ_num != 0 && bit_to_sensor_data[loc].gsid == gsid_pwrsys)
+                if (occ_num != 0 && bit_to_sensor_data[loc].gsid == occ::gsid_pwrsys)
                     continue;
                 add_event(entries, occ_num, loc, os);
             }
@@ -1004,7 +1057,7 @@ namespace nrgprf
     }
 
     error reader_impl::read_single_occ(const event_data& ed,
-        occ::sensor_buffers& sbuffs,
+        sensor_buffers& sbuffs,
         sample& s) const
     {
         if (error err = get_sensor_buffers(*_file, ed.occ_num, sbuffs))
@@ -1014,7 +1067,7 @@ namespace nrgprf
             size_t stride = ed.occ_num * nrgprf::max_domains +
                 sensor_gsid_to_index(entry.gsid);
 
-            ::occ::sensor_structure_v1_sample record;
+            occ::sensor_structure_v1_sample record;
             if (!get_sensor_record(sbuffs, entry, record))
                 return { error_code::READ_ERROR, "Both ping and pong buffers are not valid" };
 
