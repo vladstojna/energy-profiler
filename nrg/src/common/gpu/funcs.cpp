@@ -4,35 +4,31 @@
 
 #include <util/concat.hpp>
 
-#include <sstream>
+#include <stdexcept>
 
 namespace
 {
-    template<typename T>
-    std::string to_string(const T& item)
+    [[noreturn]]
+    void invalid_readings_type()
     {
-        std::ostringstream os;
-        os << item;
-        return os.str();
+        throw std::logic_error("invalid readings_type value");
+    }
+
+    std::string to_string(nrgprf::readings_type::type rt)
+    {
+        switch (rt)
+        {
+        case nrgprf::readings_type::power:
+            return "power";
+        case nrgprf::readings_type::energy:
+            return "energy";
+        }
+        invalid_readings_type();
     }
 }
 
 namespace nrgprf
 {
-    std::ostream& operator<<(std::ostream& os, readings_type::type rt)
-    {
-        switch (rt)
-        {
-        case readings_type::power:
-            os << "power";
-            break;
-        case readings_type::energy:
-            os << "energy";
-            break;
-        }
-        return os;
-    }
-
     std::string event_added(unsigned int dev, readings_type::type rt)
     {
         return fileline(cmmn::concat(
