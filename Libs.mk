@@ -22,6 +22,14 @@ build: clone $(pugixml_build_files)
 clean:
 	rm -rf $(libdir)
 
+.INTERMEDIATE: build_pugixml_procedure
+build_pugixml_procedure: $(libdir)/pugixml
+	installdir=$(shell pwd)/$< && \
+		cd $< && mkdir -p build && cd build && \
+		$(CMAKE) -DCMAKE_INSTALL_PREFIX=$$installdir -DCMAKE_INSTALL_LIBDIR=lib \
+			-Wdev -Wdeprecated ..
+	$(MAKE) -C $</build install
+
 $(libdir):
 	@mkdir -p $@
 
@@ -31,13 +39,7 @@ $(libdir)/pugixml: | $(libdir)
 		tar xf pugixml-$(pugixml_ver).tar.gz --one-top-level=$(@F) --strip-components=1 && \
 		rm -f pugixml-$(pugixml_ver).tar.gz
 
-$(pugixml_build_files) &: $(libdir)/pugixml
-	installdir=$(shell pwd)/$< && \
-		cd $< && mkdir -p build && cd build && \
-		$(CMAKE) -DCMAKE_INSTALL_PREFIX=$$installdir -DCMAKE_INSTALL_LIBDIR=lib \
-			-Wdev -Wdeprecated ..
-	$(MAKE) -j -C $</build install
-	touch $(pugixml_build_files)
+$(pugixml_build_files): build_pugixml_procedure
 
 $(libdir)/json: | $(libdir)
 	cd $(libdir) && \
