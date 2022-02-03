@@ -122,15 +122,16 @@ arflags := -crs
 
 # rules -----------------------------------------------------------------------
 
-.PHONY: default remake clean dynamic static
-
+.PHONY: default
 default: dynamic
 
 $(tgt_dir):
 	@mkdir -p $@
 
+.PHONY: dynamic
 dynamic: $(tgt).so
 
+.PHONY: static
 static: $(tgt).a
 
 $(tgt).so: $(obj) | $(tgt_dir)
@@ -148,7 +149,10 @@ $(deps):
 
 include $(wildcard $(deps))
 
-remake: clean default
+.PHONY: remake
+remake: clean
+	$(MAKE) default
 
+.PHONY: clean
 clean:
 	rm -rf $(tgt_dir) $(obj_dir)
