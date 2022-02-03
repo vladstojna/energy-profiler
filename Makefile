@@ -48,17 +48,7 @@ ldflags += -Wl,-rpath='$$ORIGIN/../nrg/lib'
 # rules -----------------------------------------------------------------------
 
 .PHONY: default
-default: libs
-	$(MAKE) $(tgt)
-
-.PHONY: all
-all: libs
-	$(MAKE) -C nrg
-	$(MAKE) $(tgt)
-
-.PHONY: libs
-libs:
-	$(MAKE) -f Libs.mk
+default: $(tgt)
 
 $(tgt_dir):
 	@mkdir -p $@
@@ -86,8 +76,3 @@ remake: clean
 .PHONY: clean
 clean:
 	rm -rf $(tgt_dir) $(obj_dir) $(dep_dir)
-
-# clean everything, including libraries
-.PHONY: purge
-purge: clean
-	$(MAKE) -f Libs.mk clean
