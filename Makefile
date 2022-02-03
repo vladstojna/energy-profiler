@@ -2,10 +2,12 @@ cc := g++
 std := c++17
 override cpp +=
 
+LIB_PREFIX ?= lib
+
 # directories
 src_dir := src
 tgt_dir := bin
-lib_dir := lib
+lib_dir := $(LIB_PREFIX)
 obj_dir := obj
 dep_dir := $(obj_dir)/.deps
 
