@@ -61,7 +61,11 @@ namespace tep
 
         FUNC_INVALID_COMP_UNIT,
         FUNC_NO_NAME,
-        FUNC_INVALID_NAME
+        FUNC_INVALID_NAME,
+
+        ADDR_RANGE_NO_START,
+        ADDR_RANGE_NO_END,
+        ADDR_RANGE_INVALID_VALUE,
     };
 
     class cfg_error
@@ -100,6 +104,19 @@ namespace tep
         {
             cpu,
             gpu
+        };
+
+        class address_range
+        {
+        private:
+            uint32_t _start;
+            uint32_t _end;
+
+        public:
+            address_range(uint32_t, uint32_t);
+
+            uint32_t start() const noexcept;
+            uint32_t end() const noexcept;
         };
 
         class position
@@ -157,6 +174,7 @@ namespace tep
                     position end;
                 } _positions;
                 function _func;
+                address_range _addr;
             };
 
             void copy_data(const bounds& other);
@@ -165,9 +183,9 @@ namespace tep
         public:
             template<typename S, typename E>
             bounds(S&& s, E&& e);
-
             bounds(const function& func);
             bounds(function&& func);
+            bounds(address_range);
 
             ~bounds();
 
@@ -179,10 +197,12 @@ namespace tep
 
             bool has_positions() const;
             bool has_function() const;
+            bool has_address_range() const;
 
             const position& start() const;
             const position& end() const;
             const function& func() const;
+            address_range addr_range() const;
 
             friend std::ostream& operator<<(std::ostream&, const bounds&);
         };
@@ -325,6 +345,7 @@ namespace tep
     std::ostream& operator<<(std::ostream& os, const config_data::section::target_cont& tgts);
     std::ostream& operator<<(std::ostream& os, const config_data::profiling_method& pm);
     std::ostream& operator<<(std::ostream& os, const config_data::params& p);
+    std::ostream& operator<<(std::ostream& os, const config_data::address_range& ar);
     std::ostream& operator<<(std::ostream& os, const config_data::position& p);
     std::ostream& operator<<(std::ostream& os, const config_data::function& f);
     std::ostream& operator<<(std::ostream& os, const config_data::bounds& b);
@@ -333,6 +354,7 @@ namespace tep
     std::ostream& operator<<(std::ostream& os, const config_data& cd);
 
     bool operator==(const config_data::params& lhs, const config_data::params& rhs);
+    bool operator==(const config_data::address_range& lhs, const config_data::address_range& rhs);
     bool operator==(const config_data::position& lhs, const config_data::position& rhs);
     bool operator==(const config_data::function& lhs, const config_data::function& rhs);
     bool operator==(const config_data::bounds& lhs, const config_data::bounds& rhs);

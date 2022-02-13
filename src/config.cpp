@@ -6,6 +6,8 @@
 #include <cassert>
 #include <cstring>
 #include <iostream>
+#include <iomanip>
+#include <charconv>
 
 #include <pugixml.hpp>
 #include <nonstd/expected.hpp>
@@ -66,8 +68,8 @@ constexpr static const char* error_messages[] =
 
     "bounds: node <start></start> not found",
     "bounds: node <end></end> not found",
-    "bounds: cannot be empty: must contain either <func/> or <start/> and <end/>",
-    "bounds: too many nodes: must contain either <func/> or <start/> and <end/>",
+    "bounds: cannot be empty: must contain <func/>, <start/> and <end/>, or <addr/>",
+    "bounds: too many nodes: must contain <func/>, <start/> and <end/>, or <addr/>",
 
     "start/end: node <cu></cu> or attribute 'cu' not found",
     "start/end: node <line></line> or attribute 'line' not found",
@@ -76,10 +78,14 @@ constexpr static const char* error_messages[] =
 
     "func: invalid compilation unit: cannot be empty",
     "func: attribute 'name' not found",
-    "func: invalid name: cannot be empty"
+    "func: invalid name: cannot be empty",
+
+    "addr: no start address",
+    "addr: no end address",
+    "addr: invalid address value; must be positive, hexadecimal and begin with 0x or 0X",
 };
 
-static_assert(static_cast<size_t>(cfg_error_code::FUNC_INVALID_NAME) + 1 ==
+static_assert(static_cast<size_t>(cfg_error_code::ADDR_RANGE_INVALID_VALUE) + 1 ==
     sizeof(error_messages) / sizeof(error_messages[0]),
     "cfg_error_code number of entries does not match message array size");
 
@@ -325,6 +331,45 @@ static cfg_expected<config_data::function> get_function(const pugi::xml_node& fu
     return config_data::function(std::move(cu), name_attr.value());
 }
 
+static cfg_expected<uint32_t> get_address_value(const pugi::xml_attribute& attr)
+{
+    using rettype = cfg_expected<uint32_t>;
+    using namespace pugi;
+    auto valid_prefix = [](std::string_view val)
+    {
+        return val[0] == '0' && (val[1] == 'x' || val[1] == 'X');
+    };
+    if (attr.empty())
+        return rettype(nonstd::unexpect, cfg_error_code::ADDR_RANGE_INVALID_VALUE);
+    std::string_view text = attr.value();
+    if (text.size() <= 2 || !valid_prefix(text))
+        return rettype(nonstd::unexpect, cfg_error_code::ADDR_RANGE_INVALID_VALUE);
+    uint32_t value;
+    auto [ptr, ec] = std::from_chars(text.begin() + 2, text.end(), value, 16);
+    if (std::make_error_code(ec))
+        return rettype(nonstd::unexpect, cfg_error_code::ADDR_RANGE_INVALID_VALUE);
+    return value;
+}
+
+static cfg_expected<config_data::address_range> get_address_range(const pugi::xml_node& ar_node)
+{
+    using rettype = cfg_expected<config_data::address_range>;
+    using namespace pugi;
+    xml_attribute start_attr = ar_node.attribute("start");
+    if (!start_attr)
+        return rettype(nonstd::unexpect, cfg_error_code::ADDR_RANGE_NO_START);
+    xml_attribute end_attr = ar_node.attribute("end");
+    if (!end_attr)
+        return rettype(nonstd::unexpect, cfg_error_code::ADDR_RANGE_NO_END);
+    auto start = get_address_value(start_attr);
+    if (!start)
+        return rettype(nonstd::unexpect, std::move(start.error()));
+    auto end = get_address_value(end_attr);
+    if (!end)
+        return rettype(nonstd::unexpect, std::move(end.error()));
+    return config_data::address_range{ *start, *end };
+}
+
 static cfg_expected<config_data::bounds> get_bounds(const pugi::xml_node& bounds)
 {
     using rettype = cfg_expected<config_data::bounds>;
@@ -335,11 +380,19 @@ static cfg_expected<config_data::bounds> get_bounds(const pugi::xml_node& bounds
     xml_node nend = bounds.child("end");
     // <func/>
     xml_node nfunc = bounds.child("func");
+    // <addr/>
+    xml_node naddr = bounds.child("addr");
+
+    if ((nstart && nfunc) || (nend && nfunc) ||
+        (nstart && naddr) || (nend && naddr) ||
+        (nfunc && naddr))
+    {
+        return rettype(nonstd::unexpect, cfg_error_code::BOUNDS_TOO_MANY);
+    }
 
     if (nstart || nend)
     {
-        if (nfunc)
-            return rettype(nonstd::unexpect, cfg_error_code::BOUNDS_TOO_MANY);
+        assert(!nfunc && !naddr);
         if (!nend)
             return rettype(nonstd::unexpect, cfg_error_code::BOUNDS_NO_END);
         if (!nstart)
@@ -360,6 +413,14 @@ static cfg_expected<config_data::bounds> get_bounds(const pugi::xml_node& bounds
         if (!func)
             return rettype(nonstd::unexpect, std::move(func.error()));
         return std::move(*func);
+    }
+    else if (naddr)
+    {
+        assert(!nstart && !nend && !nfunc);
+        auto range = get_address_range(naddr);
+        if (!range)
+            return rettype(nonstd::unexpect, std::move(range.error()));
+        return std::move(*range);
     }
     return rettype(nonstd::unexpect, cfg_error_code::BOUNDS_EMPTY);
 }
@@ -497,6 +558,22 @@ static cfg_expected<config_data::section_group> get_group(const pugi::xml_node& 
 
 // end helper functions
 
+// address_range
+
+config_data::address_range::address_range(uint32_t start, uint32_t end) :
+    _start(start),
+    _end(end)
+{}
+
+uint32_t config_data::address_range::start() const noexcept
+{
+    return _start;
+}
+
+uint32_t config_data::address_range::end() const noexcept
+{
+    return _end;
+}
 
 // position
 
@@ -611,7 +688,8 @@ bool config_data::function::has_cu() const
 enum class config_data::bounds::type
 {
     position,
-    function
+    function,
+    address_range,
 };
 
 void config_data::bounds::copy_data(const bounds& other)
@@ -621,13 +699,15 @@ void config_data::bounds::copy_data(const bounds& other)
     case type::position:
         new (&_positions.start) auto(other._positions.start);
         new (&_positions.end) auto(other._positions.end);
-        break;
+        return;
     case type::function:
         new (&_func) auto(other._func);
-        break;
-    default:
-        assert(false);
+        return;
+    case type::address_range:
+        new (&_addr) auto(other._addr);
+        return;
     }
+    assert(false);
 }
 
 void config_data::bounds::move_data(bounds&& other)
@@ -637,13 +717,15 @@ void config_data::bounds::move_data(bounds&& other)
     case type::position:
         new (&_positions.start) auto(std::move(other._positions.start));
         new (&_positions.end) auto(std::move(other._positions.end));
-        break;
+        return;
     case type::function:
         new (&_func) auto(std::move(other._func));
-        break;
-    default:
-        assert(false);
+        return;
+    case type::address_range:
+        new (&_addr) auto(std::move(other._addr));
+        return;
     }
+    assert(false);
 }
 
 template<typename S, typename E>
@@ -674,6 +756,11 @@ config_data::bounds::bounds(function&& func) :
     _func(std::move(func))
 {}
 
+config_data::bounds::bounds(address_range ar) :
+    _tag(type::address_range),
+    _addr(ar)
+{}
+
 config_data::bounds::~bounds()
 {
     switch (_tag)
@@ -681,13 +768,15 @@ config_data::bounds::~bounds()
     case type::position:
         _positions.start.~position();
         _positions.end.~position();
-        break;
+        return;
     case type::function:
         _func.~function();
-        break;
-    default:
-        assert(false);
+        return;
+    case type::address_range:
+        _addr.~address_range();
+        return;
     }
+    assert(false);
 }
 
 config_data::bounds::bounds(const bounds& other) :
@@ -704,23 +793,29 @@ config_data::bounds::bounds(bounds&& other) :
 
 config_data::bounds& config_data::bounds::operator=(const bounds& other)
 {
-    if (_tag != other._tag)
+    if (this != &other)
     {
-        this->~bounds();
-        _tag = other._tag;
+        if (_tag != other._tag)
+        {
+            this->~bounds();
+            _tag = other._tag;
+        }
+        copy_data(other);
     }
-    copy_data(other);
     return *this;
 }
 
 config_data::bounds& config_data::bounds::operator=(bounds&& other)
 {
-    if (_tag != other._tag)
+    if (this != &other)
     {
-        this->~bounds();
-        _tag = std::move(other._tag);
+        if (_tag != other._tag)
+        {
+            this->~bounds();
+            _tag = std::move(other._tag);
+        }
+        move_data(std::move(other));
     }
-    move_data(std::move(other));
     return *this;
 }
 
@@ -732,6 +827,11 @@ bool config_data::bounds::has_positions() const
 bool config_data::bounds::has_function() const
 {
     return _tag == type::function;
+}
+
+bool config_data::bounds::has_address_range() const
+{
+    return _tag == type::address_range;
 }
 
 const config_data::position& config_data::bounds::start() const
@@ -752,6 +852,11 @@ const config_data::function& config_data::bounds::func() const
     return _func;
 }
 
+config_data::address_range config_data::bounds::addr_range() const
+{
+    assert(_tag == type::address_range);
+    return _addr;
+}
 
 // params
 
@@ -1094,6 +1199,14 @@ std::ostream& tep::operator<<(std::ostream& os, const config_data::profiling_met
     return os;
 }
 
+std::ostream& tep::operator<<(std::ostream& os, const config_data::address_range& a)
+{
+    std::ios::fmtflags flags(os.flags());
+    os << std::hex << "0x" << a.start() << "-0x" << a.end();
+    os.flags(flags);
+    return os;
+}
+
 std::ostream& tep::operator<<(std::ostream& os, const config_data::position& p)
 {
     os << p.compilation_unit() << ":" << p.line();
@@ -1118,8 +1231,9 @@ std::ostream& tep::operator<<(std::ostream& os, const config_data::bounds& b)
     case config_data::bounds::type::function:
         os << b.func();
         break;
-    default:
-        assert(false);
+    case config_data::bounds::type::address_range:
+        os << b.addr_range();
+        break;
     }
     return os;
 }
@@ -1171,6 +1285,11 @@ bool tep::operator==(const config_data::params& lhs, const config_data::params& 
     return lhs.domain_mask() == rhs.domain_mask() &&
         lhs.socket_mask() == rhs.socket_mask() &&
         lhs.device_mask() == rhs.device_mask();
+}
+
+bool tep::operator==(const config_data::address_range& lhs, const config_data::address_range& rhs)
+{
+    return lhs.start() == rhs.start() && lhs.end() == rhs.end();
 }
 
 bool tep::operator==(const config_data::position& lhs, const config_data::position& rhs)
