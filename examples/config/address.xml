@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="utf-8"?>
+
+<config>
+    <sections>
+        <!-- read from the CPU energy/power interfaces -->
+        <section target="cpu">
+            <bounds>
+                <!--
+                    measure the code between addresses 0x1000 and 0x1200;
+                    it is the programmer's responsibility to ensure the
+                    addresses are valid, reachable and executed in the correct
+                    order: 'start' first, followed by 'end'
+                -->
+                <addr start="0x1000" end="0x1200"/>
+            </bounds>
+            <method>profile</method>
+            <interval>100</interval>
+        </section>
+    </sections>
+</config>
