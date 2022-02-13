@@ -692,10 +692,9 @@ tracer_error profiler::insert_traps_address_range(
             start,
             start_trap(
                 *origw,
-                pos::address{ start.val() },
+                pos::address{ start.val() - entrypoint },
                 sec.allow_concurrency(),
                 creator_from_section(_readers, sec)));
-
         if (!insert_res.second)
         {
             log::logline(log::error, "[%d] trap @ 0x%" PRIxPTR " (offset 0x%" PRIxPTR ") already exists",
@@ -710,7 +709,8 @@ tracer_error profiler::insert_traps_address_range(
     if (!origw)
         return std::move(origw.error());
     {
-        auto insert_res = _traps.insert(end, end_trap(*origw, pos::address{ end.val() }, start));
+        auto insert_res = _traps.insert(end,
+            end_trap(*origw, pos::address{ end.val() - entrypoint }, start));
         if (!insert_res.second)
         {
             log::logline(log::error, "[%d] trap @ 0x%" PRIxPTR " (offset 0x%" PRIxPTR ") already exists",
