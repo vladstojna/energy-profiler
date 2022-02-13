@@ -7,366 +7,305 @@
 #include <set>
 #include <string>
 #include <vector>
+#include <optional>
+#include <variant>
+#include <memory>
 
 #include <util/expectedfwd.hpp>
 
 namespace tep
 {
-
-    // error handling
-
-    enum class cfg_error_code
+    namespace cfg
     {
-        SUCCESS = 0,
+        struct config_entry;
 
-        CONFIG_IO_ERROR,
-        CONFIG_NOT_FOUND,
-        CONFIG_OUT_OF_MEM,
-        CONFIG_BAD_FORMAT,
-        CONFIG_NO_CONFIG,
-
-        SEC_NO_BOUNDS,
-        SEC_NO_FREQ,
-        SEC_INVALID_TARGET,
-        SEC_INVALID_LABEL,
-        SEC_INVALID_EXTRA,
-        SEC_INVALID_FREQ,
-        SEC_INVALID_INTERVAL,
-        SEC_INVALID_METHOD,
-        SEC_INVALID_EXECS,
-        SEC_INVALID_SAMPLES,
-        SEC_INVALID_DURATION,
-        SEC_LABEL_ALREADY_EXISTS,
-        SEC_BOTH_SHORT_AND_LONG,
-        SEC_INVALID_METHOD_FOR_SHORT,
-
-        GROUP_EMPTY,
-        GROUP_INVALID_LABEL,
-        GROUP_LABEL_ALREADY_EXISTS,
-        GROUP_INVALID_EXTRA,
-
-        PARAM_INVALID_DOMAIN_MASK,
-        PARAM_INVALID_SOCKET_MASK,
-        PARAM_INVALID_DEVICE_MASK,
-
-        BOUNDS_NO_START,
-        BOUNDS_NO_END,
-        BOUNDS_EMPTY,
-        BOUNDS_TOO_MANY,
-
-        POS_NO_COMP_UNIT,
-        POS_NO_LINE,
-        POS_INVALID_COMP_UNIT,
-        POS_INVALID_LINE,
-
-        FUNC_INVALID_COMP_UNIT,
-        FUNC_NO_NAME,
-        FUNC_INVALID_NAME,
-
-        ADDR_RANGE_NO_START,
-        ADDR_RANGE_NO_END,
-        ADDR_RANGE_INVALID_VALUE,
-    };
-
-    class cfg_error
-    {
-    private:
-        cfg_error_code _code;
-
-    public:
-        cfg_error(cfg_error_code code) :
-            _code(code)
-        {}
-
-        cfg_error_code code() const
+        class error
         {
-            return _code;
-        }
+        public:
+            enum class code_t : int32_t;
 
-        operator bool() const
-        {
-            return _code != cfg_error_code::SUCCESS;
-        }
-    };
-
-    // structs
-
-    class config_data
-    {
-    public:
-        enum class profiling_method
-        {
-            energy_profile,
-            energy_total
-        };
-
-        enum class target
-        {
-            cpu,
-            gpu
-        };
-
-        class address_range
-        {
-        private:
-            uint32_t _start;
-            uint32_t _end;
+            static error success() noexcept;
 
         public:
-            address_range(uint32_t, uint32_t);
+            error(code_t code) noexcept;
+            explicit operator bool() const noexcept;
+            code_t code() const noexcept;
 
-            uint32_t start() const noexcept;
-            uint32_t end() const noexcept;
+        private:
+            code_t _code;
         };
 
-        class position
-        {
-        private:
-            std::string _cu;
-            uint32_t _line;
+        template<typename T>
+        using result = nonstd::expected<T, error>;
 
+        enum class error::code_t : int32_t
+        {
+            success,
+            config_io_error,
+            config_not_found,
+            config_out_of_mem,
+            config_bad_format,
+            config_no_config,
+            sec_no_bounds,
+            sec_no_freq,
+            sec_no_interval,
+            sec_no_method,
+            sec_invalid_target,
+            sec_invalid_label,
+            sec_invalid_extra,
+            sec_invalid_freq,
+            sec_invalid_interval,
+            sec_invalid_method,
+            sec_invalid_execs,
+            sec_invalid_samples,
+            sec_invalid_duration,
+            sec_label_already_exists,
+            sec_both_short_and_long,
+            sec_invalid_method_for_short,
+            group_empty,
+            group_invalid_label,
+            group_label_already_exists,
+            group_invalid_extra,
+            param_invalid_domain_mask,
+            param_invalid_socket_mask,
+            param_invalid_device_mask,
+            bounds_no_start,
+            bounds_no_end,
+            bounds_empty,
+            bounds_too_many,
+            pos_no_comp_unit,
+            pos_no_line,
+            pos_invalid_comp_unit,
+            pos_invalid_line,
+            func_invalid_comp_unit,
+            func_no_name,
+            func_invalid_name,
+            addr_range_no_start,
+            addr_range_no_end,
+            addr_range_invalid_value,
+        };
+
+        enum class target : uint32_t
+        {
+            cpu = 1 << 0,
+            gpu = 1 << 1,
+        };
+
+        bool target_valid(target) noexcept;
+        target target_next(target) noexcept;
+
+        target operator|(target, target) noexcept;
+        target operator&(target, target) noexcept;
+        target operator^(target, target) noexcept;
+        target operator~(target) noexcept;
+        target& operator|=(target&, target) noexcept;
+        target& operator&=(target&, target) noexcept;
+        target& operator^=(target&, target) noexcept;
+
+        template<typename T>
+        struct key
+        {
+            friend T;
+        private:
+            explicit key() = default;
+        };
+
+        struct section_t;
+
+        struct params_t
+        {
+            std::optional<uint32_t> domain_mask;
+            std::optional<uint32_t> socket_mask;
+            std::optional<uint32_t> device_mask;
+
+            static result<params_t> create(const config_entry&) noexcept;
+
+        private:
+            params_t(const config_entry&, error&) noexcept;
+        };
+
+        struct address_range_t
+        {
+            uint32_t start;
+            uint32_t end;
+
+            static result<address_range_t> create(const config_entry&) noexcept;
+
+        private:
+            address_range_t(const config_entry&, error&) noexcept;
+        };
+
+        struct position_t
+        {
+            std::string compilation_unit;
+            uint32_t line;
+
+            static result<position_t> create(const config_entry&);
+
+        private:
+            position_t(const config_entry&, error&);
+        };
+
+        struct function_t
+        {
+            std::optional<std::string> compilation_unit;
+            std::string name;
+
+            static result<function_t> create(const config_entry&);
+
+        private:
+            function_t(const config_entry&, error&);
+        };
+
+        class bounds_t
+        {
         public:
-            position(const std::string& cu, uint32_t ln);
-            position(std::string&& cu, uint32_t ln);
-            position(const char* cu, uint32_t ln);
+            using position_range_t
+                = std::pair<position_t, position_t>;
 
-            const std::string& compilation_unit() const;
-            uint32_t line() const;
-        };
+            static result<bounds_t> create(const config_entry&, key<section_t>);
 
-        class function
-        {
-        private:
-            std::string _cu;
-            std::string _name;
-
-        public:
-            template<typename C, typename N>
-            function(C&& cu, N&& name);
-            template<typename N>
-            function(const char* cu, N&& name);
-            template<typename C>
-            function(C&& cu, const char* name);
-
-            function(const char* cu, const char* name);
-
-            function(const std::string& name);
-            function(std::string&& name);
-            function(const char* name);
-
-            const std::string& cu() const;
-            const std::string& name() const;
-
-            bool has_cu() const;
-        };
-
-        class bounds
-        {
-        private:
-            enum class type;
-
-            type _tag;
-            union
+            template<typename T>
+            bool holds() const noexcept
             {
-                struct
-                {
-                    position start;
-                    position end;
-                } _positions;
-                function _func;
-                address_range _addr;
-            };
+                return std::holds_alternative<T>(_value);
+            }
 
-            void copy_data(const bounds& other);
-            void move_data(bounds&& other);
+            template<typename T>
+            const T& get() const
+            {
+                return std::get<T>(_value);
+            }
 
-        public:
-            template<typename S, typename E>
-            bounds(S&& s, E&& e);
-            bounds(const function& func);
-            bounds(function&& func);
-            bounds(address_range);
+            bounds_t(const config_entry&, error&, key<section_t>);
 
-            ~bounds();
+            friend std::ostream& operator<<(std::ostream&, const bounds_t&);
+            friend bool operator==(const bounds_t&, const bounds_t&);
 
-            bounds(const bounds& other);
-            bounds(bounds&& other);
-
-            bounds& operator=(const bounds& other);
-            bounds& operator=(bounds&& other);
-
-            bool has_positions() const;
-            bool has_function() const;
-            bool has_address_range() const;
-
-            const position& start() const;
-            const position& end() const;
-            const function& func() const;
-            address_range addr_range() const;
-
-            friend std::ostream& operator<<(std::ostream&, const bounds&);
+        private:
+            using holder_type = std::variant<
+                std::monostate,
+                address_range_t,
+                position_range_t,
+                function_t
+            >;
+            holder_type _value;
         };
 
-        class params
+        struct method_total_t
         {
+            bool short_section;
+
+            static result<method_total_t> create(const config_entry&) noexcept;
+
         private:
-            unsigned int _domain_mask;
-            unsigned int _socket_mask;
-            unsigned int _device_mask;
-
-        public:
-            params();
-            params(unsigned int dommask, unsigned int sktmask, unsigned int devmask);
-
-            unsigned int domain_mask() const;
-            unsigned int socket_mask() const;
-            unsigned int device_mask() const;
+            method_total_t(const config_entry&, error&) noexcept;
         };
 
-        class section
+        struct method_profile_t
         {
-        public:
-            using target_cont = std::set<config_data::target>;
+            std::chrono::milliseconds interval;
+            std::optional<uint32_t> samples;
+
+            static result<method_profile_t> create(const config_entry&) noexcept;
 
         private:
-            std::string _label;
-            std::string _extra;
-            target_cont _targets;
-            config_data::profiling_method _method;
-            config_data::bounds _bounds;
-            std::chrono::milliseconds _interval;
-            uint32_t _executions;
-            uint32_t _samples;
-            bool _concurrency;
-            bool _isshort;
-
-        public:
-            template<typename N, typename E, typename B, typename I, typename T>
-            section(
-                N&& nm,
-                E&& extr,
-                T&& tgts,
-                config_data::profiling_method mthd,
-                B&& bnd,
-                I&& intrv,
-                uint32_t execs,
-                uint32_t smp,
-                bool concurrency,
-                bool is_short)
-                :
-                _label(std::forward<N>(nm)),
-                _extra(std::forward<E>(extr)),
-                _targets(std::forward<T>(tgts)),
-                _method(mthd),
-                _bounds(std::forward<B>(bnd)),
-                _interval(std::forward<I>(intrv)),
-                _executions(execs),
-                _samples(smp),
-                _concurrency(concurrency),
-                _isshort(is_short)
-            {}
-
-            const std::string& label() const;
-            const std::string& extra() const;
-
-            const target_cont& targets() const;
-            config_data::profiling_method method() const;
-            const config_data::bounds& bounds() const;
-
-            const std::chrono::milliseconds& interval() const;
-            uint32_t executions() const;
-            uint32_t samples() const;
-
-            bool has_label() const;
-            bool has_extra() const;
-
-            bool allow_concurrency() const;
-            bool is_short() const;
+            method_profile_t(const config_entry&, error&) noexcept;
         };
 
-        class section_group
+        struct misc_attributes_t
         {
-        private:
-            std::string _label;
-            std::string _extra;
-            std::vector<section> _sections;
+            template<typename T>
+            bool holds() const noexcept
+            {
+                return std::holds_alternative<T>(_value);
+            }
 
-        public:
-            section_group(const std::string& label, const std::string& extra);
-            section_group(const std::string& label, std::string&& extra);
-            section_group(std::string&& label, const std::string& extra);
-            section_group(std::string&& label, std::string&& extra);
+            template<typename T>
+            const T& get() const
+            {
+                return std::get<T>(_value);
+            }
 
-            const std::string& label() const;
-            const std::string& extra() const;
-            const std::vector<section>& sections() const;
+            static result<misc_attributes_t> create(const config_entry&, key<section_t>);
 
-            bool has_label() const;
-            bool has_extra() const;
+            misc_attributes_t(const config_entry&, error&, key<section_t>);
 
-            bool has_section_with(config_data::target) const;
-            bool has_section_with(config_data::profiling_method) const;
-
-            bool push_back(const section& sec);
-            bool push_back(section&& sec);
+            friend std::ostream& operator<<(std::ostream&, const misc_attributes_t&);
+            friend bool operator==(const misc_attributes_t&, const misc_attributes_t&);
 
         private:
-            template<typename Sec>
-            bool push_back_impl(Sec&& sec);
+            using holder_type = std::variant<
+                std::monostate,
+                method_total_t,
+                method_profile_t
+            >;
+            holder_type _value;
         };
 
-    private:
-        config_data::params _parameters;
-        std::vector<section_group> _groups;
+        struct section_t
+        {
+            std::optional<std::string> label;
+            std::optional<std::string> extra;
+            target targets;
+            misc_attributes_t misc;
+            bounds_t bounds;
+            bool allow_concurrency;
 
-    public:
-        config_data(const config_data::params& params);
+            static result<section_t> create(const config_entry&);
 
-        const config_data::params& parameters() const;
-        const std::vector<section_group>& groups() const;
+        private:
+            section_t(const config_entry&, error&);
+        };
 
-        std::vector<const section*> flat_sections() const&;
+        struct group_t
+        {
+            std::optional<std::string> label;
+            std::optional<std::string> extra;
+            std::vector<section_t> sections;
 
-        bool has_section_with(config_data::target) const;
-        bool has_section_with(config_data::profiling_method) const;
+            static result<group_t> create(const config_entry&);
 
-        bool push_back(const section_group& grp);
-        bool push_back(section_group&& grp);
+        private:
+            group_t(const config_entry&, error&);
+        };
 
-    private:
-        template<typename Group>
-        bool push_back_impl(Group&& grp);
-    };
+        struct config_t
+        {
+            const std::optional<params_t>& parameters() const noexcept;
+            const std::vector<group_t>& groups() const noexcept;
 
-    // operator overloads
+            static result<config_t> create(std::istream&);
 
-    std::ostream& operator<<(std::ostream& os, const cfg_error& res);
-    std::ostream& operator<<(std::ostream& os, const config_data::target& tgt);
-    std::ostream& operator<<(std::ostream& os, const config_data::section::target_cont& tgts);
-    std::ostream& operator<<(std::ostream& os, const config_data::profiling_method& pm);
-    std::ostream& operator<<(std::ostream& os, const config_data::params& p);
-    std::ostream& operator<<(std::ostream& os, const config_data::address_range& ar);
-    std::ostream& operator<<(std::ostream& os, const config_data::position& p);
-    std::ostream& operator<<(std::ostream& os, const config_data::function& f);
-    std::ostream& operator<<(std::ostream& os, const config_data::bounds& b);
-    std::ostream& operator<<(std::ostream& os, const config_data::section& s);
-    std::ostream& operator<<(std::ostream& os, const config_data::section_group& g);
-    std::ostream& operator<<(std::ostream& os, const config_data& cd);
+        private:
+            struct impl;
+            config_t(std::istream& is, error& e);
 
-    bool operator==(const config_data::params& lhs, const config_data::params& rhs);
-    bool operator==(const config_data::address_range& lhs, const config_data::address_range& rhs);
-    bool operator==(const config_data::position& lhs, const config_data::position& rhs);
-    bool operator==(const config_data::function& lhs, const config_data::function& rhs);
-    bool operator==(const config_data::bounds& lhs, const config_data::bounds& rhs);
-    bool operator==(const config_data::section& lhs, const config_data::section& rhs);
-    bool operator==(const config_data::section_group& lhs, const config_data::section_group& rhs);
+            std::shared_ptr<const impl> _impl;
+        };
 
-    // types
+        std::ostream& operator<<(std::ostream&, const error&);
+        std::ostream& operator<<(std::ostream&, const target&);
+        std::ostream& operator<<(std::ostream&, const params_t&);
+        std::ostream& operator<<(std::ostream&, const address_range_t&);
+        std::ostream& operator<<(std::ostream&, const function_t&);
+        std::ostream& operator<<(std::ostream&, const position_t&);
+        std::ostream& operator<<(std::ostream&, const bounds_t::position_range_t&);
+        std::ostream& operator<<(std::ostream&, const bounds_t&);
+        std::ostream& operator<<(std::ostream&, const method_total_t&);
+        std::ostream& operator<<(std::ostream&, const method_profile_t&);
+        std::ostream& operator<<(std::ostream&, const misc_attributes_t&);
+        std::ostream& operator<<(std::ostream&, const section_t&);
+        std::ostream& operator<<(std::ostream&, const group_t&);
+        std::ostream& operator<<(std::ostream&, const config_t&);
 
-    using cfg_result = nonstd::expected<config_data, cfg_error>;
-
-    // functions
-
-    cfg_result load_config(std::istream& is);
-
+        bool operator==(const params_t&, const params_t&);
+        bool operator==(const address_range_t&, const address_range_t&);
+        bool operator==(const position_t&, const position_t&);
+        bool operator==(const function_t&, const function_t&);
+        bool operator==(const bounds_t&, const bounds_t&);
+        bool operator==(const misc_attributes_t&, const misc_attributes_t&);
+        bool operator==(const section_t&, const section_t&);
+        bool operator==(const group_t&, const group_t&);
+    }
 }
