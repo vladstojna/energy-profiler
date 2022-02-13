@@ -27,13 +27,13 @@ Before building the library, prepare the required dependency
 by running (in the top-level directory):
 
 ```shell
-make lib/expected
+make -f Libs.mk lib/expected
 ```
 
-Or (in the current directory):
+Or (in the `nrg` directory):
 
 ```shell
-make -C .. lib/expected
+make -C .. -f Libs.mk lib/expected
 ```
 
 Build the library (dynamic), execute:
@@ -101,6 +101,7 @@ The building procedure will create `libnrg.so` and/or `libnrg.a` in `lib`.
 Basic example on x86_64:
 
 ```cpp
+error err = error::success();
 // construct reader of package sensors of socket 0
 reader_rapl reader{ locmask::pkg, 0x1, err };
 if (err)

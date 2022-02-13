@@ -37,20 +37,26 @@ Make sure to build [`libnrg`](nrg/README.md) before proceeding further.
 
 ## Building the Profiler
 
-To build the profiler, execute:
+Build the dependency libraries:
+
+```shell
+make -f Libs.mk
+```
+
+Build the profiler:
 
 ```shell
 make
 ```
 
-To generate a debug build, execute:
+Generate a debug build:
 
 ```shell
 make DEBUG=1
 ```
 
 Additionally, some options are provided as preprocessor definitions.
-To enable them, use `make` with the `cpp` argument:
+Enable them by running `make` with the `cpp` argument:
 
 ```shell
 make cpp="MY_MACRO_DEFINITION"
@@ -62,13 +68,7 @@ Supported preprocessor definitions are:
   (requires `libdwarf` and is disabled by default)
 * `NO_ASLR` - disable ASLR for the target executable (enabled by default)
 
-Build just the dependencies:
-
-```shell
-make libs
-```
-
-Running `make` will create an executable `profiler` in `bin`.
+The building procedure will generate an executable `profiler` in `bin`.
 
 ## Examples
 
