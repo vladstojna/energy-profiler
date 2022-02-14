@@ -105,6 +105,18 @@ namespace nlohmann
         }
     };
 
+    template<>
+    struct adl_serializer<std::optional<std::string>>
+    {
+        static void to_json(json& j, const std::optional<std::string>& x)
+        {
+            if (x)
+                j = *x;
+            else
+                j = nullptr;
+        }
+    };
+
 #if defined NRG_X86_64
     template<>
     struct adl_serializer<nrgprf::sensor_value>
@@ -156,16 +168,8 @@ namespace tep
     {
         using json = nlohmann::json;
 
-        if (so.label().empty())
-            j["label"] = nullptr;
-        else
-            j["label"] = so.label();
-
-        if (so.extra().empty())
-            j["extra"] = nullptr;
-        else
-            j["extra"] = so.extra();
-
+        j["label"] = so.label();
+        j["extra"] = so.extra();
         json& execs = j["executions"] = nlohmann::json::array();
         for (const auto& pe : so.executions())
         {
@@ -180,14 +184,8 @@ namespace tep
 
     static void to_json(nlohmann::json& j, const group_output& go)
     {
-        if (go.label().empty())
-            j["label"] = nullptr;
-        else
-            j["label"] = go.label();
-        if (go.extra().empty())
-            j["extra"] = nullptr;
-        else
-            j["extra"] = go.extra();
+        j["label"] = go.label();
+        j["extra"] = go.extra();
         for (const auto& so : go.sections())
             j["sections"].emplace_back(so);
     }
@@ -315,32 +313,14 @@ const readings_output& idle_output::readings_out() const
     return *_rout;
 }
 
-section_output::section_output(std::unique_ptr<readings_output>&& rout,
-    std::string_view label, std::string_view extra) :
+section_output::section_output(
+    std::unique_ptr<readings_output> rout,
+    std::optional<std::string_view> label,
+    std::optional<std::string_view> extra)
+    :
     _rout(std::move(rout)),
-    _label(label),
-    _extra(extra)
-{}
-
-section_output::section_output(std::unique_ptr<readings_output>&& rout,
-    std::string_view label, std::string&& extra) :
-    _rout(std::move(rout)),
-    _label(label),
-    _extra(std::move(extra))
-{}
-
-section_output::section_output(std::unique_ptr<readings_output>&& rout,
-    std::string&& label, std::string_view extra) :
-    _rout(std::move(rout)),
-    _label(std::move(label)),
-    _extra(extra)
-{}
-
-section_output::section_output(std::unique_ptr<readings_output>&& rout,
-    std::string&& label, std::string&& extra) :
-    _rout(std::move(rout)),
-    _label(std::move(label)),
-    _extra(std::move(extra))
+    _label(label ? std::optional<std::string>(*label) : std::nullopt),
+    _extra(extra ? std::optional<std::string>(*extra) : std::nullopt)
 {}
 
 position_exec& section_output::push_back(position_exec&& pe)
@@ -354,12 +334,12 @@ const readings_output& section_output::readings_out() const
     return *_rout;
 }
 
-const std::string& section_output::label() const
+const std::optional<std::string>& section_output::label() const
 {
     return _label;
 }
 
-const std::string& section_output::extra() const
+const std::optional<std::string>& section_output::extra() const
 {
     return _extra;
 }
@@ -369,9 +349,12 @@ const std::vector<position_exec>& section_output::executions() const
     return _executions;
 }
 
-group_output::group_output(std::string_view label, std::string_view extra) :
-    _label(label),
-    _extra(extra)
+group_output::group_output(
+    std::optional<std::string_view> label,
+    std::optional<std::string_view> extra)
+    :
+    _label(label ? std::optional<std::string>(*label) : std::nullopt),
+    _extra(extra ? std::optional<std::string>(*extra) : std::nullopt)
 {}
 
 section_output& group_output::push_back(section_output&& so)
@@ -379,12 +362,12 @@ section_output& group_output::push_back(section_output&& so)
     return _sections.emplace_back(std::move(so));
 }
 
-const std::string& group_output::label() const
+const std::optional<std::string>& group_output::label() const
 {
     return _label;
 }
 
-const std::string& group_output::extra() const
+const std::optional<std::string>& group_output::extra() const
 {
     return _extra;
 }

@@ -5,6 +5,8 @@
 #include "sampler.hpp"
 #include "trap.hpp"
 
+#include <optional>
+
 namespace tep
 {
 
@@ -67,28 +69,21 @@ namespace tep
     {
     private:
         std::unique_ptr<readings_output> _rout;
-        std::string _label;
-        std::string _extra;
+        std::optional<std::string> _label;
+        std::optional<std::string> _extra;
         std::vector<position_exec> _executions;
 
     public:
-        section_output(std::unique_ptr<readings_output>&& rout,
-            std::string_view label, std::string_view extra);
-
-        section_output(std::unique_ptr<readings_output>&& rout,
-            std::string_view label, std::string&& extra);
-
-        section_output(std::unique_ptr<readings_output>&& rout,
-            std::string&& label, std::string_view extra);
-
-        section_output(std::unique_ptr<readings_output>&& rout,
-            std::string&& label, std::string&& extra);
+        section_output(
+            std::unique_ptr<readings_output> rout,
+            std::optional<std::string_view> label,
+            std::optional<std::string_view> extra);
 
         position_exec& push_back(position_exec&& pe);
 
         const readings_output& readings_out() const;
-        const std::string& label() const;
-        const std::string& extra() const;
+        const std::optional<std::string>& label() const;
+        const std::optional<std::string>& extra() const;
         const std::vector<position_exec>& executions() const;
     };
 
@@ -98,17 +93,19 @@ namespace tep
         using container = std::vector<section_output>;
 
     private:
-        std::string _label;
-        std::string _extra;
+        std::optional<std::string> _label;
+        std::optional<std::string> _extra;
         container _sections;
 
     public:
-        group_output(std::string_view label, std::string_view extra);
+        group_output(
+            std::optional<std::string_view> label,
+            std::optional<std::string_view> extra);
 
         section_output& push_back(section_output&& so);
 
-        const std::string& label() const;
-        const std::string& extra() const;
+        const std::optional<std::string>& label() const;
+        const std::optional<std::string>& extra() const;
 
         container& sections();
         const container& sections() const;

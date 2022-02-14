@@ -188,11 +188,11 @@ namespace
     template<typename Container, typename Func>
     typename Container::iterator find_or_insert_output(
         Container& cont,
-        const std::string& label,
+        std::optional<std::string_view> label,
         Func func)
     {
         auto it = std::find_if(cont.begin(), cont.end(),
-            [&label](const typename Container::value_type& val)
+            [label](const typename Container::value_type& val)
             {
                 return label == val.label();
             });
@@ -215,19 +215,19 @@ bool profiler::output_mapping::insert(addr_bounds bounds,
     const cfg::group_t& group,
     const cfg::section_t& sec)
 {
-    auto grp_it = find_or_insert_output(results.groups(), group.label.value_or(""),
+    auto grp_it = find_or_insert_output(results.groups(), group.label,
         [&group]()
         {
-            return group_output{ group.label.value_or(""), group.extra.value_or("") };
+            return group_output{ group.label, group.extra };
         });
 
-    auto sec_it = find_or_insert_output(grp_it->sections(), sec.label.value_or(""),
+    auto sec_it = find_or_insert_output(grp_it->sections(), sec.label,
         [&sec, &readers]()
         {
             return section_output{
                 results_from_target(readers, sec.targets),
-                sec.label.value_or(""),
-                sec.extra.value_or("")
+                sec.label,
+                sec.extra
             };
         });
 
