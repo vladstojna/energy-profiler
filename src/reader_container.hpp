@@ -2,8 +2,7 @@
 
 #pragma once
 
-#include "config.hpp"
-#include "flags.hpp"
+#include "configfwd.hpp"
 
 #include <nrg/reader_gpu.hpp>
 #include <nrg/reader_rapl.hpp>
@@ -11,7 +10,7 @@
 
 namespace tep
 {
-
+    struct flags;
     class tracer_error;
 
     class reader_container
@@ -19,22 +18,16 @@ namespace tep
     private:
         nrgprf::reader_rapl _rdr_cpu;
         nrgprf::reader_gpu _rdr_gpu;
-
-        std::vector<std::pair<
-            config_data::section::target_cont,
-            nrgprf::hybrid_reader>
-        > _hybrids;
+        std::vector<std::pair<cfg::target, nrgprf::hybrid_reader>> _hybrids;
 
     public:
-        reader_container(const flags& flags, const config_data& cd, tracer_error& err);
+        reader_container(const flags&, const cfg::config_t&, tracer_error&);
+        ~reader_container();
+        reader_container(const reader_container&);
+        reader_container(reader_container&&);
 
-        ~reader_container(); // = default;
-
-        reader_container(const reader_container& other);
-        reader_container& operator=(const reader_container& other);
-
-        reader_container(reader_container&& other);
-        reader_container& operator=(reader_container&& other);
+        reader_container& operator=(reader_container&&);
+        reader_container& operator=(const reader_container&);
 
         nrgprf::reader_rapl& reader_rapl();
         const nrgprf::reader_rapl& reader_rapl() const;
@@ -42,12 +35,10 @@ namespace tep
         nrgprf::reader_gpu& reader_gpu();
         const nrgprf::reader_gpu& reader_gpu() const;
 
-        const nrgprf::reader* find(const config_data::section::target_cont& targets) const;
-        const nrgprf::reader* find(config_data::target) const;
+        const nrgprf::reader* find(cfg::target) const;
 
     private:
-        template<typename T, bool Log = false>
-        void emplace_hybrid_reader(T&& targets);
+        template<bool Log = false>
+        void emplace_hybrid_reader(cfg::target);
     };
-
 }

@@ -30,7 +30,8 @@ int main(int argc, char* argv[])
         std::cerr << dbg_info.error() << std::endl;
         return 1;
     }
-    cfg_result config = load_config(args->config);
+
+    auto config = cfg::config_t::create(args->config);
     if (!config)
     {
         std::cerr << config.error() << std::endl;
