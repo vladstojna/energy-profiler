@@ -10,6 +10,8 @@
             </bounds>
             <!-- allow execution of other threads during the profiling -->
             <allow_concurrency/>
+            <!-- save only first and last sample -->
+            <method>total</method>
             <!--
                 avoid creating a background thread and
                 gather a sample at the start and at the end;
