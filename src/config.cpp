@@ -353,6 +353,11 @@ namespace tep::cfg
         return bool(static_cast<std::underlying_type_t<target>>(x));
     }
 
+    bool target_multiple(target x) noexcept
+    {
+        return target_valid(x & target::cpu) && target_valid(x & target::gpu);
+    }
+
     target target_next(target x) noexcept
     {
         return static_cast<target>(std::underlying_type_t<target>(x) << 1);
@@ -613,7 +618,7 @@ namespace tep::cfg
         auto res_method = get_method(entry.node);
         if (!res_method && (e = std::move(res_method.error())))
             return;
-        if (*res_method == "total" && (e = error::code_t::sec_invalid_method_for_short))
+        if (*res_method == "profile" && (e = error::code_t::sec_invalid_method_for_short))
             return;
         short_section = bool(nshort);
     }

@@ -4,7 +4,6 @@
 
 #include <chrono>
 #include <iosfwd>
-#include <set>
 #include <string>
 #include <vector>
 #include <optional>
@@ -92,6 +91,7 @@ namespace tep
         };
 
         bool target_valid(target) noexcept;
+        bool target_multiple(target) noexcept;
         target target_next(target) noexcept;
 
         target operator|(target, target) noexcept;
@@ -272,8 +272,11 @@ namespace tep
 
         struct config_t
         {
-            const std::optional<params_t>& parameters() const noexcept;
-            const std::vector<group_t>& groups() const noexcept;
+            using opt_params_t = std::optional<params_t>;
+            using groups_t = std::vector<group_t>;
+
+            const opt_params_t& parameters() const noexcept;
+            const groups_t& groups() const noexcept;
 
             static result<config_t> create(std::istream&);
 
