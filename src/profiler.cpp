@@ -523,6 +523,14 @@ tracer_expected<profiling_results> profiler::run()
                     sec.bounds().end(), entrypoint, *insert_start))
                     return move_error(err);
             }
+            else if (sec.bounds().has_address_range())
+            {
+                if (tracer_error err = insert_traps_address_range(
+                    group, sec, sec.bounds().addr_range(), entrypoint))
+                {
+                    return move_error(err);
+                }
+            }
             else
                 assert(false);
         }
@@ -665,6 +673,56 @@ tracer_error profiler::insert_traps_function(
         if (!_output.insert({ start, end }, _readers, group, sec))
             return tracer_error(tracer_errcode::NO_TRAP, "Trap address interval already exists");
     }
+    return tracer_error::success();
+}
+
+tracer_error profiler::insert_traps_address_range(
+    const config_data::section_group& group,
+    const config_data::section& sec,
+    const config_data::address_range& addr_range,
+    uintptr_t entrypoint)
+{
+    start_addr start = entrypoint + addr_range.start();
+    end_addr end = entrypoint + addr_range.end();
+    tracer_expected<long> origw = insert_trap(_tid, _child, start.val());
+    if (!origw)
+        return std::move(origw.error());
+    {
+        auto insert_res = _traps.insert(
+            start,
+            start_trap(
+                *origw,
+                pos::address{ start.val() - entrypoint },
+                sec.allow_concurrency(),
+                creator_from_section(_readers, sec)));
+        if (!insert_res.second)
+        {
+            log::logline(log::error, "[%d] trap @ 0x%" PRIxPTR " (offset 0x%" PRIxPTR ") already exists",
+                _tid, start.val(), start.val() - entrypoint);
+            return tracer_error(tracer_errcode::NO_TRAP,
+                cmmn::concat("Trap ", to_string(start), " already exists"));
+        }
+        log::logline(log::info, "[%d] inserted trap at start address 0x%" PRIxPTR
+            " (offset 0x%" PRIxPTR ")", _tid, start.val(), start.val() - entrypoint);
+    }
+    origw = insert_trap(_tid, _child, end.val());
+    if (!origw)
+        return std::move(origw.error());
+    {
+        auto insert_res = _traps.insert(end,
+            end_trap(*origw, pos::address{ end.val() - entrypoint }, start));
+        if (!insert_res.second)
+        {
+            log::logline(log::error, "[%d] trap @ 0x%" PRIxPTR " (offset 0x%" PRIxPTR ") already exists",
+                _tid, end.val(), end.val() - entrypoint);
+            return tracer_error(tracer_errcode::NO_TRAP,
+                cmmn::concat("Trap ", to_string(end), " already exists"));
+        }
+        log::logline(log::info, "[%d] inserted trap at end address 0x%" PRIxPTR
+            " (offset 0x%" PRIxPTR ")", _tid, end.val(), end.val() - entrypoint);
+    }
+    if (!_output.insert({ start, end }, _readers, group, sec))
+        return tracer_error(tracer_errcode::NO_TRAP, "Trap address interval already exists");
     return tracer_error::success();
 }
 

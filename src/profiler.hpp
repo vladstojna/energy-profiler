@@ -82,6 +82,13 @@ namespace tep
             const config_data::function& func,
             uintptr_t entrypoint);
 
+        tracer_error insert_traps_address_range(
+            const config_data::section_group&,
+            const config_data::section&,
+            const config_data::address_range&,
+            uintptr_t
+        );
+
         nonstd::expected<start_addr, tracer_error> insert_traps_position_start(
             const config_data::section& sec,
             const config_data::position& pos,
