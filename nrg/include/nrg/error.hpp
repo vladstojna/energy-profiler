@@ -39,6 +39,9 @@ namespace nrgprf
         readings_not_valid,
         package_num_error,
         package_num_wrong_domain,
+        invalid_socket_mask,
+        invalid_device_mask,
+        invalid_location_mask,
         unknown_error,
     };
 
@@ -49,6 +52,7 @@ namespace nrgprf
         query_error,
         read_error,
         system_error,
+        invalid_argument,
         readings_support_error,
         other,
         unknown,

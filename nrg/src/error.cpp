@@ -68,6 +68,12 @@ namespace
             return "error reading package number from RAPL powercap package domain";
         case errc::package_num_wrong_domain:
             return "attempt to read the package number from a non-package RAPL domain";
+        case errc::invalid_socket_mask:
+            return "invalid CPU socket mask (no sockets set)";
+        case errc::invalid_device_mask:
+            return "invalid GPU device mask (no devices set)";
+        case errc::invalid_location_mask:
+            return "invalid sensor location mask (no sensors set)";
         case errc::unknown_error:
             return "unknown error";
         }
@@ -103,6 +109,10 @@ namespace
             return error_cause::query_error;
         case errc::readings_not_valid:
             return error_cause::read_error;
+        case errc::invalid_socket_mask:
+        case errc::invalid_device_mask:
+        case errc::invalid_location_mask:
+            return error_cause::invalid_argument;
         }
         return error_cause::unknown;
     }
@@ -127,6 +137,8 @@ namespace
             return "error reading counters";
         case error_cause::system_error:
             return "system error";
+        case error_cause::invalid_argument:
+            return "invalid argument";
         case error_cause::readings_support_error:
             return "error querying GPU energy/power support";
         case error_cause::other:
