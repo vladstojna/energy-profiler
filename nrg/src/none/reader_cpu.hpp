@@ -6,21 +6,20 @@
 
 namespace nrgprf
 {
-    class error;
     class sample;
 
     struct NRG_LOCAL reader_impl
     {
-        reader_impl(location_mask, socket_mask, error&, std::ostream&);
+        reader_impl(location_mask, socket_mask, std::ostream&);
 
-        error read(sample&) const;
-        error read(sample&, uint8_t) const;
-        size_t num_events() const;
-
-        template<typename Location>
-        int32_t event_idx(uint8_t) const;
+        bool read(sample&, std::error_code&) const noexcept;
+        bool read(sample&, uint8_t, std::error_code&) const noexcept;
+        size_t num_events() const noexcept;
 
         template<typename Location>
-        result<sensor_value> value(const sample&, uint8_t) const;
+        int32_t event_idx(uint8_t) const noexcept;
+
+        template<typename Location>
+        result<sensor_value> value(const sample&, uint8_t) const noexcept;
     };
 }

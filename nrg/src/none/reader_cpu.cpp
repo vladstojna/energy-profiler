@@ -7,36 +7,36 @@
 namespace nrgprf
 {
     reader_impl::reader_impl(
-        location_mask, socket_mask, error&, std::ostream& os)
+        location_mask, socket_mask, std::ostream& os)
     {
         os << fileline("No-op CPU reader\n");
     }
 
-    error reader_impl::read(sample&) const
+    bool reader_impl::read(sample&, std::error_code&) const noexcept
     {
-        return error::success();
+        return true;
     }
 
-    error reader_impl::read(sample&, uint8_t) const
+    bool reader_impl::read(sample&, uint8_t, std::error_code&) const noexcept
     {
-        return error::success();
+        return true;
     }
 
-    size_t reader_impl::num_events() const
+    size_t reader_impl::num_events() const noexcept
     {
         return 0;
     }
 
     template<typename Location>
-    int32_t reader_impl::event_idx(uint8_t) const
+    int32_t reader_impl::event_idx(uint8_t) const noexcept
     {
         return -1;
     }
 
     template<typename Location>
-    result<sensor_value> reader_impl::value(const sample&, uint8_t) const
+    result<sensor_value> reader_impl::value(const sample&, uint8_t) const noexcept
     {
-        return result<sensor_value>(nonstd::unexpect, error_code::NO_EVENT);
+        return result<sensor_value>(nonstd::unexpect, errc::no_such_event);
     }
 }
 
