@@ -9,7 +9,6 @@
 
 namespace nrgprf
 {
-    class error;
     class sample;
 
     // non-owning hybrid reader

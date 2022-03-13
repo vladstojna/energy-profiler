@@ -21,8 +21,6 @@ namespace
 
     nrgprf::result<unsigned int> get_device_count()
     {
-        using nrgprf::error;
-        using nrgprf::error_code;
         using rettype = decltype(get_device_count());
         uint32_t devcount;
         rsmi_status_t result = rsmi_num_monitor_devices(&devcount);

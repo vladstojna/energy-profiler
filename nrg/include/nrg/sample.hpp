@@ -11,8 +11,6 @@
 
 namespace nrgprf
 {
-
-    class error;
     class reader;
     class reader_rapl;
     class reader_gpu;
@@ -59,5 +57,4 @@ namespace nrgprf
         operator const sample& () const;
         operator sample& ();
     };
-
 }
