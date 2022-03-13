@@ -18,7 +18,7 @@ namespace nrgprf
     using sensor_value = detail::reader_return;
 
     template<typename R>
-    using result = nonstd::expected<R, error>;
+    using result = nonstd::expected<R, std::error_code>;
 
     using location_mask = std::bitset<max_locations>;
     using socket_mask = std::bitset<max_sockets>;

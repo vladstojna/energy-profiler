@@ -15,39 +15,24 @@ void hybrid_reader::push_back(const reader& r)
     _readers.push_back(&r);
 }
 
-error hybrid_reader::read(sample& s) const
+bool hybrid_reader::read(sample& s, std::error_code& ec) const
 {
     for (auto r : _readers)
     {
         assert(r != nullptr);
-        error err = r->read(s);
-        if (err)
-            return err;
+        if (!r->read(s, ec))
+            return false;
     }
-    return error::success();
+    return true;
 }
 
-error hybrid_reader::read(sample&, uint8_t) const
+bool hybrid_reader::read(sample&, uint8_t, std::error_code& ec) const
 {
-    return error(error_code::NOT_IMPL, "Reading specific events not supported");
+    ec = errc::operation_not_supported;
+    return false;
 }
 
-result<sample> hybrid_reader::read() const
-{
-    sample s;
-    if (error err = read(s))
-        return result<sample>{ nonstd::unexpect, std::move(err) };
-    return s;
-}
-
-result<sample> hybrid_reader::read(uint8_t) const
-{
-    return result<sample>{ nonstd::unexpect,
-        error_code::NOT_IMPL,
-        "Reading specific events not supported" };
-}
-
-size_t hybrid_reader::num_events() const
+size_t hybrid_reader::num_events() const noexcept
 {
     size_t total = 0;
     for (auto r : _readers)

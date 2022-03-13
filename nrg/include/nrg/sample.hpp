@@ -25,7 +25,6 @@ namespace nrgprf
         detail::sample_data data;
 
         sample();
-        sample(const reader& reader, error& e);
 
         bool operator==(const sample& rhs) const;
         bool operator!=(const sample& rhs) const;
@@ -49,7 +48,6 @@ namespace nrgprf
 
     public:
         timed_sample();
-        timed_sample(const reader&, error&);
 
         const time_point& timepoint() const;
 

@@ -12,12 +12,6 @@ sample::sample() :
     data{}
 {}
 
-sample::sample(const reader& reader, error& e) :
-    sample()
-{
-    e = reader.read(*this);
-}
-
 bool sample::operator==(const sample& rhs) const
 {
     return !std::memcmp(this, &rhs, sizeof(rhs));
@@ -37,11 +31,6 @@ sample::operator bool() const
 timed_sample::timed_sample() :
     _timepoint{},
     _sample{}
-{}
-
-timed_sample::timed_sample(const reader& reader, error& e) :
-    _timepoint(time_point::clock::now()),
-    _sample(reader, e)
 {}
 
 const timed_sample::time_point& timed_sample::timepoint() const

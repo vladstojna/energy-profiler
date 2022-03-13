@@ -12,14 +12,11 @@
 
 namespace nrgprf
 {
-    class error;
     class sample;
 
     struct NRG_LOCAL lib_handle
     {
-        static result<lib_handle> create();
-
-        lib_handle(error&);
+        lib_handle();
         ~lib_handle();
 
         lib_handle(const lib_handle&);
@@ -31,8 +28,8 @@ namespace nrgprf
     struct NRG_LOCAL reader_gpu_impl
     {
     private:
-        static error read_energy(sample&, size_t, gpu_handle);
-        static error read_power(sample&, size_t, gpu_handle);
+        static bool read_energy(sample&, size_t, gpu_handle, std::error_code&) noexcept;
+        static bool read_power(sample&, size_t, gpu_handle, std::error_code&) noexcept;
 
     public:
         struct NRG_LOCAL event
@@ -48,26 +45,26 @@ namespace nrgprf
         std::array<std::array<int8_t, 2>, max_devices> event_map;
         std::vector<event> events;
 
-        reader_gpu_impl(readings_type::type, device_mask, error&, std::ostream&);
+        reader_gpu_impl(readings_type::type, device_mask, std::ostream&);
 
-        error read(sample&, uint8_t) const;
-        error read(sample&) const;
+        bool read(sample&, uint8_t, std::error_code&) const noexcept;
+        bool read(sample&, std::error_code&) const noexcept;
 
-        int8_t event_idx(readings_type::type, uint8_t) const;
-        size_t num_events() const;
+        int8_t event_idx(readings_type::type, uint8_t) const noexcept;
+        size_t num_events() const noexcept;
 
-        result<units_power> get_board_power(const sample&, uint8_t) const;
-        result<units_energy> get_board_energy(const sample&, uint8_t) const;
+        result<units_power> get_board_power(const sample&, uint8_t) const noexcept;
+        result<units_energy> get_board_energy(const sample&, uint8_t) const noexcept;
 
     private:
-        static result<readings_type::type> support(gpu_handle);
+        static result<readings_type::type> support(gpu_handle) noexcept;
 
         template<
             readings_type::type rt,
             typename UnitsRead,
             typename ToUnits,
             typename S
-        > result<ToUnits> get_value(const S&, uint8_t) const;
+        > result<ToUnits> get_value(const S&, uint8_t) const noexcept;
 
         static constexpr std::array<std::pair<
             readings_type::type, decltype(event::read_func)>, 2> type_array =

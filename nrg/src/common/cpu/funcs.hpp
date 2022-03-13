@@ -20,6 +20,5 @@ namespace nrgprf
         return num;
     }
 
-    NRG_LOCAL std::string system_error_str(std::string_view prefix);
     NRG_LOCAL result<uint8_t> count_sockets();
 }

@@ -8,7 +8,6 @@
 
 namespace nrgprf
 {
-    class error;
     class sample;
 
     // owning hybrid reader
@@ -27,17 +26,18 @@ namespace nrgprf
         struct caller
         {
             sample& _sample;
+            std::error_code& _ec;
 
-            caller(sample&);
+            caller(sample&, std::error_code&);
 
             template<typename First, typename... Rest>
-            error operator()(const First&, const Rest&...);
+            bool operator()(const First&, const Rest&...);
         };
 
     public:
         template<typename... Readers,
             std::enable_if_t<detail::all_reader_ptrs_v<Readers...>, bool> = true
-        > hybrid_reader_tp(Readers&&...);
+        > explicit hybrid_reader_tp(Readers&&...);
 
         ~hybrid_reader_tp();
         hybrid_reader_tp(const hybrid_reader_tp&);
@@ -53,11 +53,9 @@ namespace nrgprf
         template<typename T>
         T& get();
 
-        error read(sample&) const override;
-        error read(sample&, uint8_t) const override;
-        result<sample> read() const override;
-        result<sample> read(uint8_t) const override;
-        size_t num_events() const override;
+        bool read(sample&, std::error_code&) const override;
+        bool read(sample&, uint8_t, std::error_code&) const override;
+        size_t num_events() const noexcept override;
     };
 
     template<typename... Ts>

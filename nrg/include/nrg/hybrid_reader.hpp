@@ -22,15 +22,13 @@ namespace nrgprf
         template<
             typename... Readers,
             std::enable_if_t<detail::all_reader_ptrs_v<Readers...>, bool> = true
-        > hybrid_reader(const Readers&... reader);
+        > hybrid_reader(const Readers&...);
 
-        void push_back(const reader& r);
+        void push_back(const reader&);
 
-        error read(sample&) const override;
-        error read(sample&, uint8_t ev_idx) const override;
-        result<sample> read() const override;
-        result<sample> read(uint8_t) const override;
-        size_t num_events() const override;
+        bool read(sample&, std::error_code&) const override;
+        bool read(sample&, uint8_t, std::error_code&) const override;
+        size_t num_events() const noexcept override;
     };
 
     template<

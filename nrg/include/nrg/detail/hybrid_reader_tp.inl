@@ -8,22 +8,23 @@
 namespace nrgprf
 {
     template<typename... Ts>
-    hybrid_reader_tp<Ts...>::caller::caller(sample& s) :
-        _sample(s)
+    hybrid_reader_tp<Ts...>::caller::caller(sample& s, std::error_code& ec) :
+        _sample(s),
+        _ec(ec)
     {}
 
     template<typename... Ts>
     template<typename First, typename... Rest>
-    error hybrid_reader_tp<Ts...>::caller::operator()(
+    bool hybrid_reader_tp<Ts...>::caller::operator()(
         const First& first,
         const Rest&... rest)
     {
-        if (error err = first.read(_sample))
-            return err;
+        if (!first.read(_sample, _ec))
+            return false;
         if constexpr (sizeof...(rest) > 0)
-            if (error err = operator()(rest...))
-                return err;
-        return error::success();
+            if (!operator()(rest...))
+                return false;
+        return true;
     }
 
     template<typename... Ts>
@@ -66,37 +67,20 @@ namespace nrgprf
     }
 
     template<typename... Ts>
-    error hybrid_reader_tp<Ts...>::read(sample& s) const
+    bool hybrid_reader_tp<Ts...>::read(sample& s, std::error_code& ec) const
     {
-        return std::apply(caller{ s }, _readers);
+        return std::apply(caller{ s, ec }, _readers);
     }
 
     template<typename... Ts>
-    error hybrid_reader_tp<Ts...>::read(sample&, uint8_t) const
+    bool hybrid_reader_tp<Ts...>::read(sample&, uint8_t, std::error_code& ec) const
     {
-        return error(error_code::NOT_IMPL,
-            "Reading specific events not supported");
+        ec = errc::operation_not_supported;
+        return false;
     }
 
     template<typename... Ts>
-    result<sample> hybrid_reader_tp<Ts...>::read() const
-    {
-        sample s;
-        if (error err = read(s))
-            return result<sample>{ nonstd::unexpect, std::move(err) };
-        return s;
-    }
-
-    template<typename... Ts>
-    result<sample> hybrid_reader_tp<Ts...>::read(uint8_t) const
-    {
-        return result<sample>{ nonstd::unexpect,
-            error_code::NOT_IMPL,
-            "Reading specific events not supported" };
-    }
-
-    template<typename... Ts>
-    size_t hybrid_reader_tp<Ts...>::num_events() const
+    size_t hybrid_reader_tp<Ts...>::num_events() const noexcept
     {
         return std::apply(
             [](const Ts&... args)

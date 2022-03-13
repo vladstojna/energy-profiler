@@ -4,13 +4,12 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <system_error>
 
 #include <nrg/types.hpp>
 
 namespace nrgprf
 {
-
-    class error;
     class sample;
 
     class reader
@@ -19,11 +18,15 @@ namespace nrgprf
         ~reader() = default;
 
     public:
-        virtual error read(sample& s) const = 0;
-        virtual error read(sample& s, uint8_t ev_idx) const = 0;
-        virtual result<sample> read() const = 0;
-        virtual result<sample> read(uint8_t ev_idx) const = 0;
-        virtual size_t num_events() const = 0;
-    };
+        virtual bool read(sample&, std::error_code&) const = 0;
+        virtual bool read(sample&, uint8_t, std::error_code&) const = 0;
 
+        virtual size_t num_events() const noexcept = 0;
+
+        void read(sample&) const;
+        void read(sample&, uint8_t) const;
+
+        result<sample> read() const;
+        result<sample> read(uint8_t) const;
+    };
 }
