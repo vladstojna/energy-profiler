@@ -101,28 +101,32 @@ The building procedure will create `libnrg.so` and/or `libnrg.a` in `lib`.
 Basic example on x86_64:
 
 ```cpp
-error err = error::success();
-// construct reader of package sensors of socket 0
-reader_rapl reader{ locmask::pkg, 0x1, err };
-if (err)
+using namespace nrgprf;
+try
 {
-    std::cerr << err << "\n";
+  // construct reader of package sensors of socket 0
+  reader_rapl reader{ locmask::pkg, 0x1 };
+  sample smp;
+  // read counter values into sample
+  if (std::error_code ec; !reader.read(smp, ec))
+  {
+    std::cerr << ec.message() << "\n";
+    return 1;
+  }
+  // get the package value read for socket 0
+  auto energy = reader.value<loc::pkg>(smp, 0);
+  if (!energy)
+  {
+      std::cerr << energy.error().message() << "\n";
+      return 1;
+  }
+  std::cout << "Energy: " << joules<double>{ *energy }.count() << " J\n";
+}
+catch (const nrgprf::exception& e)
+{
+    std::cerr << e.what() << "\n";
     return 1;
 }
-sample smp;
-if (auto err = reader.read(smp))
-{
-    std::cerr << err << "\n";
-    return 1;
-}
-// get the package value read for socket 0
-auto energy = reader.value<loc::pkg>(smp, 0);
-if (!energy)
-{
-    std::cerr << energy.error() << "\n";
-    return 1;
-}
-std::cout << "Energy: " << joules<double>{ *energy }.count() << " J\n";
 ```
 
 The library interface changes depending on whether the target architecture is
