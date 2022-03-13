@@ -699,37 +699,27 @@ namespace
             std::chrono::duration_cast<sensor_value::time_point::duration>(dur));
     }
 
-    nrgprf::error get_sensor_buffers(std::ifstream& ifs,
+    std::error_code get_sensor_buffers(std::ifstream& ifs,
         uint32_t occ_num,
         occ::sensor_buffers& buffs)
     {
         using namespace nrgprf;
         assert(occ_num < occ::max_count);
         size_t occ_offset = occ_num * occ::sensor_data_block_size;
-        std::string occ_num_str = std::to_string(occ_num);
-
         ifs.seekg(occ_offset + occ::sensor_ping_buffer_offset);
         if (!ifs)
-            return { error_code::SYSTEM, system_error_str(
-                cmmn::concat("Error seeking to OCC ", occ_num_str, " sensor names")) };
+            return std::error_code{ errno, std::system_category() };
 
         if (!(ifs >> buffs))
         {
-            std::string msg;
             if (ifs.eof())
-                msg = cmmn::concat("Reached end-of-stream before"
-                    " reading sensor buffers of OCC ", occ_num_str);
-            else if (ifs.bad())
-                msg = system_error_str(cmmn::concat("Error reading sensor buffers of OCC ",
-                    occ_num_str));
-            else
-                msg = cmmn::concat("Error reading sensor buffers of OCC ", occ_num_str);
-            return { error_code::SYSTEM, std::move(msg) };
+                return errc::file_format_error;
+            return std::error_code{ errno, std::system_category() };
         }
-        return error::success();
+        return {};
     }
 
-    nrgprf::error get_header(std::ifstream& ifs,
+    std::error_code get_header(std::ifstream& ifs,
         uint32_t occ_num,
         occ::sensor_data_header_block& hb)
     {
@@ -741,30 +731,23 @@ namespace
 
         ifs.seekg(occ_offset + occ::sensor_data_header_block_offset);
         if (!ifs)
-            return { error_code::SYSTEM, system_error_str(
-                cmmn::concat("Error seeking to OCC ", occ_num_str, " header")) };
-
+            return std::error_code{ errno, std::system_category() };
         if (!(ifs >> hb))
         {
-            std::string msg;
             if (ifs.eof())
-                msg = cmmn::concat("Reached end-of-stream before reading header block of OCC ",
-                    occ_num_str);
-            else if (ifs.bad())
-                msg = system_error_str(cmmn::concat("Error reading header of OCC ", occ_num_str));
-            else
-                msg = cmmn::concat("Error reading header of OCC ", occ_num_str);
-            return { error_code::SYSTEM, std::move(msg) };
+                return errc::file_format_error;
+            return std::error_code{ errno, std::system_category() };
         }
-
         if (std::string msg; !occ::assert_header_block(hb, msg))
-            return { error_code::FORMAT_ERROR, std::move(msg) };
-
+        {
+            std::cerr << fileline(msg) << std::endl;
+            return errc::file_format_error;
+        }
         debug_print(hb);
-        return error::success();
+        return {};
     }
 
-    nrgprf::error get_names_entries(std::ifstream& ifs,
+    std::error_code get_names_entries(std::ifstream& ifs,
         uint32_t occ_num,
         std::vector<occ::sensor_names_entry>& entries)
     {
@@ -775,31 +758,25 @@ namespace
 
         ifs.seekg(occ_offset + occ::sensor_names_offset);
         if (!ifs)
-            return { error_code::SYSTEM, system_error_str(
-                cmmn::concat("Error seeking to OCC ", occ_num_str, " sensor names"))
-        };
+            return std::error_code{ errno, std::system_category() };
         for (auto& entry : entries)
         {
             if (!(ifs >> entry))
             {
-                std::string msg;
                 if (ifs.eof())
-                    msg = cmmn::concat("Reached end-of-stream before"
-                        " reading sensor names entries of OCC ", occ_num_str);
-                else if (ifs.bad())
-                    msg = system_error_str(cmmn::concat("Error reading sensor name entry of OCC ",
-                        occ_num_str));
-                else
-                    msg = cmmn::concat("Error reading sensor name entry of OCC ", occ_num_str);
-                return { error_code::SYSTEM, std::move(msg) };
+                    return errc::file_format_error;
+                return std::error_code{ errno, std::system_category() };
             }
             if (std::string msg; !occ::assert_names_entry(entry, msg))
-                return { error_code::FORMAT_ERROR, std::move(msg) };
+            {
+                std::cerr << fileline(msg) << std::endl;
+                return errc::file_format_error;
+            }
         }
-        return error::success();
+        return {};
     }
 
-    nrgprf::error get_sensor_structs(const occ::sensor_buffers& buffs,
+    std::error_code get_sensor_structs(const occ::sensor_buffers& buffs,
         const std::vector<occ::sensor_names_entry>& entries,
         std::vector<occ::sensor_structure>& structs)
     {
@@ -808,14 +785,17 @@ namespace
         {
             occ::sensor_structure sstruct;
             if (!occ::get_sensor_record(buffs, entry, sstruct))
-                return { error_code::FORMAT_ERROR, "Both ping and pong buffers are not valid" };
+                return errc::readings_not_valid;
             if (std::string msg; !occ::assert_sensor_structure(sstruct, entry, msg))
-                return { error_code::FORMAT_ERROR, std::move(msg) };
+            {
+                std::cerr << fileline(msg) << std::endl;
+                return errc::file_format_error;
+            }
             if (!debug_print(entry, sstruct))
-                return { error_code::FORMAT_ERROR, "Unsupported sensor structure version found" };
+                return errc::file_format_version_error;
             structs.push_back(sstruct);
         }
-        return error::success();
+        return {};
     }
 }
 
@@ -955,7 +935,6 @@ namespace nrgprf
     reader_impl::reader_impl(
         location_mask lmask,
         socket_mask smask,
-        error& err,
         std::ostream& os)
         :
         _file(std::make_shared<std::ifstream>(occ::sensors_file, std::ios::in | std::ios::binary)),
@@ -963,21 +942,14 @@ namespace nrgprf
         _active_events()
     {
         if (!*_file)
-        {
-            err = { error_code::SYSTEM, system_error_str(
-                cmmn::concat("Error opening ", occ::sensors_file)) };
-            return;
-        }
+            throw exception(std::error_code{ errno, std::system_category() });
 
         for (auto& skts : _event_map)
             skts.fill(-1);
 
         result<uint8_t> sockets = count_sockets();
         if (!sockets)
-        {
-            err = std::move(sockets.error());
-            return;
-        }
+            throw exception(sockets.error());
         os << fileline(cmmn::concat("Found ", std::to_string(*sockets), " sockets\n"));
         for (uint32_t occ_num = 0; occ_num < *sockets; occ_num++)
         {
@@ -986,21 +958,21 @@ namespace nrgprf
             os << fileline(cmmn::concat("Registered socket: ", std::to_string(occ_num), "\n"));
 
             occ::sensor_data_header_block hb{};
-            if (err = get_header(*_file, occ_num, hb))
-                return;
+            if (auto ec = get_header(*_file, occ_num, hb))
+                throw exception(ec);
 
             std::vector<occ::sensor_names_entry> entries(hb.sensor_count, occ::sensor_names_entry{});
-            if (err = get_names_entries(*_file, occ_num, entries))
-                return;
+            if (auto ec = get_names_entries(*_file, occ_num, entries))
+                throw exception(ec);
 
             occ::sensor_buffers sbuffs{};
-            if (err = get_sensor_buffers(*_file, occ_num, sbuffs))
-                return;
+            if (auto ec = get_sensor_buffers(*_file, occ_num, sbuffs))
+                throw exception(ec);
 
             std::vector<occ::sensor_structure> structs;
             structs.reserve(entries.size());
-            if (err = get_sensor_structs(sbuffs, entries, structs))
-                return;
+            if (auto ec = get_sensor_structs(sbuffs, entries, structs))
+                throw exception(ec);
 
             for (uint32_t loc = 0; loc < nrgprf::max_domains; loc++)
             {
@@ -1009,15 +981,16 @@ namespace nrgprf
                 // the system power sensor only exists in the master OCC which is OCC 0
                 if (occ_num != 0 && bit_to_sensor_data[loc].gsid == occ::gsid_pwrsys)
                     continue;
-                add_event(entries, occ_num, loc, os);
+                if (auto ec = add_event(entries, occ_num, loc, os))
+                    throw exception(ec);
             }
         }
 
         if (!num_events())
-            err = { error_code::SETUP_ERROR, "No events were added" };
+            throw exception(errc::no_events_added);
     }
 
-    error reader_impl::add_event(
+    std::error_code reader_impl::add_event(
         const std::vector<occ::sensor_names_entry>& entries,
         uint32_t occ_num,
         uint32_t loc,
@@ -1047,21 +1020,23 @@ namespace nrgprf
             {
                 assert(entry.structure_version == 1);
                 if (entry.structure_version != 1)
-                    return { error_code::NOT_IMPL, "Unsupported structure version" };
+                    return errc::file_format_version_error;
                 active_entries.push_back(entry);
                 os << fileline("added event - idx=") << +idxref
                     << " OCC=" << occ_num << " " << entry << "\n";
             }
         }
-        return error::success();
+        return {};
     }
 
-    error reader_impl::read_single_occ(const event_data& ed,
+    bool reader_impl::read_single_occ(const event_data& ed,
         sensor_buffers& sbuffs,
-        sample& s) const
+        sample& s,
+        std::error_code& ec) const
     {
-        if (error err = get_sensor_buffers(*_file, ed.occ_num, sbuffs))
-            return err;
+        ec == get_sensor_buffers(*_file, ed.occ_num, sbuffs);
+        if (ec)
+            return false;
         for (const auto& entry : ed.entries)
         {
             size_t stride = ed.occ_num * nrgprf::max_domains +
@@ -1069,33 +1044,35 @@ namespace nrgprf
 
             occ::sensor_structure_v1_sample record;
             if (!get_sensor_record(sbuffs, entry, record))
-                return { error_code::READ_ERROR, "Both ping and pong buffers are not valid" };
+            {
+                ec = errc::readings_not_valid;
+                return false;
+            }
 
             s.data.timestamps[stride] = record.timestamp;
             s.data.cpu[stride] = record.sample;
         }
-        return error::success();
+        ec.clear();
+        return true;
     }
 
-    error reader_impl::read(sample& s) const
+    bool reader_impl::read(sample& s, std::error_code& ec) const
     {
         occ::sensor_buffers sbuffs;
         for (const auto& ed : _active_events)
-            if (error err = read_single_occ(ed, sbuffs, s))
-                return err;
-        return error::success();
+            if (!read_single_occ(ed, sbuffs, s, ec))
+                return false;
+        return true;
     }
 
     // Since sensors are read in bulk, reading with an index reads all sensors in some OCC
-    error reader_impl::read(sample& s, uint8_t idx) const
+    bool reader_impl::read(sample& s, uint8_t idx, std::error_code& ec) const
     {
         occ::sensor_buffers sbuffs;
-        if (error err = read_single_occ(_active_events[idx], sbuffs, s))
-            return err;
-        return error::success();
+        return !read_single_occ(_active_events[idx], sbuffs, s, ec);
     }
 
-    size_t reader_impl::num_events() const
+    size_t reader_impl::num_events() const noexcept
     {
         size_t num_events = 0;
         for (const auto& ed : _active_events)
@@ -1104,25 +1081,25 @@ namespace nrgprf
     }
 
     template<typename Location>
-    int32_t reader_impl::event_idx(uint8_t skt) const
+    int32_t reader_impl::event_idx(uint8_t skt) const noexcept
     {
         return _event_map[skt][Location::value];
     }
 
     template<typename Location>
-    result<sensor_value> reader_impl::value(const sample& s, uint8_t skt) const
+    result<sensor_value> reader_impl::value(const sample& s, uint8_t skt) const noexcept
     {
         assert(skt < max_sockets);
         using rettype = result<sensor_value>;
         int32_t idx = event_idx<Location>(skt);
         if (idx < 0)
-            return rettype(nonstd::unexpect, error_code::NO_EVENT);
+            return rettype(nonstd::unexpect, errc::no_such_event);
         uint32_t stride = skt * nrgprf::max_domains + Location::value;
 
         auto value_timestamp = s.data.timestamps[stride];
         auto value_sample = s.data.cpu[stride];
         if (!value_timestamp || !value_sample)
-            return rettype(nonstd::unexpect, error_code::NO_EVENT);
+            return rettype(nonstd::unexpect, errc::no_such_event);
         for (const auto& sensor_entry : _active_events[idx].entries)
         {
             if (sensor_entry.gsid == to_sensor_gsid<Location>())
@@ -1130,12 +1107,11 @@ namespace nrgprf
                 watts<double> power = canonicalize_power(value_sample, sensor_entry);
                 sensor_value::time_point tp = canonicalize_timestamp(value_timestamp);
                 if (!power.count())
-                    return rettype(nonstd::unexpect,
-                        error_code::NOT_IMPL, "Unsupported power units found");
+                    return rettype(nonstd::unexpect, errc::unsupported_units);
                 return sensor_value{ tp, unit_cast<decltype(sensor_value::power)>(power) };
             }
         };
-        return rettype(nonstd::unexpect, error_code::NO_EVENT);
+        return rettype(nonstd::unexpect, errc::no_such_event);
     }
 }
 
