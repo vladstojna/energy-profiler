@@ -136,15 +136,9 @@ namespace
         return event_data{ file_descriptor(filename), max_value };
     }
 
-    bool file_exists(std::string_view path, std::error_code& ec)
+    bool file_exists(std::string_view path)
     {
-        errno = 0;
-        bool exists = !access(path.data(), F_OK);
-        if (errno)
-            ec = std::error_code{ errno, std::system_category() };
-        else
-            ec.clear();
-        return exists;
+        return !access(path.data(), F_OK);
     }
 }
 
@@ -154,14 +148,14 @@ namespace nrgprf
         value(open(file, O_RDONLY))
     {
         if (value == -1)
-            throw std::system_error(std::error_code{ errno, std::system_category() });
+            throw exception(std::error_code{ errno, std::system_category() });
     }
 
     file_descriptor::file_descriptor(const file_descriptor& other) :
         value(dup(other.value))
     {
         if (value == -1)
-            throw std::system_error(std::error_code{ errno, std::system_category() });
+            throw exception(std::error_code{ errno, std::system_category() });
     }
 
     file_descriptor::file_descriptor(file_descriptor&& other) noexcept :
@@ -211,12 +205,8 @@ namespace nrgprf
             int written = snprintf(base, sizeof(base),
                 "/sys/class/powercap/intel-rapl/intel-rapl:%u", skt);
             // if domain does not exist, no need to consider the remaining domains
-            if (std::error_code ec; !file_exists(base, ec))
-            {
-                if (ec)
-                    throw exception(ec);
+            if (!file_exists(base))
                 continue;
-            }
             result<uint32_t> package_num = get_package_number(base);
             if (!package_num)
                 throw exception(package_num.error());
@@ -231,13 +221,9 @@ namespace nrgprf
                 snprintf(base + written, sizeof(base) - written,
                     "/intel-rapl:%u:%u", skt, domain_count);
                 // only consider the domain if the file exists
-                if (std::error_code ec; file_exists(base, ec))
-                {
+                if (file_exists(base))
                     if (auto ec = add_event(base, dmask, *package_num, os))
                         throw exception(ec);
-                }
-                else
-                    throw exception(ec);
             }
         }
         if (!num_events())
