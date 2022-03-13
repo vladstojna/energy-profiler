@@ -31,6 +31,7 @@ namespace nrgprf
         too_many_sockets,
         too_many_devices,
         invalid_domain_name,
+        file_format_error,
         file_format_version_error,
         operation_not_supported,
         energy_readings_not_supported,
@@ -42,6 +43,7 @@ namespace nrgprf
         invalid_socket_mask,
         invalid_device_mask,
         invalid_location_mask,
+        unsupported_units,
         unknown_error,
     };
 

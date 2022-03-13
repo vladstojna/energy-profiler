@@ -52,6 +52,8 @@ namespace
             return "more GPU devices found than maximum supported";
         case errc::invalid_domain_name:
             return "invalid RAPL domain name";
+        case errc::file_format_error:
+            return "invalid CPU counters file format";
         case errc::file_format_version_error:
             return "invalid format version in CPU counters file";
         case errc::operation_not_supported:
@@ -74,6 +76,8 @@ namespace
             return "invalid GPU device mask (no devices set)";
         case errc::invalid_location_mask:
             return "invalid sensor location mask (no sensors set)";
+        case errc::unsupported_units:
+            return "unsupported units";
         case errc::unknown_error:
             return "unknown error";
         }
@@ -92,6 +96,7 @@ namespace
         case errc::too_many_sockets:
         case errc::too_many_devices:
         case errc::invalid_domain_name:
+        case errc::file_format_error:
         case errc::file_format_version_error:
         case errc::package_num_error:
         case errc::package_num_wrong_domain:
@@ -106,6 +111,7 @@ namespace
         case errc::unknown_error:
             return error_cause::unknown;
         case errc::no_such_event:
+        case errc::unsupported_units:
             return error_cause::query_error;
         case errc::readings_not_valid:
             return error_cause::read_error;
