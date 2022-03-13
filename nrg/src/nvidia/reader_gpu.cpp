@@ -14,14 +14,18 @@
 
 namespace
 {
+    std::error_code make_error_code(nvmlReturn_t status)
+    {
+        return { static_cast<int>(status), nrgprf::gpu_category() };
+    }
+
     nrgprf::result<unsigned int> get_device_count()
     {
         using rettype = decltype(get_device_count());
         unsigned int devcount;
         nvmlReturn_t result = nvmlDeviceGetCount(&devcount);
         if (result != NVML_SUCCESS)
-            return rettype(nonstd::unexpect,
-                static_cast<int>(result), nrgprf::gpu_category());
+            return rettype(nonstd::unexpect, make_error_code(result));
         if (auto ec = nrgprf::assert_device_count(devcount))
             return rettype(nonstd::unexpect, ec);
         return devcount;
@@ -34,7 +38,7 @@ namespace nrgprf
     {
         nvmlReturn_t result = nvmlInit();
         if (result != NVML_SUCCESS)
-            throw exception(std::error_code{ static_cast<int>(result), gpu_category() });
+            throw exception(::make_error_code(result));
     }
 
     lib_handle::~lib_handle()
@@ -58,7 +62,7 @@ namespace nrgprf
     {
         nvmlReturn_t result = nvmlInit();
         if (result != NVML_SUCCESS)
-            throw exception(std::error_code{ static_cast<int>(result), gpu_category() });
+            throw exception(::make_error_code(result));
         return *this;
     }
 
@@ -96,9 +100,9 @@ namespace nrgprf
             char name[sz];
             nvmlDevice_t handle = nullptr;
             if (nvmlReturn_t res; (res = nvmlDeviceGetHandleByIndex(i, &handle)) != NVML_SUCCESS)
-                throw exception(std::error_code{ static_cast<int>(res), gpu_category() });
+                throw exception(::make_error_code(res));
             if (nvmlReturn_t res; (res = nvmlDeviceGetName(handle, name, sz)) != NVML_SUCCESS)
-                throw exception(std::error_code{ static_cast<int>(res), gpu_category() });
+                throw exception(::make_error_code(res));
             os << fileline("device: ") << i << ", name: " << name << "\n";
             auto sup_dev = support(handle);
             if (!sup_dev)
@@ -139,7 +143,7 @@ namespace nrgprf
             if (!devmask[i])
                 continue;
             if (nvmlReturn_t res; (res = nvmlDeviceGetHandleByIndex(i, &devhandle)) != NVML_SUCCESS)
-                return rettype(nonstd::unexpect, static_cast<int>(res), gpu_category());
+                return rettype(nonstd::unexpect, ::make_error_code(res));
             if (auto sup = support(devhandle))
                 retval = retval & *sup;
             else
@@ -156,7 +160,7 @@ namespace nrgprf
         auto cannot_query_support = [](nvmlReturn_t res)
         {
             return result<readings_type::type>(nonstd::unexpect,
-                static_cast<int>(res), gpu_category());
+                ::make_error_code(res));
         };
 
         nvmlReturn_t res;
@@ -181,7 +185,7 @@ namespace nrgprf
         nvmlReturn_t result = nvmlDeviceGetTotalEnergyConsumption(handle, &energy);
         if (result != NVML_SUCCESS)
         {
-            std::error_code{ static_cast<int>(result), gpu_category() };
+            ec = ::make_error_code(result);
             return false;
         }
         s.data.gpu_energy[stride] = energy;
@@ -196,7 +200,7 @@ namespace nrgprf
         nvmlReturn_t result = nvmlDeviceGetPowerUsage(handle, &power);
         if (result != NVML_SUCCESS)
         {
-            std::error_code{ static_cast<int>(result), gpu_category() };
+            ec = ::make_error_code(result);
             return false;
         }
         s.data.gpu_power[stride] = power;
