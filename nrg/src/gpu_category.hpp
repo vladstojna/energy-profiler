@@ -1,6 +1,6 @@
 #pragma once
 
-#include "../../visibility.hpp"
+#include "visibility.hpp"
 
 #include <system_error>
 

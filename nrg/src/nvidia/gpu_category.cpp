@@ -1,4 +1,4 @@
-#include "../common/gpu/gpu_category.hpp"
+#include "../gpu_category.hpp"
 
 #include <nvml.h>
 
