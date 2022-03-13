@@ -1,5 +1,3 @@
-#include "../common/exception.hpp"
-
 #include <nrg/nrg.hpp>
 #include <nonstd/expected.hpp>
 
@@ -17,10 +15,10 @@ namespace
             const nrgprf::sample& s,
             uint32_t dev)
         {
-            using example::nrg_exception;
+            using nrgprf::exception;
             auto val = r.get_board_power(s, dev);
             if (!val)
-                throw nrg_exception(val.error());
+                throw exception(val.error());
             return unit{ *val };
         }
     };
@@ -34,10 +32,10 @@ namespace
             const nrgprf::sample& s,
             uint32_t dev)
         {
-            using example::nrg_exception;
+            using nrgprf::exception;
             auto val = r.get_board_energy(s, dev);
             if (!val)
-                throw nrg_exception(val.error());
+                throw exception(val.error());
             return unit{ *val };
         }
     };
@@ -75,27 +73,22 @@ int main()
     try
     {
         using namespace nrgprf;
-        using example::nrg_exception;
-
         constexpr uint8_t device = 0;
 
         auto support = reader_gpu::support(0x1);
         if (!support)
-            throw nrg_exception(support.error());
+            throw exception(support.error());
         std::cout << *support << "\n";
 
-        error err = error::success();
-        reader_gpu reader(*support, 0x1, err);
-        if (err)
-            throw nrg_exception(err);
+        reader_gpu reader(*support, 0x1);
 
         sample first;
         sample last;
-        if (auto err = reader.read(first))
-            throw nrg_exception(err);
+        if (std::error_code ec; !reader.read(first, ec))
+            throw exception(ec);
         std::this_thread::sleep_for(std::chrono::seconds(3));
-        if (auto err = reader.read(last))
-            throw nrg_exception(err);
+        if (std::error_code ec; !reader.read(last, ec))
+            throw exception(ec);
 
         if (*support & readings_type::energy)
         {
@@ -115,6 +108,11 @@ int main()
             std::cout << "After sleep: " << after.count() << " W\n";
             std::cout << "Average: " << ((after + before) / 2).count() << " W\n";
         }
+    }
+    catch (const nrgprf::exception& e)
+    {
+        std::cerr << "NRG exception: " << e.what() << '\n';
+        return 1;
     }
     catch (const std::exception& e)
     {

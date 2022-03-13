@@ -16,7 +16,7 @@ TARGET := main.out
 
 default: $(TARGET)
 
-$(OBJ): $(SRC) ../common/exception.hpp
+$(OBJ): $(SRC)
 	$(CC) $(CFLAGS) -c -o $@ $<
 
 $(TARGET): $(OBJ)
