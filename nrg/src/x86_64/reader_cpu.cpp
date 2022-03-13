@@ -195,9 +195,12 @@ namespace nrgprf
         _event_map(),
         _active_events()
     {
+        if (dmask.none())
+            throw exception(errc::invalid_location_mask);
+        if (skt_mask.none())
+            throw exception(errc::invalid_socket_mask);
         for (auto& skts : _event_map)
             skts.fill(-1);
-
         result<uint8_t> num_skts = count_sockets();
         if (!num_skts)
             throw exception(num_skts.error());
