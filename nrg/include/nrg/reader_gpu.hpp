@@ -14,13 +14,15 @@ namespace nrgprf
 {
     class sample;
 
-    class reader_gpu : public reader
+    class reader_gpu final : public reader
     {
     private:
         struct impl;
         std::unique_ptr<impl> _impl;
 
     public:
+        using reader::read;
+
         static result<readings_type::type> support(device_mask);
         static result<readings_type::type> support();
 

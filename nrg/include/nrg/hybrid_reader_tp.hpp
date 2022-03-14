@@ -35,6 +35,8 @@ namespace nrgprf
         };
 
     public:
+        using reader::read;
+
         template<typename... Readers,
             std::enable_if_t<detail::all_reader_ptrs_v<Readers...>, bool> = true
         > explicit hybrid_reader_tp(Readers&&...);

@@ -15,13 +15,15 @@ namespace nrgprf
 {
     class sample;
 
-    class reader_rapl : public reader
+    class reader_rapl final : public reader
     {
     private:
         class impl;
         std::unique_ptr<impl> _impl;
 
     public:
+        using reader::read;
+
         explicit reader_rapl(location_mask, socket_mask, std::ostream & = std::cout);
         explicit reader_rapl(location_mask, std::ostream & = std::cout);
         explicit reader_rapl(socket_mask, std::ostream & = std::cout);

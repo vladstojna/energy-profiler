@@ -18,6 +18,8 @@ namespace nrgprf
         std::vector<const reader*> _readers;
 
     public:
+        using reader::read;
+
         template<
             typename... Readers,
             std::enable_if_t<detail::all_reader_ptrs_v<Readers...>, bool> = true
