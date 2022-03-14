@@ -48,6 +48,7 @@ namespace nrgprf
         timed_sample();
 
         const time_point& timepoint() const;
+        void timepoint(time_point) noexcept;
 
         bool operator==(const timed_sample& rhs) const;
         bool operator!=(const timed_sample& rhs) const;

@@ -38,6 +38,11 @@ const timed_sample::time_point& timed_sample::timepoint() const
     return _timepoint;
 }
 
+void timed_sample::timepoint(time_point x) noexcept
+{
+    _timepoint = std::move(x);
+}
+
 bool timed_sample::operator==(const timed_sample& rhs) const
 {
     return timepoint() == rhs.timepoint() && sample(*this) == sample(rhs);
