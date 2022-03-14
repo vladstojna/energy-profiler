@@ -55,6 +55,11 @@ Generate a debug build:
 make DEBUG=1
 ```
 
+Other Make variables which can be overriden:
+
+* `system_clock` - use the system's clock instead of a steady clock for
+  timestamps; use when an absolute, real time is necessary
+
 Additionally, some options are provided as preprocessor definitions.
 Enable them by running `make` with the `cpp` argument:
 

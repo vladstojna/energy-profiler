@@ -73,8 +73,6 @@ Other Make variables which can be overriden:
     permissions to read the sensors
 * `rocm_ver=<version>`, used when the ROCm installation path is versioned
   (no effect if `gpu` is not `GPU_AMD`)
-* `system_clock` - use the system's clock instead of a steady clock for
-  timestamps; use when an absolute, real time is necessary
 
 Additionally, some options are provided as preprocessor definitions.
 To enable them, use `make` with the `cpp` argument:

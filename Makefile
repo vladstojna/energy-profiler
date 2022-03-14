@@ -23,6 +23,11 @@ tgt  := $(tgt_dir)/profiler
 
 DEBUG ?=
 
+system_clock ?=
+ifdef system_clock
+cflags += -DTEP_USE_SYSTEM_CLOCK
+endif
+
 cflags := -Wall -Wextra -Wno-unknown-pragmas -Wpedantic -fPIE -g -pthread
 cflags += $(addprefix -I, $(extlibs_incl))
 cflags += $(addprefix -I, include nrg/include)
