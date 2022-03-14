@@ -29,33 +29,4 @@ namespace nrgprf
 
         explicit operator bool() const;
     };
-
-    class timed_sample
-    {
-    public:
-    #ifdef NRG_USE_SYSTEM_CLOCK
-        using time_point = std::chrono::time_point<std::chrono::system_clock>;
-    #else
-        using time_point = std::chrono::time_point<std::chrono::steady_clock>;
-    #endif
-        using duration = std::chrono::nanoseconds;
-
-    private:
-        time_point _timepoint;
-        sample _sample;
-
-    public:
-        timed_sample();
-
-        const time_point& timepoint() const;
-        void timepoint(time_point) noexcept;
-
-        bool operator==(const timed_sample& rhs) const;
-        bool operator!=(const timed_sample& rhs) const;
-
-        duration operator-(const timed_sample& rhs) const;
-
-        operator const sample& () const;
-        operator sample& ();
-    };
 }
