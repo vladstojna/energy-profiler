@@ -3,20 +3,20 @@
 #pragma once
 
 #include "signaler.hpp"
+#include "timed_sample.hpp"
+
+#include <nrg/reader.hpp>
+#include <nrg/error.hpp>
+#include <nonstd/expected.hpp>
 
 #include <atomic>
 #include <future>
 #include <vector>
 
-#include <nrg/reader.hpp>
-#include <nrg/sample.hpp>
-#include <nrg/error.hpp>
-#include <nonstd/expected.hpp>
-
 namespace tep
 {
 
-    using timed_execution = std::vector<nrgprf::timed_sample>;
+    using timed_execution = std::vector<timed_sample>;
     using sampler_expected = nonstd::expected<timed_execution, std::error_code>;
     using sampler_promise = std::function<sampler_expected()>;
 
@@ -61,8 +61,8 @@ namespace tep
     class short_sampler : public sampler
     {
     private:
-        nrgprf::timed_sample _start;
-        nrgprf::timed_sample _end;
+        timed_sample _start;
+        timed_sample _end;
 
     public:
         using sampler::sampler;

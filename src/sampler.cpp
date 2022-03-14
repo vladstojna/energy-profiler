@@ -44,8 +44,7 @@ const nrgprf::reader* sampler::reader() const
 
 sampler_promise short_sampler::run()&
 {
-    _start = nrgprf::timed_sample{};
-    _start.timepoint(nrgprf::timed_sample::time_point::clock::now());
+    _start.timestamp = timed_sample::clock::now();
     if (std::error_code ec; !reader()->read(_start, ec))
     {
         auto promise = [ec]()
@@ -67,8 +66,7 @@ sampler_expected short_sampler::run()&&
 
 sampler_expected short_sampler::results()
 {
-    _end = nrgprf::timed_sample{};
-    _end.timepoint(nrgprf::timed_sample::time_point::clock::now());
+    _end.timestamp = timed_sample::clock::now();
     if (std::error_code ec; !reader()->read(_start, ec))
         return sampler_expected(nonstd::unexpect, ec);
     return timed_execution{ std::move(_start), std::move(_end) };
@@ -81,8 +79,8 @@ sync_sampler::sync_sampler(const nrgprf::reader* reader) :
 
 sampler_expected sync_sampler::results()
 {
-    nrgprf::timed_sample s1;
-    s1.timepoint(nrgprf::timed_sample::time_point::clock::now());
+    timed_sample s1;
+    s1.timestamp = timed_sample::clock::now();
     if (std::error_code ec; !reader()->read(s1, ec))
     {
         log::logline(log::error, "%s: error when reading counters: %s",
@@ -92,8 +90,8 @@ sampler_expected sync_sampler::results()
 
     work();
 
-    nrgprf::timed_sample s2;
-    s2.timepoint(nrgprf::timed_sample::time_point::clock::now());
+    timed_sample s2;
+    s2.timestamp = timed_sample::clock::now();
     if (std::error_code ec; !reader()->read(s2, ec))
     {
         log::logline(log::error, "%s: error when reading counters: %s",
@@ -244,19 +242,19 @@ sampler_expected bounded_ps::async_work()
     log::logline(log::debug, "%s: waiting to start", __func__);
     sig().wait();
 
-    nrgprf::timed_sample first;
-    first.timepoint(nrgprf::timed_sample::time_point::clock::now());
+    timed_sample first;
+    first.timestamp = timed_sample::clock::now();
     if (std::error_code ec; !reader()->read(first, ec))
     {
         log::logline(log::error, "%s: error when reading counters: %s",
             __func__, ec.message().c_str());
         return sampler_expected(nonstd::unexpect, ec);
     }
-    nrgprf::timed_sample last;
+    timed_sample last;
     while (!finished())
     {
         sig().wait_for(period());
-        last.timepoint(nrgprf::timed_sample::time_point::clock::now());
+        last.timestamp = timed_sample::clock::now();
         if (std::error_code ec; !reader()->read(last, ec))
         {
             log::logline(log::error, "%s: error when reading counters: %s",
@@ -290,7 +288,7 @@ sampler_expected unbounded_ps::async_work()
     do
     {
         auto& smp = exec.emplace_back();
-        smp.timepoint(nrgprf::timed_sample::time_point::clock::now());
+        smp.timestamp = timed_sample::clock::now();
         if (std::error_code ec; !reader()->read(smp, ec))
         {
             log::logline(log::error, "%s: error when reading counters: %s",
@@ -301,7 +299,7 @@ sampler_expected unbounded_ps::async_work()
     } while (!finished());
 
     auto& smp = exec.emplace_back();
-    smp.timepoint(nrgprf::timed_sample::time_point::clock::now());
+    smp.timestamp = timed_sample::clock::now();
     if (std::error_code ec; !reader()->read(smp, ec))
     {
         log::logline(log::error, "%s: error when reading counters: %s",
