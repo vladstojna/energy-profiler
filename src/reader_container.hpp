@@ -11,7 +11,6 @@
 namespace tep
 {
     struct flags;
-    class tracer_error;
 
     class reader_container
     {
@@ -21,7 +20,7 @@ namespace tep
         std::vector<std::pair<cfg::target, nrgprf::hybrid_reader>> _hybrids;
 
     public:
-        reader_container(const flags&, const cfg::config_t&, tracer_error&);
+        reader_container(const flags&, const cfg::config_t&);
         ~reader_container();
         reader_container(const reader_container&);
         reader_container(reader_container&&);

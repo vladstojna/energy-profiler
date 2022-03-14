@@ -17,7 +17,7 @@ namespace tep
 {
 
     using timed_execution = std::vector<nrgprf::timed_sample>;
-    using sampler_expected = nonstd::expected<timed_execution, nrgprf::error>;
+    using sampler_expected = nonstd::expected<timed_execution, std::error_code>;
     using sampler_promise = std::function<sampler_expected()>;
 
     // sampler_interface

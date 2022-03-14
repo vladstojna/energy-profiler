@@ -12,12 +12,6 @@
 
 using namespace tep;
 
-static tracer_error handle_reader_error(const char* comment, const nrgprf::error& e)
-{
-    log::logline(log::error, "%s: error during creation: %s", comment, e.msg().c_str());
-    return tracer_error(tracer_errcode::READER_ERROR, e.msg());
-}
-
 static nrgprf::readings_type::type
 effective_readings_type(nrgprf::readings_type::type rt)
 {
@@ -28,8 +22,7 @@ effective_readings_type(nrgprf::readings_type::type rt)
 static nrgprf::reader_rapl
 create_cpu_reader(
     const flags& flags,
-    const cfg::config_t::opt_params_t& params,
-    tracer_error& err)
+    const cfg::config_t::opt_params_t& params)
 {
     auto get_domain_mask = [&flags, &params]()
     {
@@ -49,24 +42,27 @@ create_cpu_reader(
         return nrgprf::socket_mask(*params->socket_mask);
     };
 
-    nrgprf::error error = nrgprf::error::success();
-    nrgprf::reader_rapl reader(
-        get_domain_mask(),
-        get_socket_mask(),
-        error,
-        log::stream());
-    if (error)
-        err = handle_reader_error(__func__, error);
-    else
-        log::logline(log::success, "created %s reader", "RAPL");
-    return reader;
+    try
+    {
+        nrgprf::reader_rapl reader(
+            get_domain_mask(),
+            get_socket_mask(),
+            log::stream());
+        log::logline(log::success, "created CPU reader");
+        return reader;
+    }
+    catch (const nrgprf::exception& e)
+    {
+        log::logline(log::error,
+            "%s: error creating CPU reader: %s", __func__, e.what());
+        throw;
+    }
 }
 
 static nrgprf::reader_gpu
 create_gpu_reader(
     const flags& flags,
-    const cfg::config_t::opt_params_t& params,
-    tracer_error& err)
+    const cfg::config_t::opt_params_t& params)
 {
     auto get_device_mask = [&flags, &params]()
     {
@@ -77,26 +73,30 @@ create_gpu_reader(
         return nrgprf::device_mask(*params->device_mask);
     };
 
-    nrgprf::error error = nrgprf::error::success();
     auto devmask = get_device_mask();
     auto support = nrgprf::reader_gpu::support(devmask);
     if (!support)
-        error = std::move(support.error());
-    nrgprf::reader_gpu reader(
-        effective_readings_type(support ? *support : nrgprf::readings_type::all),
-        devmask,
-        error,
-        log::stream());
-    if (error)
-        err = handle_reader_error(__func__, error);
-    else
-        log::logline(log::success, "created %s reader", "GPU");
-    return reader;
+        throw nrgprf::exception(support.error());
+    try
+    {
+        nrgprf::reader_gpu reader(
+            effective_readings_type(support ? *support : nrgprf::readings_type::all),
+            devmask,
+            log::stream());
+        log::logline(log::success, "created GPU reader", "GPU");
+        return reader;
+    }
+    catch (const nrgprf::exception& e)
+    {
+        log::logline(log::error,
+            "%s: error creating GPU reader: %s", __func__, e.what());
+        throw;
+    }
 }
 
-reader_container::reader_container(const flags& flags, const cfg::config_t& cd, tracer_error& err) :
-    _rdr_cpu(create_cpu_reader(flags, cd.parameters(), err)),
-    _rdr_gpu(create_gpu_reader(flags, cd.parameters(), err))
+reader_container::reader_container(const flags& flags, const cfg::config_t& cd) :
+    _rdr_cpu(create_cpu_reader(flags, cd.parameters())),
+    _rdr_gpu(create_gpu_reader(flags, cd.parameters()))
 {
     for (const auto& g : cd.groups())
     {

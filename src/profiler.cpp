@@ -176,8 +176,8 @@ namespace
         if (!results)
         {
             log::logline(log::error, "unsuccessfuly gathered %s idle readings: %s", target,
-                results.error().msg().c_str());
-            return { tracer_errcode::READER_ERROR, results.error().msg() };
+                results.error().message().c_str());
+            return { tracer_errcode::READER_ERROR, results.error().message() };
         }
         log::logline(log::success, "successfuly gathered %s idle readings", target);
         into = std::move(*results);
@@ -262,43 +262,43 @@ section_output* profiler::output_mapping::find(addr_bounds bounds)
 
 
 profiler::profiler(pid_t child, const flags& flags,
-    const dbg_info& dli, const cfg::config_t& cd, tracer_error& err) :
+    const dbg_info& dli, const cfg::config_t& cd) :
     _tid(gettid()),
     _child(child),
     _flags(flags),
     _dli(dli),
     _cd(cd),
-    _readers(_flags, _cd, err)
+    _readers(_flags, _cd)
 {}
 
 profiler::profiler(pid_t child, const flags& flags,
-    const dbg_info& dli, cfg::config_t&& cd, tracer_error& err) :
+    const dbg_info& dli, cfg::config_t&& cd) :
     _tid(gettid()),
     _child(child),
     _flags(flags),
     _dli(dli),
     _cd(std::move(cd)),
-    _readers(_flags, _cd, err)
+    _readers(_flags, _cd)
 {}
 
 profiler::profiler(pid_t child, const flags& flags,
-    dbg_info&& dli, const cfg::config_t& cd, tracer_error& err) :
+    dbg_info&& dli, const cfg::config_t& cd) :
     _tid(gettid()),
     _child(child),
     _flags(flags),
     _dli(std::move(dli)),
     _cd(cd),
-    _readers(_flags, _cd, err)
+    _readers(_flags, _cd)
 {}
 
 profiler::profiler(pid_t child, const flags& flags,
-    dbg_info&& dli, cfg::config_t&& cd, tracer_error& err) :
+    dbg_info&& dli, cfg::config_t&& cd) :
     _tid(gettid()),
     _child(child),
     _flags(flags),
     _dli(std::move(dli)),
     _cd(std::move(cd)),
-    _readers(_flags, _cd, err)
+    _readers(_flags, _cd)
 {}
 
 const dbg_info& profiler::debug_line_info() const
@@ -563,7 +563,7 @@ tracer_expected<profiling_results> profiler::run()
             if (!exec)
             {
                 log::logline(log::error, "[%d] failed to gather results for section %s: %s",
-                    _tid, interval_str.c_str(), exec.error().msg().c_str());
+                    _tid, interval_str.c_str(), exec.error().message().c_str());
                 continue;
             }
             log::logline(log::success, "[%d] registered execution of section %s as successful",
@@ -832,27 +832,3 @@ tracer_error profiler::insert_traps_position_end(
     log::logline(log::success, "[%d] inserted trap on line: %s", _tid, pstr.c_str());
     return tracer_error::success();
 }
-
-template<typename D, typename C>
-nonstd::expected<profiler, tracer_error> profiler::create(pid_t child, const flags& f,
-    D&& dli, C&& cd)
-{
-    using rettype = nonstd::expected<profiler, tracer_error>;
-    tracer_error err = tracer_error::success();
-    profiler prof(child, f, std::forward<D>(dli), std::forward<C>(cd), err);
-    if (err)
-        return rettype(nonstd::unexpect, std::move(err));
-    return prof;
-}
-
-template nonstd::expected<profiler, tracer_error>
-profiler::create(pid_t child, const flags& f, dbg_info&& dli, cfg::config_t&& cd);
-
-template nonstd::expected<profiler, tracer_error>
-profiler::create(pid_t child, const flags& f, dbg_info&& dli, const cfg::config_t& cd);
-
-template nonstd::expected<profiler, tracer_error>
-profiler::create(pid_t child, const flags& f, const dbg_info& dli, cfg::config_t&& cd);
-
-template nonstd::expected<profiler, tracer_error>
-profiler::create(pid_t child, const flags& f, const dbg_info& dli, const cfg::config_t& cd);

@@ -14,14 +14,10 @@
 namespace tep
 {
     class profiling_results;
+    class tracer_error;
 
     class profiler
     {
-    public:
-        template<typename D = dbg_info, typename C = cfg::config_t>
-        static nonstd::expected<profiler, tracer_error>
-            create(pid_t, const flags&, D&&, C&&);
-
     private:
         struct output_mapping
         {
@@ -55,16 +51,16 @@ namespace tep
 
     public:
         profiler(pid_t child, const flags& flags,
-            const dbg_info& dli, const cfg::config_t& cd, tracer_error& err);
+            const dbg_info& dli, const cfg::config_t& cd);
 
         profiler(pid_t child, const flags& flags,
-            const dbg_info& dli, cfg::config_t&& cd, tracer_error& err);
+            const dbg_info& dli, cfg::config_t&& cd);
 
         profiler(pid_t child, const flags& flags,
-            dbg_info&& dli, const cfg::config_t& cd, tracer_error& err);
+            dbg_info&& dli, const cfg::config_t& cd);
 
         profiler(pid_t child, const flags& flags,
-            dbg_info&& dli, cfg::config_t&& cd, tracer_error& err);
+            dbg_info&& dli, cfg::config_t&& cd);
 
         const dbg_info& debug_line_info() const;
         const cfg::config_t& config() const;
