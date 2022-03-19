@@ -7,6 +7,8 @@
 #include "ptrace_wrapper.hpp"
 #include "target.hpp"
 #include "log.hpp"
+#include "dbg/object_info.hpp"
+#include "dbg/error.hpp"
 
 #include <cstring>
 #include <iostream>
@@ -24,6 +26,10 @@ void handle_exception()
     catch (const tep::cfg::exception& e)
     {
         std::cerr << "Config exception: " << e.what() << "\n";
+    }
+    catch (const tep::dbg::exception& e)
+    {
+        std::cerr << "DBG exception: " << e.what() << "\n";
     }
     catch (const std::exception& e)
     {
@@ -54,12 +60,14 @@ int main(int argc, char* argv[])
             return 1;
         }
 
+        dbg::object_info oinfo(args->target);
         cfg::config_t config(args->config);
 
     #ifndef NDEBUG
         log::stream() << *args << "\n";
         log::stream() << *dbg_info << "\n";
         log::stream() << config << std::endl;
+        log::stream() << oinfo << std::endl;
     #endif
 
         int errnum;
