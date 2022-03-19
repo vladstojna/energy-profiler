@@ -42,7 +42,7 @@ ldflags += -flto
 endif
 
 # linker flags
-ldflags := -pthread -lpugixml -lnrg -lstdc++fs
+ldflags := -pthread -lpugixml -lnrg -lstdc++fs -lelf -ldw
 ldflags += $(addprefix -L, $(extlibs_dirs) nrg/lib)
 
 ifneq (,$(findstring TEP_USE_LIBDWARF, $(cpp)))
