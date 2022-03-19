@@ -45,7 +45,7 @@ namespace
 
     std::string generic_category_t::message(int ev) const
     {
-        using dbg::errc;
+        using tep::dbg::errc;
         switch (static_cast<errc>(ev))
         {
         case errc::not_an_elf_object:
@@ -80,10 +80,12 @@ namespace
 
     std::error_condition generic_category_t::default_error_condition(int ev) const noexcept
     {
-        auto ec = static_cast<dbg::errc>(ev);
-        return ec >= dbg::errc::not_an_elf_object && ec <= dbg::errc::unknown ?
-            dbg::error_cause::custom_error :
-            dbg::error_cause::unknown;
+        using tep::dbg::errc;
+        using tep::dbg::error_cause;
+        auto ec = static_cast<errc>(ev);
+        return ec >= errc::not_an_elf_object && ec <= errc::unknown ?
+            error_cause::custom_error :
+            error_cause::unknown;
     }
 
     const char* dwarf_category_t::name() const noexcept
@@ -98,7 +100,7 @@ namespace
 
     std::error_condition dwarf_category_t::default_error_condition(int) const noexcept
     {
-        return dbg::error_cause::dwarf_error;
+        return tep::dbg::error_cause::dwarf_error;
     }
 
     const char* elf_category_t::name() const noexcept
@@ -113,7 +115,7 @@ namespace
 
     std::error_condition elf_category_t::default_error_condition(int) const noexcept
     {
-        return dbg::error_cause::elf_error;
+        return tep::dbg::error_cause::elf_error;
     }
 
     const char* error_cause_category_t::name() const noexcept
@@ -123,7 +125,7 @@ namespace
 
     std::string error_cause_category_t::message(int ev) const
     {
-        using dbg::error_cause;
+        using tep::dbg::error_cause;
         switch (static_cast<error_cause>(ev))
         {
         case error_cause::elf_error:
@@ -140,43 +142,46 @@ namespace
 
     bool error_cause_category_t::equivalent(const std::error_code& ec, int cv) const noexcept
     {
-        using dbg::error_cause;
+        using tep::dbg::error_cause;
         auto cond = static_cast<error_cause>(cv);
-        if (ec.category() == dbg::generic_category())
+        if (ec.category() == tep::dbg::generic_category())
             return cond == error_cause::custom_error;
-        if (ec.category() == dbg::elf_category())
+        if (ec.category() == tep::dbg::elf_category())
             return cond == error_cause::elf_error;
-        if (ec.category() == dbg::dwarf_category())
+        if (ec.category() == tep::dbg::dwarf_category())
             return cond == error_cause::dwarf_error;
         return false;
     }
 
 }
 
-namespace dbg
+namespace tep
 {
-    const std::error_category& generic_category() noexcept
+    namespace dbg
     {
-        return generic_category_v;
-    }
+        const std::error_category& generic_category() noexcept
+        {
+            return generic_category_v;
+        }
 
-    const std::error_category& dwarf_category() noexcept
-    {
-        return dwarf_category_v;
-    }
+        const std::error_category& dwarf_category() noexcept
+        {
+            return dwarf_category_v;
+        }
 
-    const std::error_category& elf_category() noexcept
-    {
-        return elf_category_v;
-    }
+        const std::error_category& elf_category() noexcept
+        {
+            return elf_category_v;
+        }
 
-    std::error_code make_error_code(errc x) noexcept
-    {
-        return { static_cast<int>(x), generic_category() };
-    }
+        std::error_code make_error_code(errc x) noexcept
+        {
+            return { static_cast<int>(x), generic_category() };
+        }
 
-    std::error_condition make_error_condition(error_cause x) noexcept
-    {
-        return { static_cast<int>(x), error_cause_category_v };
-    }
-} // namespace dbg
+        std::error_condition make_error_condition(error_cause x) noexcept
+        {
+            return { static_cast<int>(x), error_cause_category_v };
+        }
+    } // namespace dbg
+} // namespace tep
