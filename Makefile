@@ -16,7 +16,7 @@ extlibs_incl := $(addprefix $(lib_dir)/, pugixml/include json/single_include exp
 extlibs_dirs := $(addprefix $(lib_dir)/, pugixml/lib)
 
 # files
-src  := $(wildcard src/*.cpp)
+src  := $(shell find src/ -type f -name '*.cpp')
 obj  := $(patsubst $(src_dir)/%.cpp, $(obj_dir)/%.o, $(src))
 deps := $(patsubst $(src_dir)/%.cpp, $(dep_dir)/%.d, $(src))
 tgt  := $(tgt_dir)/profiler
@@ -59,10 +59,8 @@ default: $(tgt)
 
 $(tgt_dir):
 	@mkdir -p $@
-$(obj_dir):
-	@mkdir -p $@
-$(dep_dir):
-	@mkdir -p $@
+$(obj_dir) $(dep_dir):
+	@mkdir -p $@/dbg
 
 $(tgt): $(obj) | $(tgt_dir)
 	$(cc) $^ $(ldflags) -o $@
