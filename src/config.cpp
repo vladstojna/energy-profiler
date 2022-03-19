@@ -14,8 +14,6 @@
 
 static constexpr std::string_view error_messages[] =
 {
-    "No error",
-
     "I/O error when loading config file",
     "Config file not found",
     "Out of memory when loading config file",
@@ -67,12 +65,34 @@ static constexpr std::string_view error_messages[] =
     "addr: invalid address value; must be positive, hexadecimal and begin with 0x or 0X",
 };
 
-static_assert(static_cast<size_t>(tep::cfg::error::code_t::addr_range_invalid_value) + 1 ==
+static_assert(static_cast<size_t>(tep::cfg::errc::addr_range_invalid_value) ==
     sizeof(error_messages) / sizeof(error_messages[0]),
     "cfg_error_code number of entries does not match message array size");
 
 namespace
 {
+    template<typename T>
+    using result = nonstd::expected<T, std::error_code>;
+
+    struct config_category_t : std::error_category
+    {
+        const char* name() const noexcept override
+        {
+            return "config";
+        }
+
+        std::string message(int ev) const override
+        {
+            using tep::cfg::errc;
+            auto ec = static_cast<errc>(ev);
+            if (ec >= errc::config_io_error && ec <= errc::addr_range_invalid_value)
+                return std::string(error_messages[ev]);
+            return "(unrecognized error code)";
+        }
+    };
+
+    const config_category_t config_category_v;
+
     template<typename T>
     std::string remove_spaces(T&& txt)
     {
@@ -127,10 +147,10 @@ namespace
         return os;
     }
 
-    tep::cfg::result<uint32_t> get_address_value(const pugi::xml_attribute& attr)
+    result<uint32_t> get_address_value(const pugi::xml_attribute& attr)
     {
         using rettype = decltype(get_address_value(std::declval<decltype(attr)>()));
-        using tep::cfg::error;
+        using tep::cfg::errc;
         using namespace pugi;
 
         auto valid_prefix = [](std::string_view val)
@@ -139,21 +159,21 @@ namespace
         };
 
         if (attr.empty())
-            return rettype(nonstd::unexpect, error::code_t::addr_range_invalid_value);
+            return rettype(nonstd::unexpect, errc::addr_range_invalid_value);
         std::string_view text = attr.value();
         if (text.size() <= 2 || !valid_prefix(text))
-            return rettype(nonstd::unexpect, error::code_t::addr_range_invalid_value);
+            return rettype(nonstd::unexpect, errc::addr_range_invalid_value);
         uint32_t value;
         auto [ptr, ec] = std::from_chars(text.begin() + 2, text.end(), value, 16);
         if (std::make_error_code(ec))
-            return rettype(nonstd::unexpect, error::code_t::addr_range_invalid_value);
+            return rettype(nonstd::unexpect, errc::addr_range_invalid_value);
         return value;
     }
 
-    tep::cfg::result<std::string> get_cu(const pugi::xml_node& pos_node)
+    result<std::string> get_cu(const pugi::xml_node& pos_node)
     {
         using rettype = decltype(get_cu(std::declval<decltype(pos_node)>()));
-        using tep::cfg::error;
+        using tep::cfg::errc;
         using namespace pugi;
         // attribute "cu" exists
         xml_attribute cu_attr = pos_node.attribute("cu");
@@ -161,24 +181,24 @@ namespace
         {
             // if attribute exists - it cannot be empty
             if (!*cu_attr.value())
-                return rettype(nonstd::unexpect, error::code_t::pos_invalid_comp_unit);
+                return rettype(nonstd::unexpect, errc::pos_invalid_comp_unit);
             return cu_attr.value();
         }
         // fallback to checking child node
         xml_node cu = pos_node.child("cu");
         // <cu></cu> exists
         if (!cu)
-            return rettype(nonstd::unexpect, error::code_t::pos_no_comp_unit);
+            return rettype(nonstd::unexpect, errc::pos_no_comp_unit);
         // <cu></cu> is not empty
         if (!*cu.child_value())
-            return rettype(nonstd::unexpect, error::code_t::pos_invalid_comp_unit);
+            return rettype(nonstd::unexpect, errc::pos_invalid_comp_unit);
         return cu.child_value();
     }
 
-    tep::cfg::result<uint32_t> get_lineno(const pugi::xml_node& pos_node)
+    result<uint32_t> get_lineno(const pugi::xml_node& pos_node)
     {
         using rettype = decltype(get_lineno(std::declval<decltype(pos_node)>()));
-        using tep::cfg::error;
+        using tep::cfg::errc;
         using namespace pugi;
         // attribute "line" exists
         xml_attribute line_attr = pos_node.attribute("line");
@@ -186,21 +206,21 @@ namespace
         {
             // if attribute exists - it cannot be empty
             if (!*line_attr.value())
-                return rettype(nonstd::unexpect, error::code_t::pos_invalid_line);
+                return rettype(nonstd::unexpect, errc::pos_invalid_line);
             int lineno;
             if ((lineno = line_attr.as_int(0)) <= 0)
-                return rettype(nonstd::unexpect, error::code_t::pos_invalid_line);
+                return rettype(nonstd::unexpect, errc::pos_invalid_line);
             return lineno;
         }
         // fallback to checking child node
         xml_node line = pos_node.child("line");
         // <line></line> exists
         if (!line)
-            return rettype(nonstd::unexpect, error::code_t::pos_no_line);
+            return rettype(nonstd::unexpect, errc::pos_no_line);
         // <line></line> is not empty or negative
         int lineno;
         if ((lineno = line.text().as_int(0)) <= 0)
-            return rettype(nonstd::unexpect, error::code_t::pos_invalid_line);
+            return rettype(nonstd::unexpect, errc::pos_invalid_line);
         return lineno;
     }
 
@@ -221,10 +241,10 @@ namespace
         return std::nullopt;
     }
 
-    tep::cfg::result<std::chrono::milliseconds> get_interval(const pugi::xml_node& nsection)
+    result<std::chrono::milliseconds> get_interval(const pugi::xml_node& nsection)
     {
         using namespace pugi;
-        using tep::cfg::error;
+        using tep::cfg::errc;
         using rettype = decltype(get_interval(std::declval<decltype(nsection)>()));
         xml_node nfreq = nsection.child("freq");
         xml_node nint = nsection.child("interval");
@@ -234,7 +254,7 @@ namespace
             // <interval/> must be a valid, positive integer
             int interval = nint.text().as_int(0);
             if (interval <= 0)
-                return rettype(nonstd::unexpect, error::code_t::sec_invalid_interval);
+                return rettype(nonstd::unexpect, errc::sec_invalid_interval);
             return std::chrono::milliseconds(interval);
         }
         if (nfreq)
@@ -242,21 +262,21 @@ namespace
             // <freq/> must be a positive decimal number
             double freq = nfreq.text().as_double(0.0);
             if (freq <= 0.0)
-                return rettype(nonstd::unexpect, error::code_t::sec_invalid_freq);
+                return rettype(nonstd::unexpect, errc::sec_invalid_freq);
             return std::chrono::milliseconds(
                 static_cast<std::chrono::milliseconds::rep>(
                     std::clamp(1000.0 / freq, 1.0, 1000.0 / freq)));
         }
-        return rettype(nonstd::unexpect, error::code_t::sec_no_interval);
+        return rettype(nonstd::unexpect, errc::sec_no_interval);
     }
 
-    tep::cfg::result<std::optional<uint32_t>> get_samples(
+    result<std::optional<uint32_t>> get_samples(
         const pugi::xml_node& nsection,
         const std::chrono::milliseconds& interval)
     {
         using namespace pugi;
-        using tep::cfg::error;
-        using rettype = tep::cfg::result<std::optional<uint32_t>>;
+        using tep::cfg::errc;
+        using rettype = result<std::optional<uint32_t>>;
         xml_node nsamp = nsection.child("samples");
         xml_node ndur = nsection.child("duration");
         // <duration/> overwrites <samples/>
@@ -265,7 +285,7 @@ namespace
             // <duration/> must be a valid, positive integer
             int duration = ndur.text().as_int(0);
             if (duration <= 0)
-                return rettype(nonstd::unexpect, error::code_t::sec_invalid_duration);
+                return rettype(nonstd::unexpect, errc::sec_invalid_duration);
             return duration / interval.count() + (duration % interval.count() != 0);
         }
         if (nsamp)
@@ -273,30 +293,30 @@ namespace
             // <samples/> must be a valid, positive integer
             int samples = nsamp.text().as_int(0);
             if (samples <= 0)
-                return rettype(nonstd::unexpect, error::code_t::sec_invalid_samples);
+                return rettype(nonstd::unexpect, errc::sec_invalid_samples);
             return samples;
         }
         return std::nullopt;
     }
 
-    tep::cfg::result<std::string> get_method(const pugi::xml_node& nsection)
+    result<std::string> get_method(const pugi::xml_node& nsection)
     {
         using namespace pugi;
-        using tep::cfg::error;
+        using tep::cfg::errc;
         using rettype = decltype(get_method(std::declval<decltype(nsection)>()));
         xml_node nmethod = nsection.child("method");
         if (!nmethod)
-            return rettype(nonstd::unexpect, error::code_t::sec_no_method);
+            return rettype(nonstd::unexpect, errc::sec_no_method);
         std::string method = to_lower_case(nmethod.child_value());
         if (method == "profile" || method == "total")
             return method;
-        return rettype(nonstd::unexpect, error::code_t::sec_invalid_method);
+        return rettype(nonstd::unexpect, errc::sec_invalid_method);
     }
 
-    tep::cfg::result<tep::cfg::target> get_targets(const pugi::xml_attribute& attr)
+    result<tep::cfg::target> get_targets(const pugi::xml_attribute& attr)
     {
         using namespace pugi;
-        using tep::cfg::error;
+        using tep::cfg::errc;
         using rettype = decltype(get_targets(std::declval<decltype(attr)>()));
 
         tep::cfg::target retval = static_cast<tep::cfg::target>(0);
@@ -309,10 +329,10 @@ namespace
             else if (target == "gpu")
                 retval |= tep::cfg::target::gpu;
             else
-                return rettype(nonstd::unexpect, error::code_t::sec_invalid_target);
+                return rettype(nonstd::unexpect, errc::sec_invalid_target);
         }
         if (!target_valid(retval))
-            return rettype(nonstd::unexpect, error::code_t::sec_invalid_target);
+            return rettype(nonstd::unexpect, errc::sec_invalid_target);
         return retval;
     }
 }
@@ -329,23 +349,14 @@ namespace tep::cfg
         }
     };
 
-    error error::success() noexcept
+    std::error_code make_error_code(errc x) noexcept
     {
-        return error{ code_t::success };
+        return { static_cast<int>(x), config_category() };
     }
 
-    error::error(code_t code) noexcept :
-        _code(code)
-    {}
-
-    error::operator bool() const noexcept
+    const std::error_category& config_category() noexcept
     {
-        return _code != code_t::success;
-    }
-
-    error::code_t error::code() const noexcept
-    {
-        return _code;
+        return config_category_v;
     }
 
     bool target_valid(target x) noexcept
@@ -405,97 +416,62 @@ namespace tep::cfg
         return x = x ^ y;
     }
 
-    address_range_t::address_range_t(const config_entry& entry, error& e) noexcept
+    address_range_t::address_range_t(const config_entry& entry)
     {
         using namespace pugi;
-        if (e)
-            return;
         xml_attribute start_attr = entry.node.attribute("start");
-        if (!start_attr && (e = error::code_t::addr_range_no_start))
-            return;
+        if (!start_attr)
+            throw exception(errc::addr_range_no_start);
         xml_attribute end_attr = entry.node.attribute("end");
-        if (!end_attr && (e = error::code_t::addr_range_no_end))
-            return;
+        if (!end_attr)
+            throw exception(errc::addr_range_no_end);
         auto res_start = get_address_value(start_attr);
-        if (!res_start && (e = std::move(res_start.error())))
-            return;
+        if (!res_start)
+            throw exception(res_start.error());
         auto res_end = get_address_value(end_attr);
-        if (!res_end && (e = std::move(res_end.error())))
-            return;
+        if (!res_end)
+            throw exception(res_end.error());
         start = *res_start;
         end = *res_end;
     }
 
-    result<address_range_t> address_range_t::create(const config_entry& entry) noexcept
-    {
-        error e = error::success();
-        address_range_t ar(entry, e);
-        if (e)
-            return result<address_range_t>(nonstd::unexpect, std::move(e));
-        return ar;
-    }
-
-    position_t::position_t(const config_entry& entry, error& e)
+    position_t::position_t(const config_entry& entry)
     {
         using namespace pugi;
-        if (e)
-            return;
         auto cu = get_cu(entry.node);
-        if (!cu && (e = std::move(cu.error())))
-            return;
+        if (!cu)
+            throw exception(cu.error());
         auto lineno = get_lineno(entry.node);
-        if (!lineno && (e = std::move(lineno.error())))
-            return;
+        if (!lineno)
+            throw exception(cu.error());
         compilation_unit = std::move(*cu);
         line = *lineno;
     }
 
-    result<position_t> position_t::create(const config_entry& entry)
-    {
-        error e = error::success();
-        position_t p(entry, e);
-        if (e)
-            return result<position_t>(nonstd::unexpect, std::move(e));
-        return p;
-    }
-
-    function_t::function_t(const config_entry& entry, error& e) :
+    function_t::function_t(const config_entry& entry) :
         compilation_unit(std::nullopt)
     {
         using namespace pugi;
-        if (e)
-            return;
         // attribute "cu" exists
         xml_attribute cu_attr = entry.node.attribute("cu");
         if (cu_attr)
         {
             // if attribute exists - it cannot be empty
-            if (!*cu_attr.value() && (e = error::code_t::func_invalid_comp_unit))
-                return;
+            if (!*cu_attr.value())
+                throw exception(errc::func_invalid_comp_unit);
             compilation_unit = cu_attr.value();
         }
         xml_attribute name_attr = entry.node.attribute("name");
-        if (!name_attr && (e = error::code_t::func_no_name))
-            return;
-        if (!*name_attr.value() && (e = error::code_t::func_invalid_name))
-            return;
+        if (!name_attr)
+            throw exception(errc::func_no_name);
+        if (!*name_attr.value())
+            throw exception(errc::func_invalid_name);
         name = name_attr.value();
     }
 
-    result<function_t> function_t::create(const config_entry& entry)
-    {
-        error e = error::success();
-        function_t f(entry, e);
-        if (e)
-            return result<function_t>(nonstd::unexpect, std::move(e));
-        return f;
-    }
-
-    bounds_t::bounds_t(const config_entry& entry, error& e, key<section_t>)
+    bounds_t::bounds_t(const config_entry& entry, key<section_t>)
     {
         using namespace pugi;
-        if (e)
-            return;
         // <start/>
         config_entry nstart{ entry.node.child("start") };
         // <end/>
@@ -509,69 +485,43 @@ namespace tep::cfg
             (nstart && naddr) || (nend && naddr) ||
             (nfunc && naddr))
         {
-            e = error::code_t::bounds_too_many;
+            throw exception(errc::bounds_too_many);
         }
         else if (nstart || nend)
         {
             assert(!nfunc && !naddr);
-            if (!nend && (e = error::code_t::bounds_no_end))
-                return;
-            if (!nstart && (e = error::code_t::bounds_no_start))
-                return;
-            auto pstart = position_t::create(nstart);
-            if (!pstart && (e = std::move(pstart.error())))
-                return;
-            auto pend = position_t::create(nend);
-            if (!pend && (e = std::move(pend.error())))
-                return;
-            _value = position_range_t{ std::move(*pstart), std::move(*pend) };
+            if (!nend)
+                throw exception(errc::bounds_no_end);
+            if (!nstart)
+                throw exception(errc::bounds_no_start);
+            _value = position_range_t{ position_t(nstart), position_t(nend) };
         }
         else if (nfunc)
         {
             assert(!nstart && !nend && !naddr);
-            auto func = function_t::create(nfunc);
-            if (!func && (e = std::move(func.error())))
-                return;
-            _value = std::move(*func);
+            _value = function_t(nfunc);
         }
         else if (naddr)
         {
             assert(!nstart && !nend && !nfunc);
-            auto range = address_range_t::create(naddr);
-            if (!range && (e = std::move(range.error())))
-                return;
-            _value = std::move(*range);
+            _value = address_range_t(naddr);
         }
         else
         {
-            e = error::code_t::bounds_empty;
+            throw exception(errc::bounds_empty);
         }
     }
 
-    result<bounds_t> bounds_t::create(const config_entry& entry, key<section_t> k)
-    {
-        error e = error::success();
-        bounds_t b(entry, e, k);
-        if (e)
-            return result<bounds_t>(nonstd::unexpect, std::move(e));
-        return b;
-    }
-
-    params_t::params_t(const config_entry& entry, error& e) noexcept
+    params_t::params_t(const config_entry& entry)
     {
         using namespace pugi;
-        if (e)
-            return;
         // <domain_mask/>
         if (xml_node ndomains = entry.node.child("domain_mask"))
         {
             if (auto val = get_hex_value(ndomains.child_value()))
                 domain_mask = val;
             else
-            {
-                e = error::code_t::param_invalid_domain_mask;
-                return;
-            }
+                throw exception(errc::param_invalid_domain_mask);
         }
         // <socket_mask/>
         if (xml_node nsockets = entry.node.child("socket_mask"))
@@ -579,10 +529,7 @@ namespace tep::cfg
             if (auto val = get_hex_value(nsockets.child_value()))
                 socket_mask = val;
             else
-            {
-                e = error::code_t::param_invalid_socket_mask;
-                return;
-            }
+                throw exception(errc::param_invalid_socket_mask);
         }
         // <device_mask/>
         if (xml_node ndevs = entry.node.child("device_mask"))
@@ -590,165 +537,99 @@ namespace tep::cfg
             if (auto val = get_hex_value(ndevs.child_value()))
                 device_mask = val;
             else
-            {
-                e = error::code_t::param_invalid_device_mask;
-                return;
-            }
+                throw exception(errc::param_invalid_device_mask);
         }
     }
 
-    result<params_t> params_t::create(const config_entry& entry) noexcept
-    {
-        error e = error::success();
-        params_t p(entry, e);
-        if (e)
-            return result<params_t>(nonstd::unexpect, std::move(e));
-        return p;
-    }
-
-    method_total_t::method_total_t(const config_entry& entry, error& e) noexcept
+    method_total_t::method_total_t(const config_entry& entry)
     {
         using namespace pugi;
-        if (e)
-            return;
         xml_node nshort = entry.node.child("short");
         xml_node nlong = entry.node.child("long");
-        if (nshort && nlong && (e = error::code_t::sec_both_short_and_long))
-            return;
+        if (nshort && nlong)
+            throw exception(errc::sec_both_short_and_long);
         auto res_method = get_method(entry.node);
-        if (!res_method && (e = std::move(res_method.error())))
-            return;
-        if (*res_method == "profile" && (e = error::code_t::sec_invalid_method_for_short))
-            return;
+        if (!res_method)
+            throw exception(res_method.error());
+        if (*res_method == "profile")
+            throw exception(errc::sec_invalid_method_for_short);
         short_section = bool(nshort);
     }
 
-    result<method_total_t> method_total_t::create(const config_entry& entry) noexcept
-    {
-        error e = error::success();
-        method_total_t m(entry, e);
-        if (e)
-            return result<method_total_t>(nonstd::unexpect, std::move(e));
-        return m;
-    }
-
-    method_profile_t::method_profile_t(const config_entry& entry, error& e) noexcept
+    method_profile_t::method_profile_t(const config_entry& entry)
     {
         using namespace pugi;
-        if (e)
-            return;
         auto res_interval = get_interval(entry.node);
-        if (!res_interval && (e = std::move(res_interval.error())))
-            return;
+        if (!res_interval)
+            throw exception(res_interval.error());
         auto res_samples = get_samples(entry.node, *res_interval);
-        if (!res_samples && (e = std::move(res_samples.error())))
-            return;
+        if (!res_samples)
+            throw exception(res_samples.error());
         interval = *std::move(res_interval);
         samples = *std::move(res_samples);
     }
 
-    result<method_profile_t> method_profile_t::create(const config_entry& entry) noexcept
+    misc_attributes_t::misc_attributes_t(const config_entry& entry, key<section_t>)
     {
-        error e = error::success();
-        method_profile_t m(entry, e);
-        if (e)
-            return result<method_profile_t>(nonstd::unexpect, std::move(e));
-        return m;
-    }
-
-    misc_attributes_t::misc_attributes_t(const config_entry& entry, error& e, key<section_t>)
-    {
-        if (e)
-            return;
         auto res_method = get_method(entry.node);
-        if (!res_method && (e = std::move(res_method.error())))
-            return;
+        if (!res_method)
+            throw exception(res_method.error());
         if (*res_method == "total")
-        {
-            auto val = method_total_t::create(entry);
-            if (!val && (e = std::move(val.error())))
-                return;
-            _value = *std::move(val);
-        }
+            _value = method_total_t(entry);
         else if (*res_method == "profile")
-        {
-            auto val = method_profile_t::create(entry);
-            if (!val && (e = std::move(val.error())))
-                return;
-            _value = *std::move(val);
-        }
+            _value = method_profile_t(entry);
         else
         {
             assert(false);
-            e = error::code_t::sec_invalid_method;
+            throw exception(errc::sec_invalid_method);
         }
     }
 
-    result<misc_attributes_t> misc_attributes_t::create(const config_entry& entry, key<section_t> k)
-    {
-        error e = error::success();
-        misc_attributes_t m(entry, e, k);
-        if (e)
-            return result<misc_attributes_t>(nonstd::unexpect, std::move(e));
-        return m;
-    }
-
-    section_t::section_t(const config_entry& entry, error& e) :
+    section_t::section_t(const config_entry& entry) :
         label(std::nullopt),
         extra(std::nullopt),
         targets(target::cpu),
-        misc(entry, e, key<section_t>{}),
-        bounds(config_entry{ entry.node.child("bounds") }, e, key<section_t>{}),
+        misc(entry, key<section_t>{}),
+        bounds(config_entry{ entry.node.child("bounds") }, key<section_t>{}),
         allow_concurrency(bool(entry.node.child("allow_concurrency")))
     {
         using namespace pugi;
-        if (e)
-            return;
         if (xml_attribute label_attr = entry.node.attribute("label"))
         {
-            if (!*label_attr.value() && (e = error::code_t::sec_invalid_label))
-                return;
+            if (!*label_attr.value())
+                throw exception(errc::sec_invalid_label);
             label = label_attr.value();
         }
         if (xml_node nextra = entry.node.child("extra"))
         {
-            if (!*nextra.child_value() && (e = error::code_t::sec_invalid_extra))
-                return;
+            if (!*nextra.child_value())
+                throw exception(errc::sec_invalid_extra);
             extra = nextra.child_value();
         }
         if (xml_attribute target_attr = entry.node.attribute("target"))
         {
             auto res_targets = get_targets(target_attr);
-            if (!res_targets && (e = std::move(res_targets).error()))
-                return;
+            if (!res_targets)
+                throw exception(res_targets.error());
             targets = *std::move(res_targets);
         }
     }
 
-    result<section_t> section_t::create(const config_entry& entry)
-    {
-        error e = error::success();
-        section_t s(entry, e);
-        if (e)
-            return result<section_t>(nonstd::unexpect, std::move(e));
-        return s;
-    }
-
-    group_t::group_t(const config_entry& entry, error& e) :
+    group_t::group_t(const config_entry& entry) :
         label(std::nullopt),
         extra(std::nullopt)
     {
         using namespace pugi;
         if (xml_attribute label_attr = entry.node.attribute("label"))
         {
-            if (!*label_attr.value() && (e = error::code_t::group_invalid_label))
-                return;
+            if (!*label_attr.value())
+                throw exception(errc::group_invalid_label);
             label = label_attr.value();
         }
         if (xml_node nextra = entry.node.child("extra"))
         {
-            if (!*nextra.child_value() && (e = error::code_t::group_invalid_extra))
-                return;
+            if (!*nextra.child_value())
+                throw exception(errc::group_invalid_extra);
             extra = nextra.child_value();
         }
         // <section></section> - at least one required
@@ -756,31 +637,20 @@ namespace tep::cfg
             nsection;
             nsection = config_entry{ nsection.node.next_sibling("section") })
         {
-            auto sec = section_t::create(nsection);
-            if (!sec && (e = std::move(sec.error())))
-                return;
+            section_t sec(nsection);
             auto it = std::find_if(sections.begin(), sections.end(), [&sec](const section_t& s)
                 {
                     // label is necessary if more than one group exists
                     // two labels cannot be the same
-                    return !s.label.has_value() || !sec->label.has_value()
-                        || *s.label == *sec->label;
+                    return !s.label.has_value() || !sec.label.has_value()
+                        || *s.label == *sec.label;
                 });
-            if ((it != sections.end()) && (e = error::code_t::sec_label_already_exists))
-                return;
-            sections.push_back(std::move(*sec));
+            if ((it != sections.end()))
+                throw exception(errc::sec_label_already_exists);
+            sections.push_back(std::move(sec));
         }
         if (sections.empty())
-            e = error::code_t::group_empty;
-    }
-
-    result<group_t> group_t::create(const config_entry& entry)
-    {
-        error e = error::success();
-        group_t g(entry, e);
-        if (e)
-            return result<group_t>(nonstd::unexpect, std::move(e));
-        return g;
+            throw exception(errc::group_empty);
     }
 
     struct config_t::impl
@@ -788,10 +658,10 @@ namespace tep::cfg
         std::optional<params_t> parameters;
         std::vector<group_t> groups;
 
-        impl(std::istream&, error&);
+        impl(std::istream&);
     };
 
-    config_t::impl::impl(std::istream& is, error& e) :
+    config_t::impl::impl(std::istream& is) :
         parameters(std::nullopt)
     {
         using namespace pugi;
@@ -802,61 +672,43 @@ namespace tep::cfg
             switch (parse_result.status)
             {
             case status_file_not_found:
-                e = error::code_t::config_not_found;
-                break;
+                throw exception(errc::config_not_found);
             case status_io_error:
-                e = error::code_t::config_io_error;
-                break;
+                throw exception(errc::config_io_error);
             case status_out_of_memory:
-                e = error::code_t::config_out_of_mem;
-                break;
+                throw exception(errc::config_out_of_mem);
             default:
-                e = error::code_t::config_bad_format;
-                break;
+                throw exception(errc::config_bad_format);
             }
-            return;
         }
         // <config></config>
         xml_node nconfig = doc.child("config");
-        if (!nconfig && (e = error::code_t::config_no_config))
-            return;
+        if (!nconfig)
+            throw exception(errc::config_no_config);
         // <params></params> - optional
-        auto params = params_t::create(config_entry{ nconfig.child("params") });
-        if (!params && (e = std::move(params.error())))
-            return;
+        params_t params(config_entry{ nconfig.child("params") });
         for (config_entry nsections{ nconfig.child("sections") };
             nsections;
             nsections = config_entry{ nsections.node.next_sibling("sections") })
         {
-            auto grp = group_t::create(nsections);
-            if (!grp && (e = std::move(grp.error())))
-                return;
+            group_t grp(nsections);
             auto it = std::find_if(groups.begin(), groups.end(), [&grp](const group_t& g)
                 {
                     // label is necessary if more than one group exists
                     // two labels cannot be the same
-                    return !g.label.has_value() || !grp->label.has_value()
-                        || *g.label == *grp->label;
+                    return !g.label.has_value() || !grp.label.has_value()
+                        || *g.label == *grp.label;
                 });
-            if ((it != groups.end()) && (e = error::code_t::group_label_already_exists))
-                return;
-            groups.push_back(std::move(*grp));
+            if ((it != groups.end()))
+                throw exception(errc::group_label_already_exists);
+            groups.push_back(std::move(grp));
         }
-        parameters = std::move(*params);
+        parameters = std::move(params);
     }
 
-    config_t::config_t(std::istream& is, error& e) :
-        _impl(std::make_shared<impl>(is, e))
+    config_t::config_t(std::istream& is) :
+        _impl(std::make_shared<impl>(is))
     {}
-
-    result<config_t> config_t::create(std::istream& is)
-    {
-        error e = error::success();
-        config_t c(is, e);
-        if (e)
-            return result<config_t>(nonstd::unexpect, std::move(e));
-        return c;
-    }
 
     const std::optional<params_t>& config_t::parameters() const noexcept
     {
@@ -866,12 +718,6 @@ namespace tep::cfg
     const std::vector<group_t>& config_t::groups() const noexcept
     {
         return _impl->groups;
-    }
-
-    std::ostream& operator<<(std::ostream& os, const error& e)
-    {
-        os << error_messages[static_cast<size_t>(e.code())];
-        return os;
     }
 
     std::ostream& operator<<(std::ostream& os, const target& t)

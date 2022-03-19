@@ -9,8 +9,20 @@
 #include <optional>
 #include <variant>
 #include <memory>
+#include <system_error>
 
-#include <util/expectedfwd.hpp>
+namespace tep
+{
+    namespace cfg
+    {
+        enum class errc : uint32_t;
+    }
+}
+
+namespace std
+{
+    template<> struct is_error_code_enum<tep::cfg::errc> : std::true_type {};
+}
 
 namespace tep
 {
@@ -18,29 +30,9 @@ namespace tep
     {
         struct config_entry;
 
-        class error
+        enum class errc : uint32_t
         {
-        public:
-            enum class code_t : int32_t;
-
-            static error success() noexcept;
-
-        public:
-            error(code_t code) noexcept;
-            explicit operator bool() const noexcept;
-            code_t code() const noexcept;
-
-        private:
-            code_t _code;
-        };
-
-        template<typename T>
-        using result = nonstd::expected<T, error>;
-
-        enum class error::code_t : int32_t
-        {
-            success,
-            config_io_error,
+            config_io_error = 1,
             config_not_found,
             config_out_of_mem,
             config_bad_format,
@@ -84,6 +76,14 @@ namespace tep
             addr_range_invalid_value,
         };
 
+        struct exception : std::system_error
+        {
+            using system_error::system_error;
+        };
+
+        std::error_code make_error_code(errc) noexcept;
+        const std::error_category& config_category() noexcept;
+
         enum class target : uint32_t
         {
             cpu = 1 << 0,
@@ -118,10 +118,7 @@ namespace tep
             std::optional<uint32_t> socket_mask;
             std::optional<uint32_t> device_mask;
 
-            static result<params_t> create(const config_entry&) noexcept;
-
-        private:
-            params_t(const config_entry&, error&) noexcept;
+            explicit params_t(const config_entry&);
         };
 
         struct address_range_t
@@ -129,10 +126,7 @@ namespace tep
             uint32_t start;
             uint32_t end;
 
-            static result<address_range_t> create(const config_entry&) noexcept;
-
-        private:
-            address_range_t(const config_entry&, error&) noexcept;
+            explicit address_range_t(const config_entry&);
         };
 
         struct position_t
@@ -140,10 +134,7 @@ namespace tep
             std::string compilation_unit;
             uint32_t line;
 
-            static result<position_t> create(const config_entry&);
-
-        private:
-            position_t(const config_entry&, error&);
+            explicit position_t(const config_entry&);
         };
 
         struct function_t
@@ -151,10 +142,7 @@ namespace tep
             std::optional<std::string> compilation_unit;
             std::string name;
 
-            static result<function_t> create(const config_entry&);
-
-        private:
-            function_t(const config_entry&, error&);
+            explicit function_t(const config_entry&);
         };
 
         class bounds_t
@@ -162,8 +150,6 @@ namespace tep
         public:
             using position_range_t
                 = std::pair<position_t, position_t>;
-
-            static result<bounds_t> create(const config_entry&, key<section_t>);
 
             template<typename T>
             bool holds() const noexcept
@@ -177,7 +163,7 @@ namespace tep
                 return std::get<T>(_value);
             }
 
-            bounds_t(const config_entry&, error&, key<section_t>);
+            explicit bounds_t(const config_entry&, key<section_t>);
 
             friend std::ostream& operator<<(std::ostream&, const bounds_t&);
             friend bool operator==(const bounds_t&, const bounds_t&);
@@ -196,10 +182,7 @@ namespace tep
         {
             bool short_section;
 
-            static result<method_total_t> create(const config_entry&) noexcept;
-
-        private:
-            method_total_t(const config_entry&, error&) noexcept;
+            explicit method_total_t(const config_entry&);
         };
 
         struct method_profile_t
@@ -207,10 +190,7 @@ namespace tep
             std::chrono::milliseconds interval;
             std::optional<uint32_t> samples;
 
-            static result<method_profile_t> create(const config_entry&) noexcept;
-
-        private:
-            method_profile_t(const config_entry&, error&) noexcept;
+            explicit method_profile_t(const config_entry&);
         };
 
         struct misc_attributes_t
@@ -227,9 +207,7 @@ namespace tep
                 return std::get<T>(_value);
             }
 
-            static result<misc_attributes_t> create(const config_entry&, key<section_t>);
-
-            misc_attributes_t(const config_entry&, error&, key<section_t>);
+            explicit misc_attributes_t(const config_entry&, key<section_t>);
 
             friend std::ostream& operator<<(std::ostream&, const misc_attributes_t&);
             friend bool operator==(const misc_attributes_t&, const misc_attributes_t&);
@@ -252,10 +230,7 @@ namespace tep
             bounds_t bounds;
             bool allow_concurrency;
 
-            static result<section_t> create(const config_entry&);
-
-        private:
-            section_t(const config_entry&, error&);
+            explicit section_t(const config_entry&);
         };
 
         struct group_t
@@ -264,10 +239,7 @@ namespace tep
             std::optional<std::string> extra;
             std::vector<section_t> sections;
 
-            static result<group_t> create(const config_entry&);
-
-        private:
-            group_t(const config_entry&, error&);
+            explicit group_t(const config_entry&);
         };
 
         struct config_t
@@ -278,16 +250,13 @@ namespace tep
             const opt_params_t& parameters() const noexcept;
             const groups_t& groups() const noexcept;
 
-            static result<config_t> create(std::istream&);
+            explicit config_t(std::istream&);
 
         private:
             struct impl;
-            config_t(std::istream& is, error& e);
-
             std::shared_ptr<const impl> _impl;
         };
 
-        std::ostream& operator<<(std::ostream&, const error&);
         std::ostream& operator<<(std::ostream&, const target&);
         std::ostream& operator<<(std::ostream&, const params_t&);
         std::ostream& operator<<(std::ostream&, const address_range_t&);
