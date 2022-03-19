@@ -72,6 +72,8 @@ namespace
             return "No low PC in inlined function instance without multiple ranges";
         case errc::no_high_pc_inlined:
             return "No high PC in inlined function instance without multiple ranges";
+        case errc::invalid_other_field_value:
+            return "Invalid value in st_other field of ELF symbol";
         case errc::unknown:
             return "Unknown error";
         }

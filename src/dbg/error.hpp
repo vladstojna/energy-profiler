@@ -35,6 +35,7 @@ namespace tep
             no_high_pc_concrete,
             no_low_pc_inlined,
             no_high_pc_inlined,
+            invalid_other_field_value,
             unknown,
         };
 

@@ -5,6 +5,24 @@
 
 #include <cassert>
 
+namespace
+{
+#if defined(__x86_64__) || defined(__i386__)
+    bool assert_st_other(uint8_t)
+    {
+        return true;
+    }
+#elif defined(__powerpc64__)
+    bool assert_st_other(uint8_t st_other)
+    {
+        uint8_t masked = (st_other & STO_PPC64_LOCAL_MASK) >> STO_PPC64_LOCAL_BIT;
+        return masked <= 6;
+    }
+#else
+#error Unsupported architecture detected
+#endif
+}
+
 namespace tep::dbg
 {
     executable_header::executable_header(param x)
@@ -33,6 +51,8 @@ namespace tep::dbg
         st_other(x.sym.st_other)
     {
         assert(GELF_ST_TYPE(x.sym.st_info) == STT_FUNC);
+        if (!assert_st_other(x.sym.st_other))
+            throw exception(errc::invalid_other_field_value);
         switch (GELF_ST_VISIBILITY(x.sym.st_other))
         {
         case STV_DEFAULT:
@@ -66,4 +86,29 @@ namespace tep::dbg
             throw exception(errc::unsupported_symbol_binding);
         }
     }
+
+    uintptr_t function_symbol::global_entrypoint() const noexcept
+    {
+        return address;
+    }
+
+#if defined(__x86_64__) || defined(__i386__)
+    uintptr_t function_symbol::local_entrypoint() const noexcept
+    {
+        return global_entrypoint();
+    }
+#elif defined(__powerpc64__)
+    uintptr_t function_symbol::local_entrypoint() const noexcept
+    {
+        // specification: https://files.openpower.foundation/s/aqwWeS3qmoaDyos
+        // page 77
+        auto local_entry_point_offset = [](uint8_t st_other)
+        {
+            return PPC64_LOCAL_ENTRY_OFFSET(st_other);
+        };
+        return global_entrypoint() + local_entry_point_offset(st_other);
+    }
+#else
+#error Unsupported architecture detected
+#endif
 }
