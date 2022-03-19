@@ -11,6 +11,30 @@
 #include <cstring>
 #include <iostream>
 
+void handle_exception()
+{
+    try
+    {
+        throw;
+    }
+    catch (const nrgprf::exception& e)
+    {
+        std::cerr << "NRG exception: " << e.what() << "\n";
+    }
+    catch (const tep::cfg::exception& e)
+    {
+        std::cerr << "Config exception: " << e.what() << "\n";
+    }
+    catch (const std::exception& e)
+    {
+        std::cerr << "Other exception: " << e.what() << "\n";
+    }
+    catch (...)
+    {
+        std::cerr << "Unknown exception\n";
+    }
+}
+
 int main(int argc, char* argv[])
 {
     try
@@ -30,17 +54,12 @@ int main(int argc, char* argv[])
             return 1;
         }
 
-        auto config = cfg::config_t::create(args->config);
-        if (!config)
-        {
-            std::cerr << config.error() << std::endl;
-            return 1;
-        }
+        cfg::config_t config(args->config);
 
     #ifndef NDEBUG
-        std::cout << *args << "\n";
-        std::cout << *dbg_info << "\n";
-        std::cout << *config << std::endl;
+        log::stream() << *args << "\n";
+        log::stream() << *dbg_info << "\n";
+        log::stream() << config << std::endl;
     #endif
 
         int errnum;
@@ -49,7 +68,7 @@ int main(int argc, char* argv[])
         {
             profiler prof(child_pid, (*args).profiler_flags,
                 std::move(*dbg_info),
-                std::move(*config));
+                std::move(config));
             if (!args->same_target())
             {
                 if (auto err = prof.await_executable(args->target))
@@ -73,19 +92,9 @@ int main(int argc, char* argv[])
             log::logline(log::error, "fork(): %s", strerror(errnum));
         return 1;
     }
-    catch (const nrgprf::exception& e)
-    {
-        std::cerr << "NRG exception: " << e.what() << "\n";
-        return 1;
-    }
-    catch (const std::exception& e)
-    {
-        std::cerr << e.what() << "\n";
-        return 1;
-    }
     catch (...)
     {
-        std::cerr << "Unknown exception\n";
+        handle_exception();
         return 1;
     }
 }
