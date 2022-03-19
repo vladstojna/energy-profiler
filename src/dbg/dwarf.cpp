@@ -5,7 +5,9 @@
 
 #include <dwarf.h>
 
+#include <algorithm>
 #include <cassert>
+#include <iostream>
 
 namespace
 {
@@ -112,6 +114,10 @@ namespace tep::dbg
     source_line::source_line(const param& x)
     {
         auto line = x.line;
+        if (const char* str = dwarf_linesrc(line, nullptr, nullptr))
+            file = str;
+        else
+            throw exception(dwarf_errno(), dwarf_category());
         if (dwarf_lineaddr(line, &address))
             throw exception(dwarf_errno(), dwarf_category());
         if (dwarf_lineno(line, &number))

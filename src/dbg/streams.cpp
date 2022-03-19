@@ -106,7 +106,8 @@ namespace tep::dbg
     std::ostream& operator<<(std::ostream& os, const source_line& x)
     {
         std::ios::fmtflags flags(os.flags());
-        os << (void*)x.address << "@" << x.number << ":" << x.column;
+        os << (void*)x.address << "@";
+        os << x.file.native() << ":" << x.number << ":" << x.column;
         os << ",";
         os << "new_statement=" << std::boolalpha << x.new_statement;
         os << ",";

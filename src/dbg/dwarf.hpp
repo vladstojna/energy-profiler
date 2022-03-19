@@ -13,8 +13,8 @@ namespace tep::dbg
     enum class line_context : uint32_t
     {
         prologue_end,
-        epilogue_begin,
         none,
+        epilogue_begin,
     };
 
     struct contiguous_range
@@ -34,9 +34,10 @@ namespace tep::dbg
 
     struct source_line
     {
-        uintptr_t address;
+        std::filesystem::path file;
         int32_t number;
         int32_t column;
+        uintptr_t address;
         bool new_statement;
         bool new_basic_block;
         bool end_text_sequence;
