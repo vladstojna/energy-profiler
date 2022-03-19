@@ -30,13 +30,13 @@ namespace tep::dbg
         Dwarf_Line* line;
     };
 
-    struct source_location::call_param
+    struct source_location::call_param : function_addresses::param
     {
-        Dwarf_Die& inst;
         Dwarf_Files* files;
     };
 
     struct source_location::decl_param : function_addresses::param {};
+
     struct inline_instance::param : source_location::call_param {};
     struct function_base::param : source_location::decl_param {};
     struct static_function::param : inline_instance::param {};

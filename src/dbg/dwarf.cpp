@@ -149,7 +149,7 @@ namespace tep::dbg
 
     source_location::source_location(call_param x)
     {
-        auto& inst = x.inst;
+        auto& inst = x.func_die;
         auto files = x.files;
         Dwarf_Attribute attr;
         Dwarf_Word val;
@@ -180,7 +180,7 @@ namespace tep::dbg
     }
 
     inline_instance::inline_instance(const param& x) :
-        call_loc(std::in_place, source_location::call_param{ x.inst, x.files })
+        call_loc(std::in_place, x)
     {
         auto get_ranges = [](Dwarf_Die& die)
         {
@@ -197,7 +197,7 @@ namespace tep::dbg
             return ranges;
         };
 
-        auto& inst = x.inst;
+        auto& inst = x.func_die;
         assert(dwarf_tag(&inst) == DW_TAG_inlined_subroutine);
         if (Dwarf_Addr addr; 0 == dwarf_entrypc(&inst, &addr))
             entry_pc = addr;
@@ -226,14 +226,14 @@ namespace tep::dbg
     }
 
     static_function::static_function(const param& x) :
-        function_base({ x.inst }),
-        data(create_function_data(x.inst, x.files))
+        function_base({ x.func_die }),
+        data(create_function_data(x.func_die, x.files))
     {}
 
     normal_function::normal_function(const param& x) :
         static_function(x)
     {
-        auto& func_die = x.inst;
+        auto& func_die = x.func_die;
         assert(dwarf_hasattr_integrate(&func_die, DW_AT_linkage_name));
         if (!dwarf_hasattr_integrate(&func_die, DW_AT_linkage_name))
             throw exception(errc::no_linkage_name);
