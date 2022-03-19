@@ -270,10 +270,6 @@ namespace tep::dbg
         }
         std::sort(lines.begin(), lines.end(), [](const source_line& lhs, const source_line& rhs)
             {
-                auto flag_less_than = [](bool lhs, bool rhs)
-                {
-                    return lhs && !rhs;
-                };
                 if (lhs.file < rhs.file)
                     return true;
                 if (lhs.file == rhs.file)

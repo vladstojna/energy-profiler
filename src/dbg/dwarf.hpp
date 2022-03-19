@@ -103,9 +103,12 @@ namespace tep::dbg
     {
         using any_function = std::variant<normal_function, static_function>;
 
+        template<typename T>
+        using container = std::vector<T>;
+
         std::filesystem::path path;
-        std::vector<source_line> lines;
-        std::vector<any_function> funcs;
+        container<source_line> lines;
+        container<any_function> funcs;
 
         struct param;
         explicit compilation_unit(const param&);
