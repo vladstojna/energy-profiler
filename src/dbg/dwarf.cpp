@@ -268,6 +268,28 @@ namespace tep::dbg
             else
                 lines.emplace_back(source_line::param{ line });
         }
+        std::sort(lines.begin(), lines.end(), [](const source_line& lhs, const source_line& rhs)
+            {
+                auto flag_less_than = [](bool lhs, bool rhs)
+                {
+                    return lhs && !rhs;
+                };
+                if (lhs.file < rhs.file)
+                    return true;
+                if (lhs.file == rhs.file)
+                {
+                    if (lhs.number < rhs.number)
+                        return true;
+                    if (lhs.number == rhs.number)
+                    {
+                        if (lhs.column < rhs.column)
+                            return true;
+                        if (lhs.column == rhs.column)
+                            return lhs.address < rhs.address;
+                    }
+                }
+                return false;
+            });
     }
 
     void compilation_unit::load_functions(const param& x)
