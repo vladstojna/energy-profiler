@@ -11,6 +11,31 @@
 
 namespace
 {
+    const tep::dbg::function_base& to_function_base(
+        const tep::dbg::compilation_unit::any_function& any) noexcept
+    {
+        return std::holds_alternative<tep::dbg::normal_function>(any) ?
+            std::get<tep::dbg::normal_function>(any) :
+            std::get<tep::dbg::static_function>(any);
+    }
+
+    bool operator<(
+        const tep::dbg::source_location& lhs,
+        const tep::dbg::source_location& rhs)
+        noexcept
+    {
+        if (lhs.file < rhs.file)
+            return true;
+        if (lhs.file == rhs.file)
+        {
+            if (lhs.line_number < rhs.line_number)
+                return true;
+            if (lhs.line_number == rhs.line_number)
+                return lhs.line_column < rhs.line_column;
+        }
+        return false;
+    }
+
     std::filesystem::path build_path(Dwarf_Die& cu_die)
     {
         namespace fs = std::filesystem;
@@ -327,5 +352,18 @@ namespace tep::dbg
                     normal_function::param{ func_die, files });
             }
         }
+        std::sort(funcs.begin(), funcs.end(),
+            [](const any_function& lhs, const any_function& rhs)
+            {
+                const auto& lhs_base = to_function_base(lhs);
+                const auto& rhs_base = to_function_base(rhs);
+                if (!lhs_base.decl_loc && !rhs_base.decl_loc)
+                    return lhs_base.die_name < rhs_base.die_name;
+                if (lhs_base.decl_loc && !rhs_base.decl_loc)
+                    return true;
+                if (!lhs_base.decl_loc && rhs_base.decl_loc)
+                    return false;
+                return *lhs_base.decl_loc < *rhs_base.decl_loc;
+            });
     }
 } // namespace tep::dbg
