@@ -30,7 +30,7 @@ namespace tep
             bool demangle_types)
         {
             if (!demangle_types &&
-                (mangled.size() < 2 || (mangled[0] != '_' && mangled[1] != 'Z')))
+                (mangled.size() < 2 || !(mangled[0] == '_' && mangled[1] == 'Z')))
             {
                 ec.clear();
                 return std::string(mangled);
