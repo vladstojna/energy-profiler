@@ -85,7 +85,7 @@ namespace tep::dbg
         using inline_instances = std::vector<inline_instance>;
         using data_t = std::variant<function_addresses, inline_instances>;
 
-        std::variant<function_addresses, inline_instances> data;
+        data_t data;
 
         struct param;
         explicit static_function(const param&);
