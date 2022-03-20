@@ -120,10 +120,18 @@ namespace tep::dbg
             throw exception(dwarf_errno(), dwarf_category());
         if (dwarf_lineaddr(line, &address))
             throw exception(dwarf_errno(), dwarf_category());
-        if (dwarf_lineno(line, &number))
+        if (int val; dwarf_lineno(line, &val))
             throw exception(dwarf_errno(), dwarf_category());
-        if (dwarf_linecol(line, &column))
+        else if (val < 0)
+            throw exception(errc::line_number_overflow);
+        else
+            number = val;
+        if (int val; dwarf_linecol(line, &val))
             throw exception(dwarf_errno(), dwarf_category());
+        else if (val < 0)
+            throw exception(errc::line_column_overflow);
+        else
+            column = val;
         if (dwarf_linebeginstatement(line, &new_statement))
             throw exception(dwarf_errno(), dwarf_category());
         if (dwarf_lineendsequence(line, &end_text_sequence))

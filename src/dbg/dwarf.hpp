@@ -35,8 +35,8 @@ namespace tep::dbg
     struct source_line
     {
         std::filesystem::path file;
-        int32_t number;
-        int32_t column;
+        uint32_t number;
+        uint32_t column;
         uintptr_t address;
         bool new_statement;
         bool new_basic_block;
