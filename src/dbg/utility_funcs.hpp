@@ -121,6 +121,46 @@ namespace tep::dbg
             exact_symbol_name_flag exact_name = exact_symbol_name_flag::no);
 
     /**
+     * @brief Find function (DWARF-data) in compilation unit from ELF symbol
+     *
+     * @param cu the compilation unit to search
+     * @param f the function symbol to match
+     * @return result<const compilation_unit::any_function*>
+     */
+    result<const compilation_unit::any_function*>
+        find_function(
+            const compilation_unit& cu,
+            const function_symbol& f)
+        noexcept;
+
+    /**
+     * @brief Find function (DWARF-data) from ELF symbol
+     *
+     * @param f the function symbol to match
+     * @return result<const compilation_unit::any_function*>
+     */
+    result<const compilation_unit::any_function*>
+        find_function(
+            const object_info&,
+            const function_symbol& f)
+        noexcept;
+
+    /**
+     * @brief Find function (DWARF-data) by name.
+     * Searches the symbol table first followed by the debug information
+     *
+     * @param name demangled function name
+     * @param exact_name whether to match name exactly or as just
+     * a prefix to the actual full name
+     * @return result<const compilation_unit::any_function*>
+     */
+    result<const compilation_unit::any_function*>
+        find_function(
+            const object_info&,
+            std::string_view name,
+            exact_symbol_name_flag exact_name = exact_symbol_name_flag::no);
+
+    /**
      * @brief Find function in compilation unit from source
      *
      * @param cu compilation unit to search

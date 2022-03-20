@@ -48,6 +48,12 @@ namespace
 
     const util_category_t util_category_v;
 
+    struct mangled_name_t {};
+    struct demangled_name_t {};
+
+    constexpr mangled_name_t mangled_name;
+    constexpr demangled_name_t demangled_name;
+
     // check if sub is a subpath of path,
     // i.e. sub is an incomplete path of path
     bool is_sub_path(
@@ -100,6 +106,59 @@ namespace
                 return unexpected{ util_errc::symbol_ambiguous_static };
             return unexpected{ util_errc::symbol_ambiguous };
         }
+        return &*it;
+    }
+
+    tep::dbg::result<const tep::dbg::compilation_unit::any_function*>
+        find_function_by_linkage_name(
+            mangled_name_t,
+            const tep::dbg::compilation_unit& cu,
+            std::string_view name) noexcept
+    {
+        using tep::dbg::compilation_unit;
+        using tep::dbg::normal_function;
+        using tep::dbg::util_errc;
+        using unexpected = nonstd::unexpected<std::error_code>;
+        auto pred = [name](const compilation_unit::any_function& af)
+        {
+            if (!std::holds_alternative<normal_function>(af))
+                return false;
+            const auto& f = std::get<normal_function>(af);
+            return f.linkage_name == name;
+        };
+        auto it = std::find_if(cu.funcs.begin(), cu.funcs.end(), pred);
+        if (it == cu.funcs.end())
+            return unexpected{ util_errc::function_not_found };
+        return &*it;
+    }
+
+    tep::dbg::result<const tep::dbg::compilation_unit::any_function*>
+        find_function_by_linkage_name(
+            demangled_name_t,
+            const tep::dbg::compilation_unit& cu,
+            std::string_view name)
+    {
+        using tep::dbg::compilation_unit;
+        using tep::dbg::normal_function;
+        using tep::dbg::util_errc;
+        using unexpected = nonstd::unexpected<std::error_code>;
+        std::error_code ec;
+        auto pred = [&ec, name](const compilation_unit::any_function& af)
+        {
+            if (!std::holds_alternative<normal_function>(af))
+                return false;
+            const auto& f = std::get<normal_function>(af);
+            auto demangled = tep::dbg::demangle(f.linkage_name, ec);
+            if (!demangled)
+                return true;
+            return remove_spaces(*demangled) == remove_spaces(name);
+        };
+
+        auto it = std::find_if(cu.funcs.begin(), cu.funcs.end(), pred);
+        if (ec)
+            return unexpected{ ec };
+        if (it == cu.funcs.end())
+            return unexpected{ util_errc::function_not_found };
         return &*it;
     }
 }
@@ -261,6 +320,79 @@ namespace tep::dbg
         if (exact_name == exact_symbol_name_flag::no)
             return unexpected{ make_error_code(std::errc::invalid_argument) };
         return find_function_symbol_exact(oi, name);
+    }
+
+    result<const compilation_unit::any_function*>
+        find_function(
+            const compilation_unit& cu,
+            const function_symbol& f)
+        noexcept
+    {
+        using unexpected = nonstd::unexpected<std::error_code>;
+        // static function, lookup using address
+        // otherwise, lookup using linkage name
+        if (f.binding == symbol_binding::local)
+        {
+            auto it = std::find_if(cu.funcs.begin(), cu.funcs.end(),
+                [sym_addr = f.address](const compilation_unit::any_function& af)
+            {
+                if (!std::holds_alternative<static_function>(af))
+                    return false;
+                const auto& f = std::get<static_function>(af);
+                if (!std::holds_alternative<function_addresses>(f.data))
+                    return false;
+                const auto& addrs = std::get<function_addresses>(f.data);
+                assert(addrs.entry_pc == addrs.crange.low_pc);
+                return addrs.entry_pc == sym_addr;
+            });
+            if (it == cu.funcs.end())
+                return unexpected{ util_errc::function_not_found };
+            return &*it;
+        }
+        return find_function_by_linkage_name(mangled_name, cu, f.name);
+    }
+
+    result<const compilation_unit::any_function*>
+        find_function(
+            const object_info& oi,
+            const function_symbol& f
+        ) noexcept
+    {
+        using unexpected = nonstd::unexpected<std::error_code>;
+        for (const auto& cu : oi.compilation_units())
+        {
+            auto func = find_function(cu, f);
+            if (func || func.error() != util_errc::function_not_found)
+                return func;
+        }
+        return unexpected{ util_errc::function_not_found };
+    }
+
+    result<const compilation_unit::any_function*>
+        find_function(
+            const object_info& oi,
+            std::string_view name,
+            exact_symbol_name_flag exact_name)
+    {
+        using unexpected = nonstd::unexpected<std::error_code>;
+        if (name.empty())
+            return unexpected{ make_error_code(std::errc::invalid_argument) };
+        if (exact_name == exact_symbol_name_flag::no)
+            return unexpected{ make_error_code(std::errc::invalid_argument) };
+        auto sym = find_function_symbol_exact(oi, name);
+        if (sym)
+            return find_function(oi, **sym);
+        else if (sym.error() == util_errc::symbol_not_found)
+        {
+            for (const auto& cu : oi.compilation_units())
+            {
+                auto func = find_function_by_linkage_name(demangled_name, cu, name);
+                if (func || func.error() != util_errc::function_not_found)
+                    return func;
+            }
+            return unexpected{ util_errc::function_not_found };
+        }
+        return unexpected{ sym.error() };
     }
 
     result<const compilation_unit::any_function*>
