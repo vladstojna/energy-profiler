@@ -66,7 +66,8 @@ namespace tep::dbg
                 if (!gelf_getsym(data, i, &sym))
                     throw exception(elf_errno(), elf_category());
                 if (GELF_ST_TYPE(sym.st_info) == STT_FUNC &&
-                    GELF_ST_BIND(sym.st_info) <= STB_WEAK)
+                    GELF_ST_BIND(sym.st_info) <= STB_WEAK &&
+                    sym.st_shndx != SHN_UNDEF)
                 {
                     function_symbols.emplace_back(
                         function_symbol::param{ elf, header, sym });
