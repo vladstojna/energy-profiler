@@ -36,14 +36,13 @@ namespace tep
                 return std::string(mangled);
             }
             int status;
-            size_t length;
             demangled_ptr demangled{
-                abi::__cxa_demangle(mangled.data(), nullptr, &length, &status)
+                abi::__cxa_demangle(mangled.data(), nullptr, nullptr, &status)
             };
             if (!status)
             {
                 ec.clear();
-                return std::string(demangled.ptr, length);
+                return std::string(demangled.ptr);
             }
             else if (status == -1)
                 ec = make_error_code(std::errc::not_enough_memory);
