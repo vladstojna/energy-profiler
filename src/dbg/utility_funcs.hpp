@@ -22,11 +22,15 @@ namespace tep::dbg
         file_not_found,
         line_not_found,
         column_not_found,
+        symbol_not_found,
+        symbol_ambiguous,
+        symbol_ambiguous_static,
     };
 
     enum class new_statement_flag : bool { no, yes };
     enum class exact_line_value_flag : bool { no, yes };
     enum class exact_column_value_flag : bool { no, yes };
+    enum class exact_symbol_name_flag : bool { no, yes };
 } // namespace tep::dbg
 
 namespace std
@@ -98,4 +102,18 @@ namespace tep::dbg
         lines::const_iterator first,
         lines::const_iterator last,
         new_statement_flag new_stmt = new_statement_flag::no) noexcept;
+
+    /**
+     * @brief Find a function symbol from the loaded symbol table by name
+     *
+     * @param name demangled function symbol name
+     * @param exact_name whether to match name exactly or as just
+     * a prefix to the actual full name
+     * @return result<const function_symbol*>
+     */
+    result<const function_symbol*>
+        find_function_symbol(
+            const object_info&,
+            std::string_view name,
+            exact_symbol_name_flag exact_name = exact_symbol_name_flag::no);
 } // namespace tep::dbg

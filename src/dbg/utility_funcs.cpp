@@ -1,4 +1,5 @@
 #include "utility_funcs.hpp"
+#include "demangle.hpp"
 
 #include <nonstd/expected.hpp>
 
@@ -28,6 +29,12 @@ namespace
                 return "Line not found";
             case util_errc::column_not_found:
                 return "Column not found";
+            case util_errc::symbol_not_found:
+                return "Symbol not found";
+            case util_errc::symbol_ambiguous:
+                return "Symbol name ambiguous";
+            case util_errc::symbol_ambiguous_static:
+                return "Symbol name ambiguous; two or more static functions found";
             }
             return "(unrecognized error code)";
         }
@@ -43,6 +50,51 @@ namespace
         return !sub.empty() && (sub == path ||
             std::search(
                 path.begin(), path.end(), sub.begin(), sub.end()) != path.end());
+    }
+
+    std::string remove_spaces(std::string_view str)
+    {
+        std::string ret(str);
+        ret.erase(std::remove_if(ret.begin(), ret.end(), [](unsigned char c)
+            {
+                return std::isspace(c);
+            }), ret.end());
+        return ret;
+    }
+
+    tep::dbg::result<const tep::dbg::function_symbol*>
+        find_function_symbol_exact(
+            const tep::dbg::object_info& oi,
+            std::string_view name)
+    {
+        using tep::dbg::function_symbol;
+        using tep::dbg::util_errc;
+        using unexpected = nonstd::unexpected<std::error_code>;
+
+        std::error_code ec;
+        auto pred = [&ec, name](const function_symbol& sym)
+        {
+            auto demangled = tep::dbg::demangle(sym.name, ec);
+            if (!demangled)
+                return true;
+            return remove_spaces(*demangled) == remove_spaces(name);
+        };
+
+        auto end_it = oi.function_symbols().end();
+        auto it = std::find_if(oi.function_symbols().begin(), end_it, pred);
+        if (ec)
+            return unexpected{ ec };
+        if (it == end_it)
+            return unexpected{ util_errc::symbol_not_found };
+        auto second_it = std::find_if(it + 1, end_it, pred);
+        if (second_it != end_it)
+        {
+            using tep::dbg::symbol_binding;
+            if (it->binding == symbol_binding::local && it->binding == second_it->binding)
+                return unexpected{ util_errc::symbol_ambiguous_static };
+            return unexpected{ util_errc::symbol_ambiguous };
+        }
+        return &*it;
     }
 }
 
@@ -190,5 +242,18 @@ namespace tep::dbg
         if (found == last)
             return unexpected{ util_errc::line_not_found };
         return found->address;
+    }
+
+    result<const function_symbol*> find_function_symbol(
+        const object_info& oi,
+        std::string_view name,
+        exact_symbol_name_flag exact_name)
+    {
+        using unexpected = nonstd::unexpected<std::error_code>;
+        if (name.empty())
+            return unexpected{ make_error_code(std::errc::invalid_argument) };
+        if (exact_name == exact_symbol_name_flag::no)
+            return unexpected{ make_error_code(std::errc::invalid_argument) };
+        return find_function_symbol_exact(oi, name);
     }
 } // namespace tep::dbg
