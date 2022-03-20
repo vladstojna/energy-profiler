@@ -22,6 +22,8 @@ namespace
                 return "Compilation unit not found";
             case util_errc::cu_ambiguous:
                 return "Compilation unit ambiguous";
+            case util_errc::file_not_found:
+                return "File not found";
             case util_errc::line_not_found:
                 return "Line not found";
             case util_errc::column_not_found:
@@ -112,13 +114,19 @@ namespace tep::dbg
                 line.column >= colno);
         };
 
+        bool file_found = false;
         auto start_it = std::find_if(cu.lines.begin(), cu.lines.end(),
-            [&effective_file, lineno, exact_line](const source_line& line)
+            [&effective_file, &file_found, lineno, exact_line](const source_line& line)
             {
-                return effective_file == line.file && line_match(line, lineno, exact_line);
+                return (file_found = (effective_file == line.file)) &&
+                    line_match(line, lineno, exact_line);
             });
         if (start_it == cu.lines.end())
+        {
+            if (!file_found)
+                return unexpected{ util_errc::file_not_found };
             return unexpected{ util_errc::line_not_found };
+        }
 
         start_it = std::find_if(start_it, cu.lines.end(),
             [&effective_file, lineno = start_it->number, colno, exact_col](

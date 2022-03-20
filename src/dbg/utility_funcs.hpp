@@ -19,6 +19,7 @@ namespace tep::dbg
     {
         cu_not_found = 1,
         cu_ambiguous,
+        file_not_found,
         line_not_found,
         column_not_found,
     };
