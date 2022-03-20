@@ -15,7 +15,7 @@ namespace tep::dbg
 
         const executable_header& header() const noexcept;
         const std::vector<function_symbol>& function_symbols() const noexcept;
-        const std::vector<compilation_unit> compilation_units() const noexcept;
+        const std::vector<compilation_unit>& compilation_units() const noexcept;
 
     private:
         struct impl;

@@ -109,7 +109,7 @@ namespace tep::dbg
         return impl_->function_symbols;
     }
 
-    const std::vector<compilation_unit> object_info::compilation_units() const noexcept
+    const std::vector<compilation_unit>& object_info::compilation_units() const noexcept
     {
         return impl_->compilation_units;
     }
