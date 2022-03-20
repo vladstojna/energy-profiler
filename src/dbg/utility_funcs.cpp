@@ -34,7 +34,9 @@ namespace
             case util_errc::symbol_ambiguous:
                 return "Symbol name ambiguous";
             case util_errc::symbol_ambiguous_static:
-                return "Symbol name ambiguous; two or more static functions found";
+                return "Symbol name ambiguous with at least one static symbol present";
+            case util_errc::symbol_ambiguous_weak:
+                return "Symbol name ambiguous with at least one weak symbol present";
             case util_errc::function_not_found:
                 return "Function not found";
             case util_errc::function_ambiguous:
@@ -81,6 +83,7 @@ namespace
     {
         using tep::dbg::function_symbol;
         using tep::dbg::util_errc;
+        using tep::dbg::symbol_binding;
         using unexpected = nonstd::unexpected<std::error_code>;
 
         std::error_code ec;
@@ -98,11 +101,22 @@ namespace
             return unexpected{ ec };
         if (it == end_it)
             return unexpected{ util_errc::symbol_not_found };
-        auto second_it = std::find_if(it + 1, end_it, pred);
-        if (second_it != end_it)
+
+        bool has_static = it->binding == symbol_binding::local;
+        bool has_weak = it->binding == symbol_binding::weak;
+        bool has_ambiguity = false;
+        for (auto next_it = std::find_if(it + 1, end_it, pred);
+            next_it != end_it && (has_ambiguity = true);
+            next_it = std::find_if(next_it + 1, end_it, pred))
         {
-            using tep::dbg::symbol_binding;
-            if (it->binding == symbol_binding::local && it->binding == second_it->binding)
+            has_static = has_static || next_it->binding == symbol_binding::local;
+            has_weak = has_weak || next_it->binding == symbol_binding::weak;
+        }
+        if (has_ambiguity)
+        {
+            if (has_weak)
+                return unexpected{ util_errc::symbol_ambiguous_weak };
+            if (has_static)
                 return unexpected{ util_errc::symbol_ambiguous_static };
             return unexpected{ util_errc::symbol_ambiguous };
         }

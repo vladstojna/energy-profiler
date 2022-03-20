@@ -25,6 +25,7 @@ namespace tep::dbg
         symbol_not_found,
         symbol_ambiguous,
         symbol_ambiguous_static,
+        symbol_ambiguous_weak,
         function_not_found,
         function_ambiguous,
         decl_location_not_found,
@@ -121,7 +122,7 @@ namespace tep::dbg
             exact_symbol_name_flag exact_name = exact_symbol_name_flag::no);
 
     /**
-     * @brief Find function (DWARF-data) in compilation unit from ELF symbol
+     * @brief Find function (DWARF data) in compilation unit from ELF symbol
      *
      * @param cu the compilation unit to search
      * @param f the function symbol to match
@@ -134,7 +135,7 @@ namespace tep::dbg
         noexcept;
 
     /**
-     * @brief Find function (DWARF-data) from ELF symbol
+     * @brief Find function (DWARF data) from ELF symbol
      *
      * @param f the function symbol to match
      * @return result<const compilation_unit::any_function*>
@@ -146,7 +147,7 @@ namespace tep::dbg
         noexcept;
 
     /**
-     * @brief Find function (DWARF-data) by name.
+     * @brief Find function (DWARF data) by name.
      * Searches the symbol table first followed by the debug information
      *
      * @param name demangled function name
