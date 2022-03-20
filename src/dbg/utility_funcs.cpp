@@ -35,6 +35,12 @@ namespace
                 return "Symbol name ambiguous";
             case util_errc::symbol_ambiguous_static:
                 return "Symbol name ambiguous; two or more static functions found";
+            case util_errc::function_not_found:
+                return "Function not found";
+            case util_errc::function_ambiguous:
+                return "Function ambiguous";
+            case util_errc::decl_location_not_found:
+                return "No function with declaration location found";
             }
             return "(unrecognized error code)";
         }
@@ -255,5 +261,46 @@ namespace tep::dbg
         if (exact_name == exact_symbol_name_flag::no)
             return unexpected{ make_error_code(std::errc::invalid_argument) };
         return find_function_symbol_exact(oi, name);
+    }
+
+    result<const compilation_unit::any_function*>
+        find_function(
+            const compilation_unit& cu,
+            const std::filesystem::path& file,
+            uint32_t lineno,
+            uint32_t colno)
+        noexcept
+    {
+        using unexpected = nonstd::unexpected<std::error_code>;
+        bool file_found{}, line_found{}, col_found{}, decl_loc_found{};
+        auto pred = [&](const compilation_unit::any_function& af)
+        {
+            const auto& f = std::holds_alternative<normal_function>(af) ?
+                std::get<normal_function>(af) :
+                std::get<static_function>(af);
+            return f.decl_loc && (decl_loc_found = true) &&
+                f.decl_loc->file == file && (file_found = true) &&
+                f.decl_loc->line_number == lineno && (line_found = true) &&
+                (!colno || (f.decl_loc->line_column == colno && (col_found = true)));
+        };
+
+        auto it = std::find_if(cu.funcs.begin(), cu.funcs.end(), pred);
+        if (it == cu.funcs.end())
+        {
+            auto ec = util_errc::function_not_found;
+            if (!decl_loc_found)
+                ec = util_errc::decl_location_not_found;
+            else if (!file_found)
+                ec = util_errc::file_not_found;
+            else if (!line_found)
+                ec = util_errc::line_not_found;
+            else if (!col_found)
+                ec = util_errc::column_not_found;
+            return unexpected{ ec };
+        }
+
+        if (std::find_if(it + 1, cu.funcs.end(), pred) != cu.funcs.end())
+            return unexpected{ util_errc::function_ambiguous };
+        return &*it;
     }
 } // namespace tep::dbg

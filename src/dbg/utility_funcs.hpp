@@ -25,6 +25,9 @@ namespace tep::dbg
         symbol_not_found,
         symbol_ambiguous,
         symbol_ambiguous_static,
+        function_not_found,
+        function_ambiguous,
+        decl_location_not_found,
     };
 
     enum class new_statement_flag : bool { no, yes };
@@ -116,4 +119,20 @@ namespace tep::dbg
             const object_info&,
             std::string_view name,
             exact_symbol_name_flag exact_name = exact_symbol_name_flag::no);
+
+    /**
+     * @brief Find function in compilation unit from source
+     *
+     * @param cu compilation unit to search
+     * @param file function declaration file
+     * @param lineno function declaration line
+     * @param colno function declaration column or 0 to match any column
+     * @return result<const compilation_unit::any_function*>
+     */
+    result<const compilation_unit::any_function*>
+        find_function(
+            const compilation_unit& cu,
+            const std::filesystem::path& file,
+            uint32_t lineno,
+            uint32_t colno = 0) noexcept;
 } // namespace tep::dbg
