@@ -3,6 +3,8 @@
 #include "params_structs.hpp"
 #include "error.hpp"
 
+#include <algorithm>
+
 namespace
 {
     std::pair<GElf_Shdr, Elf_Scn*> find_symtab(
@@ -74,6 +76,15 @@ namespace tep::dbg
                 }
             }
         }
+        std::sort(function_symbols.begin(), function_symbols.end(),
+            [](const function_symbol& lhs, const function_symbol& rhs)
+            {
+                if (lhs.name < rhs.name)
+                    return true;
+                if (lhs.name == rhs.name)
+                    return lhs.address < rhs.address;
+                return false;
+            });
     }
 
     void object_info::impl::load_debug_info(dwarf_descriptor dbg)
