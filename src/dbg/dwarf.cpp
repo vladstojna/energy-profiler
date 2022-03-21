@@ -138,10 +138,9 @@ namespace
                 instances.emplace_back(inline_instance::param{ inst, files });
             return instances;
         }
-        else if (auto ranges = get_ranges(func_die); !ranges.empty())
+        else if (auto ranges = get_ranges(func_die); ranges.size() > 1)
             return ranges;
-        else
-            return function_addresses{ {func_die} };
+        return function_addresses{ {func_die} };
     }
 }
 
