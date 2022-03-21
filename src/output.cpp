@@ -95,12 +95,12 @@ namespace tep::detail
 namespace nlohmann
 {
     template<>
-    struct adl_serializer<nrgprf::timed_sample>
+    struct adl_serializer<tep::timed_sample>
     {
-        static void to_json(json& j, const nrgprf::timed_sample& sample)
+        static void to_json(json& j, const tep::timed_sample& sample)
         {
             j = std::chrono::duration_cast<std::chrono::nanoseconds>(
-                sample.timepoint().time_since_epoch())
+                sample.timestamp.time_since_epoch())
                 .count();
         }
     };
