@@ -11,8 +11,6 @@
 
 namespace nrgprf
 {
-
-    class error;
     class reader;
     class reader_rapl;
     class reader_gpu;
@@ -25,7 +23,6 @@ namespace nrgprf
         detail::sample_data data;
 
         sample();
-        sample(const reader& reader, error& e);
 
         bool operator==(const sample& rhs) const;
         bool operator!=(const sample& rhs) const;
@@ -49,9 +46,9 @@ namespace nrgprf
 
     public:
         timed_sample();
-        timed_sample(const reader&, error&);
 
         const time_point& timepoint() const;
+        void timepoint(time_point) noexcept;
 
         bool operator==(const timed_sample& rhs) const;
         bool operator!=(const timed_sample& rhs) const;
@@ -61,5 +58,4 @@ namespace nrgprf
         operator const sample& () const;
         operator sample& ();
     };
-
 }

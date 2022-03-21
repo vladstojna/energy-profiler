@@ -4,7 +4,7 @@
 
 namespace nrgprf::readings_type
 {
-    type operator|(type lhs, type rhs)
+    type operator|(type lhs, type rhs) noexcept
     {
         return static_cast<type>(
             static_cast<std::underlying_type_t<type>>(lhs) |
@@ -12,7 +12,7 @@ namespace nrgprf::readings_type
             );
     }
 
-    type operator&(type lhs, type rhs)
+    type operator&(type lhs, type rhs) noexcept
     {
         return static_cast<type>(
             static_cast<std::underlying_type_t<type>>(lhs) &
@@ -20,7 +20,7 @@ namespace nrgprf::readings_type
             );
     }
 
-    type operator^(type lhs, type rhs)
+    type operator^(type lhs, type rhs) noexcept
     {
         return static_cast<type>(
             static_cast<std::underlying_type_t<type>>(lhs) ^

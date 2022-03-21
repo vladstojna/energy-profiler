@@ -12,9 +12,9 @@ namespace nrgprf
             energy = 1 << 1
         };
 
-        type operator|(type lhs, type rhs);
-        type operator&(type lhs, type rhs);
-        type operator^(type lhs, type rhs);
+        type operator|(type lhs, type rhs) noexcept;
+        type operator&(type lhs, type rhs) noexcept;
+        type operator^(type lhs, type rhs) noexcept;
 
         extern const type all;
     }

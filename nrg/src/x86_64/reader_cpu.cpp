@@ -14,6 +14,7 @@
 
 #include <fcntl.h>
 #include <unistd.h>
+#include <sys/stat.h>
 
 namespace nrgprf::loc
 {
@@ -82,18 +83,12 @@ namespace
         char name[64];
         char filename[256];
         snprintf(filename, sizeof(filename), "%s/name", base);
-        auto filed = file_descriptor::create(filename);
-        if (!filed)
-            return rettype(nonstd::unexpect, std::move(filed.error()));
-        if (read_buff(filed->value, name, sizeof(name)) < 0)
-            return rettype(nonstd::unexpect,
-                error_code::SYSTEM,
-                system_error_str(filename));
+        file_descriptor filed(filename);
+        if (read_buff(filed.value, name, sizeof(name)) < 0)
+            return rettype(nonstd::unexpect, errno, std::system_category());
         int32_t didx = domain_index_from_name(name);
         if (didx < 0)
-            return rettype(nonstd::unexpect,
-                error_code::INVALID_DOMAIN_NAME,
-                cmmn::concat("invalid domain name: ", name));
+            return rettype(nonstd::unexpect, errc::invalid_domain_name);
         return didx;
     }
 
@@ -105,30 +100,23 @@ namespace
         char filename[256];
         // read the <domain>/name content
         snprintf(filename, sizeof(filename), "%s/name", base);
-        auto filed = file_descriptor::create(filename);
-        if (!filed)
-            return rettype(nonstd::unexpect, std::move(filed.error()));
-        ssize_t namelen = read_buff(filed->value, name, sizeof(name));
+        file_descriptor filed(filename);
+        ssize_t namelen = read_buff(filed.value, name, sizeof(name));
         if (namelen < 0)
-            return rettype(nonstd::unexpect, error_code::SYSTEM,
-                system_error_str(filename));
+            return rettype(nonstd::unexpect, errno, std::system_category());
         // check whether the contents follow the package-<number> pattern
         if (!is_package_domain(name))
-            return rettype(nonstd::unexpect, error_code::SETUP_ERROR,
-                "Attempted retrieval of the package number on a non-package domain");
+            return rettype(nonstd::unexpect, errc::package_num_wrong_domain);
         // offset package- to point to the package number;
         // null-terminator counts as the dash
         const char* pkg_num_start = name + sizeof(EVENT_PKG_PREFIX);
         uint32_t pkg_num;
         auto [p, ec] = std::from_chars(pkg_num_start, name + namelen, pkg_num, 10);
         if (auto code = std::make_error_code(ec))
-            return rettype(nonstd::unexpect, error_code::SETUP_ERROR,
-                cmmn::concat("Error reading the package number ", code.message()));
+            return rettype(nonstd::unexpect, code);
         // package numbers start at 0, so the maximum is max_sockets - 1
         if (pkg_num >= max_sockets)
-            return rettype(nonstd::unexpect, error_code::TOO_MANY_SOCKETS, cmmn::concat(
-                "Package number greater than maximum number of supported sockets, got ",
-                std::to_string(pkg_num)));
+            return rettype(nonstd::unexpect, errc::too_many_sockets);
         return pkg_num;
     }
 
@@ -140,19 +128,12 @@ namespace
         using rettype = result<event_data>;
         char filename[256];
         snprintf(filename, sizeof(filename), "%s/max_energy_range_uj", base);
-        auto filed = file_descriptor::create(filename);
-        if (!filed)
-            return rettype(nonstd::unexpect, std::move(filed.error()));
+        file_descriptor filed(filename);
         uint64_t max_value;
-        if (read_uint64(filed->value, &max_value) < 0)
-            return rettype(nonstd::unexpect,
-                error_code::SYSTEM,
-                system_error_str(filename));
+        if (read_uint64(filed.value, &max_value) < 0)
+            return rettype(nonstd::unexpect, errno, std::system_category());
         snprintf(filename, sizeof(filename), "%s/energy_uj", base);
-        filed = file_descriptor::create(filename);
-        if (!filed)
-            return rettype(nonstd::unexpect, std::move(filed.error()));
-        return event_data{ std::move(*filed), max_value };
+        return event_data{ file_descriptor(filename), max_value };
     }
 
     bool file_exists(std::string_view path)
@@ -163,27 +144,18 @@ namespace
 
 namespace nrgprf
 {
-    result<file_descriptor> file_descriptor::create(const char* file)
-    {
-        nrgprf::error err = error::success();
-        file_descriptor fd(file, err);
-        if (err)
-            return result<file_descriptor>(nonstd::unexpect, std::move(err));
-        return fd;
-    }
-
-    file_descriptor::file_descriptor(const char* file, error& err) :
+    file_descriptor::file_descriptor(const char* file) :
         value(open(file, O_RDONLY))
     {
         if (value == -1)
-            err = { error_code::SYSTEM, system_error_str(file) };
+            throw exception(std::error_code{ errno, std::system_category() });
     }
 
     file_descriptor::file_descriptor(const file_descriptor& other) :
         value(dup(other.value))
     {
         if (value == -1)
-            throw std::runtime_error("file_descriptor: error duplicating file descriptor");
+            throw exception(std::error_code{ errno, std::system_category() });
     }
 
     file_descriptor::file_descriptor(file_descriptor&& other) noexcept :
@@ -203,7 +175,7 @@ namespace nrgprf
         return *this;
     }
 
-    event_data::event_data(file_descriptor&& fd, uint64_t max) :
+    event_data::event_data(file_descriptor&& fd, uint64_t max) noexcept :
         fd(std::move(fd)),
         max(max),
         prev(0),
@@ -213,20 +185,19 @@ namespace nrgprf
     reader_impl::reader_impl(
         location_mask dmask,
         socket_mask skt_mask,
-        error& ec,
         std::ostream& os) :
         _event_map(),
         _active_events()
     {
+        if (dmask.none())
+            throw exception(errc::invalid_location_mask);
+        if (skt_mask.none())
+            throw exception(errc::invalid_socket_mask);
         for (auto& skts : _event_map)
             skts.fill(-1);
-
         result<uint8_t> num_skts = count_sockets();
         if (!num_skts)
-        {
-            ec = std::move(num_skts.error());
-            return;
-        }
+            throw exception(num_skts.error());
         os << fileline(cmmn::concat("found ", std::to_string(*num_skts), " sockets\n"));
         for (uint8_t skt = 0; skt < *num_skts; skt++)
         {
@@ -237,43 +208,45 @@ namespace nrgprf
             if (!file_exists(base))
                 continue;
             result<uint32_t> package_num = get_package_number(base);
-            if (!package_num && (ec = std::move(package_num.error())))
-                return;
+            if (!package_num)
+                throw exception(package_num.error());
             if (!skt_mask[*package_num])
                 continue;
             os << fileline(cmmn::concat("registered socket: ", std::to_string(*package_num), "\n"));
-            if (ec = add_event(base, dmask, *package_num, os))
-                return;
+            if (auto ec = add_event(base, dmask, *package_num, os))
+                throw exception(ec);
             // already found one domain above
             for (uint8_t domain_count = 0; domain_count < max_domains - 1; domain_count++)
             {
                 snprintf(base + written, sizeof(base) - written,
                     "/intel-rapl:%u:%u", skt, domain_count);
                 // only consider the domain if the file exists
-                if (file_exists(base) && (ec = add_event(base, dmask, *package_num, os)))
-                    return;
+                if (file_exists(base))
+                    if (auto ec = add_event(base, dmask, *package_num, os))
+                        throw exception(ec);
             }
         }
         if (!num_events())
-            ec = { error_code::SETUP_ERROR, "No events were added" };
+            throw exception(errc::no_events_added);
     }
 
-    error reader_impl::read(sample& s) const
+    bool reader_impl::read(sample& s, std::error_code& ec) const
     {
         for (size_t ix = 0; ix < _active_events.size(); ix++)
-        {
-            error err = read(s, ix);
-            if (err)
-                return err;
-        };
-        return error::success();
+            if (!read(s, ix, ec))
+                return false;
+        ec.clear();
+        return true;
     }
 
-    error reader_impl::read(sample& s, uint8_t ev_idx) const
+    bool reader_impl::read(sample& s, uint8_t ev_idx, std::error_code& ec) const
     {
         uint64_t curr;
         if (read_uint64(_active_events[ev_idx].fd.value, &curr) == -1)
-            return { error_code::SYSTEM, system_error_str("Error reading counters") };
+        {
+            ec = std::error_code(errno, std::system_category());
+            return false;
+        }
         if (curr < _active_events[ev_idx].prev)
         {
             std::cerr << fileline("detected wraparound\n");
@@ -281,72 +254,73 @@ namespace nrgprf
         }
         _active_events[ev_idx].prev = curr;
         s.data.cpu[ev_idx] = curr + _active_events[ev_idx].curr_max;
-        return error::success();
+        ec.clear();
+        return true;
     }
 
-    size_t reader_impl::num_events() const
+    size_t reader_impl::num_events() const noexcept
     {
         return _active_events.size();
     }
 
     template<typename Location>
-    int32_t reader_impl::event_idx(uint8_t skt) const
+    int32_t reader_impl::event_idx(uint8_t skt) const noexcept
     {
         return _event_map[skt][Location::value];
     }
 
     template<>
-    int32_t reader_impl::event_idx<loc::sys>(uint8_t) const
+    int32_t reader_impl::event_idx<loc::sys>(uint8_t) const noexcept
     {
         return -1;
     }
 
     template<>
-    int32_t reader_impl::event_idx<loc::gpu>(uint8_t) const
+    int32_t reader_impl::event_idx<loc::gpu>(uint8_t) const noexcept
     {
         return -1;
     }
 
     template<typename Location>
-    result<sensor_value> reader_impl::value(const sample& s, uint8_t skt) const
+    result<sensor_value> reader_impl::value(const sample& s, uint8_t skt) const noexcept
     {
         using rettype = result<sensor_value>;
         if (event_idx<Location>(skt) < 0)
-            return rettype(nonstd::unexpect, error_code::NO_EVENT);
+            return rettype(nonstd::unexpect, errc::no_such_event);
         auto res = s.data.cpu[event_idx<Location>(skt)];
         if (!res)
-            return rettype(nonstd::unexpect, error_code::NO_EVENT);
+            return rettype(nonstd::unexpect, errc::no_such_event);
         return sensor_value{ res };
     }
 
     template<>
-    result<sensor_value> reader_impl::value<loc::sys>(const sample&, uint8_t) const
+    result<sensor_value> reader_impl::value<loc::sys>(const sample&, uint8_t) const noexcept
     {
-        return result<sensor_value>(nonstd::unexpect, error_code::NO_EVENT);
+        return result<sensor_value>(nonstd::unexpect, errc::no_such_event);
     }
 
     template<>
-    result<sensor_value> reader_impl::value<loc::gpu>(const sample&, uint8_t) const
+    result<sensor_value> reader_impl::value<loc::gpu>(const sample&, uint8_t) const noexcept
     {
-        return result<sensor_value>(nonstd::unexpect, error_code::NO_EVENT);
+        return result<sensor_value>(nonstd::unexpect, errc::no_such_event);
     }
 
-    error reader_impl::add_event(
+    std::error_code reader_impl::add_event(
         const char* base, location_mask dmask, uint8_t skt, std::ostream& os)
     {
         result<int32_t> didx = get_domain_idx(base);
         if (!didx)
-            return std::move(didx.error());
+            return didx.error();
         if (dmask[*didx])
         {
             result<event_data> event_data = get_event_data(base);
             if (!event_data)
-                return std::move(event_data.error());
+                return event_data.error();
             os << fileline(cmmn::concat("added event: ", base, "\n"));
             _event_map[skt][*didx] = _active_events.size();
             _active_events.push_back(std::move(*event_data));
         }
-        return error::success();
+        return {};
     }
 }
 

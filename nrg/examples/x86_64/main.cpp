@@ -1,5 +1,3 @@
-#include "../common/exception.hpp"
-
 #include <nrg/nrg.hpp>
 #include <nonstd/expected.hpp>
 
@@ -16,13 +14,13 @@ namespace
             const nrgprf::sample& last,
             uint8_t socket)
     {
-        using example::nrg_exception;
+        using nrgprf::exception;
         auto energy_first = reader.value<Location>(first, socket);
         if (!energy_first)
-            throw nrg_exception(energy_first.error());
+            throw exception(energy_first.error());
         auto energy_last = reader.value<Location>(last, socket);
         if (!energy_last)
-            throw nrg_exception(energy_last.error());
+            throw exception(energy_last.error());
         return { *energy_first, *energy_last };
     }
 }
@@ -32,28 +30,27 @@ int main()
     try
     {
         using namespace nrgprf;
-        using example::nrg_exception;
-
         constexpr uint8_t socket = 0;
 
-        error err = error::success();
-        reader_rapl reader(locmask::pkg, 0x1, err);
-        if (err)
-            throw nrg_exception(err);
-
+        reader_rapl reader(locmask::pkg, 0x1);
         sample first;
         sample last;
-        if (auto err = reader.read(first))
-            throw nrg_exception(err);
+        if (std::error_code ec; !reader.read(first, ec))
+            throw exception(ec);
         std::this_thread::sleep_for(std::chrono::seconds(3));
-        if (auto err = reader.read(last))
-            throw nrg_exception(err);
+        if (std::error_code ec; !reader.read(last, ec))
+            throw exception(ec);
         auto [before, after] =
             get_readings<loc::pkg>(reader, first, last, socket);
 
         std::cout << "Before sleep: " << before.count() << " J\n";
         std::cout << "After sleep: " << after.count() << " J\n";
         std::cout << "Energy consumed: " << (after - before).count() << " J\n";
+    }
+    catch (const nrgprf::exception& e)
+    {
+        std::cerr << "NRG exception: " << e.what() << '\n';
+        return 1;
     }
     catch (const std::exception& e)
     {

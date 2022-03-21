@@ -1,5 +1,3 @@
-#include "../common/exception.hpp"
-
 #include <nrg/nrg.hpp>
 #include <nonstd/expected.hpp>
 
@@ -33,13 +31,13 @@ namespace
         const nrgprf::sample& last,
         uint8_t socket)
     {
-        using example::nrg_exception;
+        using nrgprf::exception;
         auto energy_first = reader.value<Location>(first, socket);
         if (!energy_first)
-            throw nrg_exception(energy_first.error());
+            throw exception(energy_first.error());
         auto energy_last = reader.value<Location>(last, socket);
         if (!energy_last)
-            throw nrg_exception(energy_last.error());
+            throw exception(energy_last.error());
         return *energy_last - *energy_first;
     }
 
@@ -52,28 +50,27 @@ namespace
         std::size_t iters = 1000000)
     {
         using namespace nrgprf;
-        using example::nrg_exception;
         std::cout << "Calibrating busy wait parameters\n";
 
         sample first;
         sample last;
 
-        if (auto err = reader.read(first))
-            throw nrg_exception(err);
+        if (std::error_code ec; !reader.read(first, ec))
+            throw exception(ec);
         for (auto [i, s] = std::pair{ std::size_t{}, sample{} }; i < iters; i++)
         {
-            if (auto err = reader.read(s))
-                throw nrg_exception(err);
+            if (std::error_code ec; !reader.read(s, ec))
+                throw exception(ec);
         }
-        if (auto err = reader.read(last))
-            throw nrg_exception(err);
+        if (std::error_code ec; !reader.read(last, ec))
+            throw exception(ec);
 
         auto energy_first = reader.value<loc::pkg>(first, socket);
         if (!energy_first)
-            throw nrg_exception(energy_first.error());
+            throw exception(energy_first.error());
         auto energy_last = reader.value<loc::pkg>(last, socket);
         if (!energy_last)
-            throw nrg_exception(energy_last.error());
+            throw exception(energy_last.error());
 
         joules<double> consumed = total_energy<loc::pkg>(reader, first, last, socket);
         joules<double> per_iter = consumed / iters;
@@ -91,19 +88,19 @@ namespace
     // Returns the last sample read and the number of iterations the sensor took to refresh.
     std::pair<std::size_t, nrgprf::sample> wait(const nrgprf::reader_rapl& reader)
     {
-        using namespace nrgprf;
-        using example::nrg_exception;
+        using nrgprf::sample;
+        using nrgprf::exception;
         sample first;
         sample last;
         std::size_t iters = 0;
 
-        if (auto err = reader.read(first))
-            throw nrg_exception(err);
+        if (std::error_code ec; !reader.read(first, ec))
+            throw exception(ec);
         do
         {
             iters++;
-            if (auto err = reader.read(last))
-                throw nrg_exception(err);
+            if (std::error_code ec; !reader.read(last, ec))
+                throw exception(ec);
         } while (first == last);
         return { iters, last };
     }
@@ -138,15 +135,10 @@ int main(int argc, char** argv)
     try
     {
         using namespace nrgprf;
-        using example::nrg_exception;
-
         constexpr uint8_t socket = 0;
         const arguments args(argc, argv);
 
-        error err = error::success();
-        reader_rapl reader(locmask::pkg, 0x1, err);
-        if (err)
-            throw nrg_exception(err);
+        reader_rapl reader(locmask::pkg, 0x1);
 
         auto calibrated_val = calibrate_busy_wait(reader, socket, args.iters);
 
@@ -160,6 +152,11 @@ int main(int argc, char** argv)
         auto consumed = total_energy<loc::pkg>(reader, first, last, socket);
         std::cout << "Total energy: " << consumed.count() << " J\n";
         std::cout << "Wait subtracted: " << (consumed - calibrated_val * ia).count() << " J\n";
+    }
+    catch (const nrgprf::exception& e)
+    {
+        std::cerr << "NRG exception: " << e.what() << '\n';
+        return 1;
     }
     catch (const std::exception& e)
     {

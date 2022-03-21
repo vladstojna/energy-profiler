@@ -11,7 +11,6 @@
 
 namespace nrgprf
 {
-    class error;
     class sample;
 
     enum class NRG_LOCAL sensor_type : uint16_t;
@@ -49,28 +48,29 @@ namespace nrgprf
         std::array<std::array<int8_t, max_domains>, max_sockets> _event_map;
         std::vector<event_data> _active_events;
 
-        reader_impl(location_mask, socket_mask, error&, std::ostream&);
+        reader_impl(location_mask, socket_mask, std::ostream&);
 
-        error read(sample&) const;
-        error read(sample&, uint8_t) const;
-        size_t num_events() const;
-
-        template<typename Location>
-        int32_t event_idx(uint8_t) const;
+        bool read(sample&, std::error_code&) const;
+        bool read(sample&, uint8_t, std::error_code&) const;
+        size_t num_events() const noexcept;
 
         template<typename Location>
-        result<sensor_value> value(const sample&, uint8_t) const;
+        int32_t event_idx(uint8_t) const noexcept;
+
+        template<typename Location>
+        result<sensor_value> value(const sample&, uint8_t) const noexcept;
 
     private:
-        error add_event(
+        std::error_code add_event(
             const std::vector<sensor_names_entry>& entries,
             uint32_t occ_num,
             uint32_t location,
-            std::ostream& os);
+            std::ostream&);
 
-        error read_single_occ(
-            const event_data& ed,
-            sensor_buffers& sbuffs,
-            sample& s) const;
+        bool read_single_occ(
+            const event_data&,
+            sensor_buffers&,
+            sample&,
+            std::error_code&) const;
     };
 }

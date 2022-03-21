@@ -40,14 +40,6 @@ static std::string to_string(const T& obj)
     return ss.str();
 }
 
-void handle_error(pid_t tid, const char* comment, const nrgprf::error& e)
-{
-    std::stringstream sstream;
-    sstream << e;
-    log::logline(log::error, "[%d] %s: error when reading counters: %s",
-        tid, comment, sstream.str().c_str());
-}
-
 // end helper functions
 
 // definition of static variables

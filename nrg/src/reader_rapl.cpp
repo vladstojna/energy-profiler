@@ -2,7 +2,6 @@
 
 #include "reader_cpu.hpp"
 #include "visibility.hpp"
-#include "create_reader.hpp"
 
 #include <nrg/reader_rapl.hpp>
 #include <nrg/sample.hpp>
@@ -18,41 +17,20 @@ struct NRG_LOCAL reader_rapl::impl : reader_impl
     using reader_impl::reader_impl;
 };
 
-result<reader_rapl> reader_rapl::create(
-    location_mask lm, socket_mask sm, std::ostream& os)
-{
-    return create_reader_impl<reader_rapl>(os, lm, sm);
-}
-
-result<reader_rapl> reader_rapl::create(location_mask lm, std::ostream& os)
-{
-    return create_reader_impl<reader_rapl>(os, lm);
-}
-
-result<reader_rapl> reader_rapl::create(socket_mask sm, std::ostream& os)
-{
-    return create_reader_impl<reader_rapl>(os, sm);
-}
-
-result<reader_rapl> reader_rapl::create(std::ostream& os)
-{
-    return create_reader_impl<reader_rapl>(os);
-}
-
-reader_rapl::reader_rapl(location_mask dmask, socket_mask skt_mask, error& ec, std::ostream& os) :
-    _impl(std::make_unique<reader_rapl::impl>(dmask, skt_mask, ec, os))
+reader_rapl::reader_rapl(location_mask dmask, socket_mask skt_mask, std::ostream& os) :
+    _impl(std::make_unique<reader_rapl::impl>(dmask, skt_mask, os))
 {}
 
-reader_rapl::reader_rapl(location_mask dmask, error& ec, std::ostream& os) :
-    reader_rapl(dmask, socket_mask(~0x0), ec, os)
+reader_rapl::reader_rapl(location_mask dmask, std::ostream& os) :
+    reader_rapl(dmask, socket_mask(~0x0), os)
 {}
 
-reader_rapl::reader_rapl(socket_mask skt_mask, error& ec, std::ostream& os) :
-    reader_rapl(location_mask(~0x0), skt_mask, ec, os)
+reader_rapl::reader_rapl(socket_mask skt_mask, std::ostream& os) :
+    reader_rapl(location_mask(~0x0), skt_mask, os)
 {}
 
-reader_rapl::reader_rapl(error& ec, std::ostream& os) :
-    reader_rapl(location_mask(~0x0), socket_mask(~0x0), ec, os)
+reader_rapl::reader_rapl(std::ostream& os) :
+    reader_rapl(location_mask(~0x0), socket_mask(~0x0), os)
 {}
 
 reader_rapl::reader_rapl(const reader_rapl& other) :
@@ -65,49 +43,33 @@ reader_rapl& reader_rapl::operator=(const reader_rapl& other)
     return *this;
 }
 
-reader_rapl::reader_rapl(reader_rapl&& other) = default;
-reader_rapl& reader_rapl::operator=(reader_rapl && other) = default;
+reader_rapl::reader_rapl(reader_rapl&&) noexcept = default;
+reader_rapl& reader_rapl::operator=(reader_rapl&&) noexcept = default;
 reader_rapl::~reader_rapl() = default;
 
-error reader_rapl::read(sample & s) const
+bool reader_rapl::read(sample & s, std::error_code & ec) const
 {
-    return pimpl()->read(s);
+    return pimpl()->read(s, ec);
 }
 
-error reader_rapl::read(sample & s, uint8_t idx) const
+bool reader_rapl::read(sample & s, uint8_t idx, std::error_code & ec) const
 {
-    return pimpl()->read(s, idx);
+    return pimpl()->read(s, idx, ec);
 }
 
-result<sample> reader_rapl::read() const
-{
-    sample s;
-    if (error err = read(s))
-        return result<sample>{ nonstd::unexpect, std::move(err) };
-    return s;
-}
-
-result<sample> reader_rapl::read(uint8_t idx) const
-{
-    sample s;
-    if (error err = read(s, idx))
-        return result<sample>{ nonstd::unexpect, std::move(err) };
-    return s;
-}
-
-size_t reader_rapl::num_events() const
+size_t reader_rapl::num_events() const noexcept
 {
     return pimpl()->num_events();
 }
 
 template<typename Location>
-int32_t reader_rapl::event_idx(uint8_t skt) const
+int32_t reader_rapl::event_idx(uint8_t skt) const noexcept
 {
     return pimpl()->event_idx<Location>(skt);
 }
 
 template<typename Location>
-result<sensor_value> reader_rapl::value(const sample & s, uint8_t skt) const
+result<sensor_value> reader_rapl::value(const sample & s, uint8_t skt) const noexcept
 {
     return pimpl()->value<Location>(s, skt);
 }
@@ -124,13 +86,13 @@ std::vector<std::pair<uint32_t, sensor_value>> reader_rapl::values(const sample 
     return retval;
 }
 
-const reader_rapl::impl* reader_rapl::pimpl() const
+const reader_rapl::impl* reader_rapl::pimpl() const noexcept
 {
     assert(_impl);
     return _impl.get();
 }
 
-reader_rapl::impl* reader_rapl::pimpl()
+reader_rapl::impl* reader_rapl::pimpl() noexcept
 {
     assert(_impl);
     return _impl.get();
