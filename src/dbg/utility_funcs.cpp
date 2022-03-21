@@ -32,7 +32,7 @@ namespace
             case util_errc::symbol_not_found:
                 return "Symbol not found";
             case util_errc::symbol_ambiguous:
-                return "Symbol name ambiguous";
+                return "Symbol ambiguous";
             case util_errc::symbol_ambiguous_static:
                 return "Symbol name ambiguous with at least one static symbol present";
             case util_errc::symbol_ambiguous_weak:
@@ -82,8 +82,8 @@ namespace
         return ret;
     }
 
-    const tep::dbg::function_base& to_function_base(
-        const tep::dbg::any_function& any) noexcept
+    template<typename T>
+    const T& cast_to(const tep::dbg::any_function& any) noexcept
     {
         return std::holds_alternative<tep::dbg::normal_function>(any) ?
             std::get<tep::dbg::normal_function>(any) :
@@ -153,6 +153,21 @@ namespace
             name);
     }
 
+    tep::dbg::result<bool> is_match(
+        std::string_view to_match, std::string_view name)
+    {
+        using unexpected = nonstd::unexpected<std::error_code>;
+        std::error_code ec;
+        auto demangled = tep::dbg::demangle(name, ec);
+        if (!demangled)
+            return unexpected{ ec };
+        std::string nospaces = remove_spaces(*demangled);
+        std::string nospaces_m = remove_spaces(to_match);
+        std::string_view match_view{ nospaces_m };
+        return std::string_view{ nospaces }.substr(
+            0, match_view.size()) == match_view;
+    }
+
     tep::dbg::result<const tep::dbg::function_symbol*>
         find_function_symbol_matched(
             const tep::dbg::object_info& oi,
@@ -166,13 +181,13 @@ namespace
 
         auto matches_pred = [name](const function_symbol& sym, std::error_code& ec)
         {
-            auto demangled = tep::dbg::demangle(sym.name, ec);
-            if (!demangled)
-                return false;
-            std::string nospaces = remove_spaces(*demangled);
-            std::string to_match = remove_spaces(name);
-            std::string_view match_view{ to_match };
-            return std::string_view{ nospaces }.substr(0, match_view.size()) == match_view;
+            auto is_match_res = is_match(name, sym.name);
+            if (!is_match_res)
+            {
+                ec = is_match_res.error();
+                return true;
+            }
+            return *is_match_res;
         };
 
         auto get_all_matches = [&](std::error_code& ec)
@@ -203,6 +218,8 @@ namespace
             return unexpected{ ec };
         if (matches.empty())
             return unexpected{ util_errc::no_matches };
+        if (matches.size() == 1)
+            return matches.front();
         auto exact_match = find_function_symbol_exact_impl(
             [](auto& x) -> auto& { return *x; },
             matches.begin(),
@@ -210,8 +227,6 @@ namespace
             name);
         if (exact_match || exact_match.error() != util_errc::symbol_not_found)
             return exact_match;
-        if (matches.size() == 1)
-            return matches.front();
         if (!no_suffix)
             return unexpected{ util_errc::symbol_ambiguous_suffix };
         auto it = std::partition(matches.begin(), matches.end(),
@@ -254,14 +269,16 @@ namespace
         find_function_by_linkage_name(
             demangled_name_t,
             const tep::dbg::compilation_unit& cu,
-            std::string_view name)
+            std::string_view name,
+            bool exact_name)
     {
         using tep::dbg::util_errc;
         using tep::dbg::any_function;
         using tep::dbg::normal_function;
         using unexpected = nonstd::unexpected<std::error_code>;
+
         std::error_code ec;
-        auto pred = [&ec, name](const any_function& af)
+        auto exact_pred = [&ec, name](const any_function& af)
         {
             if (!std::holds_alternative<normal_function>(af))
                 return false;
@@ -272,12 +289,62 @@ namespace
             return remove_spaces(*demangled) == remove_spaces(name);
         };
 
-        auto it = std::find_if(cu.funcs.begin(), cu.funcs.end(), pred);
+        if (exact_name)
+        {
+            auto it = std::find_if(cu.funcs.begin(), cu.funcs.end(), exact_pred);
+            if (ec)
+                return unexpected{ ec };
+            if (it == cu.funcs.end())
+                return unexpected{ util_errc::function_not_found };
+            return &*it;
+        }
+
+        auto matches_pred = [name](const any_function& af, std::error_code& ec)
+        {
+            if (!std::holds_alternative<normal_function>(af))
+                return false;
+            const auto& f = std::get<normal_function>(af);
+            auto is_match_res = is_match(name, f.linkage_name);
+            if (!is_match_res)
+            {
+                ec = is_match_res.error();
+                return true;
+            }
+            return *is_match_res;
+        };
+
+        auto get_all_matches = [&](std::error_code& ec)
+        {
+            std::vector<const any_function*> matches;
+            for (const auto& sym : cu.funcs)
+            {
+                bool is_match = matches_pred(sym, ec);
+                if (ec)
+                    break;
+                if (is_match)
+                    matches.push_back(&sym);
+            }
+            return matches;
+        };
+
+        auto matches = get_all_matches(ec);
         if (ec)
             return unexpected{ ec };
-        if (it == cu.funcs.end())
-            return unexpected{ util_errc::function_not_found };
-        return &*it;
+        if (matches.empty())
+            return unexpected{ util_errc::no_matches };
+        if (matches.size() == 1)
+            return matches.front();
+        auto it = std::find_if(matches.begin(), matches.end(),
+            [exact_pred](const any_function* f)
+            {
+                assert(f);
+                return exact_pred(*f);
+            });
+        if (ec)
+            return unexpected{ ec };
+        if (it == matches.end())
+            return unexpected{ util_errc::function_ambiguous };
+        return *it;
     }
 }
 
@@ -479,7 +546,7 @@ namespace tep::dbg
             return &*it;
         }
         if (!std::holds_alternative<function_addresses>(std::get<static_function>(f).data))
-            return unexpected{ util_errc::symbol_not_found };
+            return unexpected{ util_errc::symbol_ambiguous };
         auto it = std::find_if(syms.begin(), syms.end(), [&f](const function_symbol& sym)
             {
                 const auto& addrs = std::get<function_addresses>(std::get<static_function>(f).data);
@@ -508,11 +575,20 @@ namespace tep::dbg
                 if (!std::holds_alternative<static_function>(af))
                     return false;
                 const auto& f = std::get<static_function>(af);
-                if (!std::holds_alternative<function_addresses>(f.data))
+                if (std::holds_alternative<inline_instances>(f.data))
                     return false;
-                const auto& addrs = std::get<function_addresses>(f.data);
-                assert(addrs.entry_pc == addrs.crange.low_pc);
-                return addrs.entry_pc == sym_addr;
+                else if (auto ptr = std::get_if<function_addresses>(&f.data))
+                {
+                    assert(ptr->entry_pc == ptr->crange.low_pc);
+                    return ptr->entry_pc == sym_addr;
+                }
+                // multiple ranges but not inlined
+                const auto& rngs = std::get<ranges>(f.data);
+                return rngs.end() != std::find_if(rngs.begin(), rngs.end(),
+                    [sym_addr](const contiguous_range& rng)
+                    {
+                        return rng.low_pc == sym_addr;
+                    });
             });
             if (it == cu.funcs.end())
                 return unexpected{ util_errc::function_not_found };
@@ -546,16 +622,17 @@ namespace tep::dbg
         using unexpected = nonstd::unexpected<std::error_code>;
         if (name.empty())
             return unexpected{ make_error_code(std::errc::invalid_argument) };
-        if (exact_name == exact_symbol_name_flag::no)
-            return unexpected{ make_error_code(std::errc::invalid_argument) };
-        auto sym = find_function_symbol_exact(oi, name);
+        auto sym = exact_name == exact_symbol_name_flag::yes ?
+            find_function_symbol_exact(oi, name) :
+            find_function_symbol_matched(oi, name, true);
         if (sym)
             return find_function(oi, **sym);
         else if (sym.error() == util_errc::symbol_not_found)
         {
             for (const auto& cu : oi.compilation_units())
             {
-                auto func = find_function_by_linkage_name(demangled_name, cu, name);
+                auto func = find_function_by_linkage_name(
+                    demangled_name, cu, name, exact_name == exact_symbol_name_flag::yes);
                 if (func || func.error() != util_errc::function_not_found)
                     return func;
             }
@@ -627,7 +704,7 @@ namespace tep::dbg
 
         auto pred = [&file](const any_function& x)
         {
-            const auto& f = to_function_base(x);
+            const auto& f = cast_to<function_base>(x);
             return f.decl_loc && f.decl_loc->file == file;
         };
 
