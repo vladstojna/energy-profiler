@@ -772,11 +772,8 @@ namespace tep::dbg
             exact_symbol_name_flag exact_name)
     {
         using unexpected = nonstd::unexpected<std::error_code>;
-        if (name.empty())
-            return unexpected{ make_error_code(std::errc::invalid_argument) };
-        auto sym = exact_name == exact_symbol_name_flag::yes ?
-            find_function_symbol_exact(oi, name) :
-            find_function_symbol_matched(oi, name, true);
+        auto sym = find_function_symbol(oi, name,
+            exact_name, ignore_symbol_suffix_flag::yes);
         if (sym)
             return find_function(oi, **sym);
         else if (sym.error() == util_errc::symbol_not_found)
@@ -801,48 +798,67 @@ namespace tep::dbg
             exact_symbol_name_flag exact_name)
     {
         using unexpected = nonstd::unexpected<std::error_code>;
-        if (name.empty())
-            return unexpected{ make_error_code(std::errc::invalid_argument) };
-        if (exact_name == exact_symbol_name_flag::no)
-            return unexpected{ make_error_code(std::errc::invalid_argument) };
+        auto sym = find_function_symbol(oi, cu, name,
+            exact_name, ignore_symbol_suffix_flag::yes);
+        if (!sym)
+            return unexpected{ sym.error() };
 
-        std::error_code ec;
+        const any_function* found = nullptr;
         for (const auto& any_f : cu.funcs)
         {
-            if (std::holds_alternative<normal_function>(any_f))
+            if (auto f = std::get_if<normal_function>(&any_f))
             {
-                auto demangled = demangle(
-                    std::get<normal_function>(any_f).linkage_name, ec);
-                if (!demangled)
-                    return unexpected{ ec };
-                if (remove_spaces(*demangled) == remove_spaces(name))
+                // normal function -> compare with linkage name
+                if (f->linkage_name != (*sym)->name)
+                    continue;
+                if (std::get_if<inline_instances>(&f->data))
                     return &any_f;
+                else if (auto addrs = std::get_if<function_addresses>(&f->data))
+                {
+                    assert(addrs->entry_pc == (*sym)->address);
+                    found = &any_f;
+                }
+                else
+                {
+                    auto rngs = std::get_if<ranges>(&f->data);
+                    (void)rngs;
+                    assert(rngs->end() != std::find_if(rngs->begin(), rngs->end(),
+                        [&](contiguous_range rng)
+                        {
+                            return rng.low_pc == (*sym)->address;
+                        }));
+                    found = &any_f;
+                }
             }
             else
             {
-                const auto& static_f = std::get<static_function>(any_f);
-                if (std::holds_alternative<function_addresses>(static_f.data))
+                // static function -> assume it was not
+                // inlined since symbol has been found
+                // TODO: maybe possible to still have symbol
+                // but direct calls be inlined ? (e.g. function pointers)
+                const auto& sf = std::get<static_function>(any_f);
+                if (std::get_if<inline_instances>(&sf.data))
+                    continue;
+                else if (auto addrs = std::get_if<function_addresses>(&f->data))
                 {
-                    auto it = std::find_if(
-                        oi.function_symbols().begin(),
-                        oi.function_symbols().end(),
-                        [&](const function_symbol& sym)
+                    assert(addrs->entry_pc == (*sym)->address);
+                    return &any_f;
+                }
+                else
+                {
+                    auto rngs = std::get_if<ranges>(&f->data);
+                    auto it = std::find_if(rngs->begin(), rngs->end(),
+                        [&](contiguous_range rng)
                         {
-                            const auto& addrs =
-                                std::get<function_addresses>(static_f.data);
-                            assert(addrs.entry_pc == addrs.crange.low_pc);
-                            return sym.address == addrs.entry_pc;
+                            return rng.low_pc == (*sym)->address;
                         });
-                    if (it == oi.function_symbols().end())
-                        return unexpected{ util_errc::function_not_found };
-                    auto demangled = demangle(it->name, ec);
-                    if (!demangled)
-                        return unexpected{ ec };
-                    if (remove_spaces(*demangled) == remove_spaces(name))
+                    if (it != rngs->end())
                         return &any_f;
                 }
             }
         }
+        if (found)
+            return found;
         return unexpected{ util_errc::function_not_found };
     }
 
