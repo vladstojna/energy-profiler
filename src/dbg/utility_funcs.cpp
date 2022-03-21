@@ -47,6 +47,8 @@ namespace
                 return "Function ambiguous";
             case util_errc::decl_location_not_found:
                 return "No function with declaration location found";
+            case util_errc::address_not_found:
+                return "Address not found";
             }
             return "(unrecognized error code)";
         }
@@ -438,6 +440,24 @@ namespace tep::dbg
             find_function_symbol_exact(oi, name) :
             find_function_symbol_matched(oi, name,
                 no_suffix == ignore_symbol_suffix_flag::yes);
+    }
+
+    result<const function_symbol*>
+        find_function_symbol(
+            const object_info& oi,
+            uintptr_t addr) noexcept
+    {
+        using unexpected = nonstd::unexpected<std::error_code>;
+        auto it = std::find_if(
+            oi.function_symbols().begin(),
+            oi.function_symbols().end(),
+            [addr](const function_symbol& sym)
+            {
+                return sym.address == addr;
+            });
+        if (it == oi.function_symbols().end())
+            return unexpected{ util_errc::address_not_found };
+        return &*it;
     }
 
     result<const function_symbol*>

@@ -31,6 +31,7 @@ namespace tep::dbg
         function_not_found,
         function_ambiguous,
         decl_location_not_found,
+        address_not_found,
     };
 
     enum class new_statement_flag : bool { no, yes };
@@ -126,6 +127,17 @@ namespace tep::dbg
             std::string_view name,
             exact_symbol_name_flag exact_name = exact_symbol_name_flag::no,
             ignore_symbol_suffix_flag no_suffix = ignore_symbol_suffix_flag::yes);
+
+    /**
+     * @brief Find function symbol by address
+     *
+     * @param addr symbol address
+     * @return result<const function_symbol*>
+     */
+    result<const function_symbol*>
+        find_function_symbol(
+            const object_info&,
+            uintptr_t addr) noexcept;
 
     /**
      * @brief Find ELF function symbol from function DWARF data
