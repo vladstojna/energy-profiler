@@ -122,6 +122,18 @@ namespace tep::dbg
             exact_symbol_name_flag exact_name = exact_symbol_name_flag::no);
 
     /**
+     * @brief Find ELF function symbol from function DWARF data
+     *
+     * @param f function to match with symbol
+     * @return result<const function_symbol*>
+     */
+    result<const function_symbol*>
+        find_function_symbol(
+            const object_info&,
+            const compilation_unit::any_function& f
+        ) noexcept;
+
+    /**
      * @brief Find function (DWARF data) in compilation unit from ELF symbol
      *
      * @param cu the compilation unit to search
@@ -160,6 +172,37 @@ namespace tep::dbg
             const object_info&,
             std::string_view name,
             exact_symbol_name_flag exact_name = exact_symbol_name_flag::no);
+
+    /**
+     * @brief Find function (DWARF data) in a compilation unit.
+     * Used mostly to lookup static functions with equal names but
+     * defined in different compilation units.
+     *
+     * @param cu the function's compilation unit
+     * @param name demangled function name
+     * @param exact_name whether to match name exactly or as just
+     * a prefix to the actual full name
+     * @return result<const compilation_unit::any_function*>
+     */
+    result<const compilation_unit::any_function*>
+        find_function(
+            const object_info&,
+            const compilation_unit& cu,
+            std::string_view name,
+            exact_symbol_name_flag exact_name = exact_symbol_name_flag::no);
+
+    /**
+     * @brief Find all functions in a file from a compilation unit
+     *
+     * @param cu compilation unit to search
+     * @param file file containing functions
+     * @return result<std::pair<functions::const_iterator, functions::const_iterator>>
+     */
+    result<std::pair<functions::const_iterator, functions::const_iterator>>
+        find_functions(
+            const compilation_unit& cu,
+            const std::filesystem::path& file)
+        noexcept;
 
     /**
      * @brief Find function in compilation unit from source

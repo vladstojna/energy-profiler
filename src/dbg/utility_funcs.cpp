@@ -76,6 +76,14 @@ namespace
         return ret;
     }
 
+    const tep::dbg::function_base& to_function_base(
+        const tep::dbg::compilation_unit::any_function& any) noexcept
+    {
+        return std::holds_alternative<tep::dbg::normal_function>(any) ?
+            std::get<tep::dbg::normal_function>(any) :
+            std::get<tep::dbg::static_function>(any);
+    }
+
     tep::dbg::result<const tep::dbg::function_symbol*>
         find_function_symbol_exact(
             const tep::dbg::object_info& oi,
@@ -336,6 +344,37 @@ namespace tep::dbg
         return find_function_symbol_exact(oi, name);
     }
 
+    result<const function_symbol*>
+        find_function_symbol(
+            const object_info& oi,
+            const compilation_unit::any_function& f
+        ) noexcept
+    {
+        using unexpected = nonstd::unexpected<std::error_code>;
+        const auto& syms = oi.function_symbols();
+        if (std::holds_alternative<normal_function>(f))
+        {
+            auto it = std::find_if(syms.begin(), syms.end(), [&f](const function_symbol& sym)
+                {
+                    return sym.name == std::get<normal_function>(f).linkage_name;
+                });
+            if (it == syms.end())
+                return unexpected{ util_errc::symbol_not_found };
+            return &*it;
+        }
+        if (!std::holds_alternative<function_addresses>(std::get<static_function>(f).data))
+            return unexpected{ util_errc::symbol_not_found };
+        auto it = std::find_if(syms.begin(), syms.end(), [&f](const function_symbol& sym)
+            {
+                const auto& addrs = std::get<function_addresses>(std::get<static_function>(f).data);
+                assert(addrs.entry_pc == addrs.crange.low_pc);
+                return sym.address == addrs.entry_pc;
+            });
+        if (it == syms.end())
+            return unexpected{ util_errc::symbol_not_found };
+        return &*it;
+    }
+
     result<const compilation_unit::any_function*>
         find_function(
             const compilation_unit& cu,
@@ -407,6 +446,81 @@ namespace tep::dbg
             return unexpected{ util_errc::function_not_found };
         }
         return unexpected{ sym.error() };
+    }
+
+    result<const compilation_unit::any_function*>
+        find_function(
+            const object_info& oi,
+            const compilation_unit& cu,
+            std::string_view name,
+            exact_symbol_name_flag exact_name)
+    {
+        using unexpected = nonstd::unexpected<std::error_code>;
+        if (name.empty())
+            return unexpected{ make_error_code(std::errc::invalid_argument) };
+        if (exact_name == exact_symbol_name_flag::no)
+            return unexpected{ make_error_code(std::errc::invalid_argument) };
+
+        std::error_code ec;
+        for (const auto& any_f : cu.funcs)
+        {
+            if (std::holds_alternative<normal_function>(any_f))
+            {
+                auto demangled = demangle(
+                    std::get<normal_function>(any_f).linkage_name, ec);
+                if (!demangled)
+                    return unexpected{ ec };
+                if (remove_spaces(*demangled) == remove_spaces(name))
+                    return &any_f;
+            }
+            else
+            {
+                const auto& static_f = std::get<static_function>(any_f);
+                if (std::holds_alternative<function_addresses>(static_f.data))
+                {
+                    auto it = std::find_if(
+                        oi.function_symbols().begin(),
+                        oi.function_symbols().end(),
+                        [&](const function_symbol& sym)
+                        {
+                            const auto& addrs =
+                                std::get<function_addresses>(static_f.data);
+                            assert(addrs.entry_pc == addrs.crange.low_pc);
+                            return sym.address == addrs.entry_pc;
+                        });
+                    if (it == oi.function_symbols().end())
+                        return unexpected{ util_errc::function_not_found };
+                    auto demangled = demangle(it->name, ec);
+                    if (!demangled)
+                        return unexpected{ ec };
+                    if (remove_spaces(*demangled) == remove_spaces(name))
+                        return &any_f;
+                }
+            }
+        }
+        return unexpected{ util_errc::function_not_found };
+    }
+
+    result<std::pair<functions::const_iterator, functions::const_iterator>>
+        find_functions(
+            const compilation_unit& cu,
+            const std::filesystem::path& file)
+        noexcept
+    {
+        using unexpected = nonstd::unexpected<std::error_code>;
+
+        auto pred = [&file](const compilation_unit::any_function& x)
+        {
+            const auto& f = to_function_base(x);
+            return f.decl_loc && f.decl_loc->file == file;
+        };
+
+        auto start_it = std::find_if(cu.funcs.begin(), cu.funcs.end(), pred);
+        if (start_it == cu.funcs.end())
+            return unexpected{ util_errc::file_not_found };
+        auto end_it = std::find_if_not(start_it + 1, cu.funcs.end(), pred);
+        assert(std::distance(start_it, end_it) > 0);
+        return std::pair{ start_it, end_it };
     }
 
     result<const compilation_unit::any_function*>
