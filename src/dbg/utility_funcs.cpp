@@ -163,10 +163,28 @@ namespace
             return unexpected{ ec };
         std::string nospaces = remove_spaces(*demangled);
         std::string nospaces_m = remove_spaces(to_match);
-        std::string_view match_view{ nospaces_m };
         return std::string_view{ nospaces }.substr(
-            0, match_view.size()) == match_view;
+            0, nospaces_m.size()) == nospaces_m;
     }
+
+    tep::dbg::result<bool> is_equal(
+        std::string_view name, std::string_view mangled)
+    {
+        using unexpected = nonstd::unexpected<std::error_code>;
+        std::error_code ec;
+        auto demangled = tep::dbg::demangle(mangled, ec);
+        if (!demangled)
+            return unexpected{ ec };
+        return remove_spaces(*demangled) == remove_spaces(name);
+    }
+
+    bool has_suffix(std::string_view x)
+    {
+        size_t pos = x.find('.');
+        if (pos == std::string_view::npos)
+            return false;
+        return !x.substr(pos).empty();
+    };
 
     tep::dbg::result<const tep::dbg::function_symbol*>
         find_function_symbol_matched(
@@ -403,7 +421,7 @@ namespace tep::dbg
                     [&](contiguous_range rng)
                     {
                         return sym.address >= rng.low_pc &&
-                            sym.address <= rng.high_pc;
+                            sym.address < rng.high_pc;
                     });
             });
         if (it == oi.compilation_units().end())
@@ -554,6 +572,93 @@ namespace tep::dbg
             find_function_symbol_exact(oi, name) :
             find_function_symbol_matched(oi, name,
                 no_suffix == ignore_symbol_suffix_flag::yes);
+    }
+
+    result<const function_symbol*>
+        find_function_symbol(
+            const object_info& oi,
+            const compilation_unit& cu,
+            std::string_view name,
+            exact_symbol_name_flag exact_name,
+            ignore_symbol_suffix_flag no_suffix)
+    {
+        using ret_type = result<const function_symbol*>;
+        using unexpected = nonstd::unexpected<std::error_code>;
+        if (name.empty())
+            return unexpected{ make_error_code(std::errc::invalid_argument) };
+
+        auto find_exact = [&]() -> ret_type
+        {
+            for (const auto& sym : oi.function_symbols())
+            {
+                if (auto res = is_equal(name, sym.name); !res)
+                    return unexpected{ res.error() };
+                else if (!*res)
+                    continue;
+                auto cu_res = find_compilation_unit(oi, sym);
+                if (cu_res && (*cu_res)->path == cu.path)
+                    return &sym;
+            }
+            return unexpected{ util_errc::symbol_not_found };
+        };
+
+        auto ambiguous_error = [](symbol_binding b1, symbol_binding b2)
+            -> std::error_code
+        {
+            if (b1 == symbol_binding::weak || b2 == symbol_binding::weak)
+                return util_errc::symbol_ambiguous_weak;
+            if (b1 == symbol_binding::local || b2 == symbol_binding::local)
+                return util_errc::symbol_ambiguous_static;
+            return util_errc::symbol_ambiguous;
+        };
+
+        auto find_matched = [&](bool no_suffix) -> ret_type
+        {
+            const function_symbol* found = nullptr;
+            for (const auto& sym : oi.function_symbols())
+            {
+                if (auto res = is_match(name, sym.name); !res)
+                    return unexpected{ res.error() };
+                else if (!*res)
+                    continue;
+                auto cu_res = find_compilation_unit(oi, sym);
+                if (!cu_res || (*cu_res)->path != cu.path)
+                    continue;
+                if (auto res = is_equal(name, sym.name); !res)
+                    return unexpected{ res.error() };
+                else if (*res)
+                    return &sym;
+                if (!found)
+                    found = &sym;
+                else if (!no_suffix)
+                {
+                    if (has_suffix(sym.name) || has_suffix(found->name))
+                        return unexpected{ util_errc::symbol_ambiguous_suffix };
+                    return unexpected{ ambiguous_error(sym.binding, found->binding) };
+                }
+                else
+                {
+                    if (!has_suffix(sym.name))
+                        found = &sym;
+                    else
+                    {
+                        if (has_suffix(found->name))
+                        {
+                            if (has_suffix(sym.name))
+                                return unexpected{ util_errc::symbol_ambiguous_suffix };
+                            return unexpected{ ambiguous_error(sym.binding, found->binding) };
+                        }
+                    }
+                }
+            }
+            if (found)
+                return found;
+            return unexpected{ util_errc::symbol_not_found };
+        };
+
+        if (bool(exact_name))
+            return find_exact();
+        return find_matched(bool(no_suffix));
     }
 
     result<const function_symbol*>

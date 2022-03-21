@@ -138,7 +138,8 @@ namespace tep::dbg
         new_statement_flag new_stmt = new_statement_flag::no) noexcept;
 
     /**
-     * @brief Find a function symbol from the loaded symbol table by name
+     * @brief Find a function symbol from the loaded symbol table by name.
+     * This is a global search.
      *
      * @param name demangled function symbol name
      * @param exact_name whether to match name exactly or as just
@@ -150,6 +151,25 @@ namespace tep::dbg
     result<const function_symbol*>
         find_function_symbol(
             const object_info&,
+            std::string_view name,
+            exact_symbol_name_flag exact_name = exact_symbol_name_flag::no,
+            ignore_symbol_suffix_flag no_suffix = ignore_symbol_suffix_flag::yes);
+
+    /**
+     * @brief Find a function symbol defined in some compilation unit by name.
+     *
+     * @param cu compilation unit
+     * @param name demangled function symbol name
+     * @param exact_name whether to match name exactly or as just
+     * a prefix to the actual full name
+     * @param no_suffix whether to prioritise symbol without suffix in case of
+     * ambiguity
+     * @return result<const function_symbol*>
+     */
+    result<const function_symbol*>
+        find_function_symbol(
+            const object_info&,
+            const compilation_unit& cu,
             std::string_view name,
             exact_symbol_name_flag exact_name = exact_symbol_name_flag::no,
             ignore_symbol_suffix_flag no_suffix = ignore_symbol_suffix_flag::yes);
