@@ -98,27 +98,27 @@ namespace tep::dbg
         noexcept;
 
     /**
-     * @brief Find the lowest address of line range according to constraints
+     * @brief Find line with the lowest address in range according to constraints
      *
      * @param first the first line in the range
      * @param last the last line in the range
      * @param new_stmt whether the found line must be the start of a new statement
-     * @return result<uintptr_t>
+     * @return result<const source_line*>
      */
-    result<uintptr_t> lowest_line_address(
+    result<const source_line*> lowest_address_line(
         lines::const_iterator first,
         lines::const_iterator last,
         new_statement_flag new_stmt = new_statement_flag::no) noexcept;
 
     /**
-     * @brief Find the highest address of line range according to constraints
+     * @brief Find line with the highest address in range according to constraints
      *
      * @param first the first line in the range
      * @param last the last line in the range
      * @param new_stmt whether the found line must be the start of a new statement
-     * @return result<uintptr_t>
+     * @return result<const source_line*>
      */
-    result<uintptr_t> highest_line_address(
+    result<const source_line*> highest_address_line(
         lines::const_iterator first,
         lines::const_iterator last,
         new_statement_flag new_stmt = new_statement_flag::no) noexcept;

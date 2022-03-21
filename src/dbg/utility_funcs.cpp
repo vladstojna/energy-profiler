@@ -446,7 +446,8 @@ namespace tep::dbg
         auto start_it = std::find_if(cu.lines.begin(), cu.lines.end(),
             [&effective_file, &file_found, lineno, exact_line](const source_line& line)
             {
-                return (file_found = (effective_file == line.file)) &&
+                return effective_file == line.file &&
+                    (file_found = true) &&
                     line_match(line, lineno, exact_line);
             });
         if (start_it == cu.lines.end())
@@ -455,6 +456,11 @@ namespace tep::dbg
                 return unexpected{ util_errc::file_not_found };
             return unexpected{ util_errc::line_not_found };
         }
+
+        // if line advances with relation to the requested one
+        // reset column to 0
+        if (start_it->number > lineno && exact_col == exact_column_value_flag::no)
+            colno = 0;
 
         start_it = std::find_if(start_it, cu.lines.end(),
             [&effective_file, lineno = start_it->number, colno, exact_col](
@@ -486,38 +492,38 @@ namespace tep::dbg
         return std::pair{ start_it, end_it };
     }
 
-    result<uintptr_t> lowest_line_address(
+    result<const source_line*> lowest_address_line(
         lines::const_iterator first,
         lines::const_iterator last,
         new_statement_flag new_stmt) noexcept
     {
         using unexpected = nonstd::unexpected<std::error_code>;
         if (new_stmt == new_statement_flag::no)
-            return first->address;
+            return &*first;
         auto it = std::find_if(first, last, [](const source_line& line)
             {
                 return line.new_statement;
             });
         if (it == last)
             return unexpected{ util_errc::line_not_found };
-        return it->address;
+        return &*it;
     }
 
-    result<uintptr_t> highest_line_address(
+    result<const source_line*> highest_address_line(
         lines::const_iterator first,
         lines::const_iterator last,
         new_statement_flag new_stmt) noexcept
     {
         using unexpected = nonstd::unexpected<std::error_code>;
         if (new_stmt == new_statement_flag::no)
-            return (first + std::distance(first, last) - 1)->address;
+            return &*(first + std::distance(first, last) - 1);
         auto found = last;
         for (auto it = first; it != last; ++it)
             if (it->new_statement)
                 found = it;
         if (found == last)
             return unexpected{ util_errc::line_not_found };
-        return found->address;
+        return &*found;
     }
 
     result<const function_symbol*> find_function_symbol(
