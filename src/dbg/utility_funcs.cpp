@@ -492,6 +492,21 @@ namespace tep::dbg
         return std::pair{ start_it, end_it };
     }
 
+    result<const source_line*>
+        find_line(
+            const compilation_unit& cu,
+            const source_location& loc
+        ) noexcept
+    {
+        using unexpected = nonstd::unexpected<std::error_code>;
+        auto lines = find_lines(cu, loc.file,
+            loc.line_number, exact_line_value_flag::no,
+            loc.line_column, exact_column_value_flag::no);
+        if (!lines)
+            return unexpected{ lines.error() };
+        return lowest_address_line(lines->first, lines->second);
+    }
+
     result<const source_line*> lowest_address_line(
         lines::const_iterator first,
         lines::const_iterator last,

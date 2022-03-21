@@ -98,6 +98,20 @@ namespace tep::dbg
         noexcept;
 
     /**
+     * @brief Use a declaration or call source location to find the corresponding
+     * source line from .debug_line
+     *
+     * @param cu compilation unit to search
+     * @param loc source location
+     * @return result<const source_line*>
+     */
+    result<const source_line*>
+        find_line(
+            const compilation_unit& cu,
+            const source_location& loc
+        ) noexcept;
+
+    /**
      * @brief Find line with the lowest address in range according to constraints
      *
      * @param first the first line in the range
