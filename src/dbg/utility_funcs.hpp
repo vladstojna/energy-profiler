@@ -13,7 +13,7 @@ namespace tep::dbg
     using result = nonstd::expected<T, std::error_code>;
 
     using lines = compilation_unit::container<source_line>;
-    using functions = compilation_unit::container<compilation_unit::any_function>;
+    using functions = compilation_unit::container<any_function>;
 
     enum class util_errc : uint32_t
     {
@@ -26,6 +26,8 @@ namespace tep::dbg
         symbol_ambiguous,
         symbol_ambiguous_static,
         symbol_ambiguous_weak,
+        symbol_ambiguous_suffix,
+        no_matches,
         function_not_found,
         function_ambiguous,
         decl_location_not_found,
@@ -35,6 +37,7 @@ namespace tep::dbg
     enum class exact_line_value_flag : bool { no, yes };
     enum class exact_column_value_flag : bool { no, yes };
     enum class exact_symbol_name_flag : bool { no, yes };
+    enum class ignore_symbol_suffix_flag : bool { no, yes };
 } // namespace tep::dbg
 
 namespace std
@@ -113,13 +116,16 @@ namespace tep::dbg
      * @param name demangled function symbol name
      * @param exact_name whether to match name exactly or as just
      * a prefix to the actual full name
+     * @param no_suffix whether to prioritise symbol without suffix in case of
+     * ambiguity
      * @return result<const function_symbol*>
      */
     result<const function_symbol*>
         find_function_symbol(
             const object_info&,
             std::string_view name,
-            exact_symbol_name_flag exact_name = exact_symbol_name_flag::no);
+            exact_symbol_name_flag exact_name = exact_symbol_name_flag::no,
+            ignore_symbol_suffix_flag no_suffix = ignore_symbol_suffix_flag::yes);
 
     /**
      * @brief Find ELF function symbol from function DWARF data
@@ -130,7 +136,7 @@ namespace tep::dbg
     result<const function_symbol*>
         find_function_symbol(
             const object_info&,
-            const compilation_unit::any_function& f
+            const any_function& f
         ) noexcept;
 
     /**
@@ -140,7 +146,7 @@ namespace tep::dbg
      * @param f the function symbol to match
      * @return result<const compilation_unit::any_function*>
      */
-    result<const compilation_unit::any_function*>
+    result<const any_function*>
         find_function(
             const compilation_unit& cu,
             const function_symbol& f)
@@ -152,7 +158,7 @@ namespace tep::dbg
      * @param f the function symbol to match
      * @return result<const compilation_unit::any_function*>
      */
-    result<const compilation_unit::any_function*>
+    result<const any_function*>
         find_function(
             const object_info&,
             const function_symbol& f)
@@ -167,7 +173,7 @@ namespace tep::dbg
      * a prefix to the actual full name
      * @return result<const compilation_unit::any_function*>
      */
-    result<const compilation_unit::any_function*>
+    result<const any_function*>
         find_function(
             const object_info&,
             std::string_view name,
@@ -184,7 +190,7 @@ namespace tep::dbg
      * a prefix to the actual full name
      * @return result<const compilation_unit::any_function*>
      */
-    result<const compilation_unit::any_function*>
+    result<const any_function*>
         find_function(
             const object_info&,
             const compilation_unit& cu,
@@ -213,7 +219,7 @@ namespace tep::dbg
      * @param colno function declaration column or 0 to match any column
      * @return result<const compilation_unit::any_function*>
      */
-    result<const compilation_unit::any_function*>
+    result<const any_function*>
         find_function(
             const compilation_unit& cu,
             const std::filesystem::path& file,

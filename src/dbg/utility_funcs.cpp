@@ -37,6 +37,10 @@ namespace
                 return "Symbol name ambiguous with at least one static symbol present";
             case util_errc::symbol_ambiguous_weak:
                 return "Symbol name ambiguous with at least one weak symbol present";
+            case util_errc::symbol_ambiguous_suffix:
+                return "Symbol name ambiguous with at least one name with a suffix";
+            case util_errc::no_matches:
+                return "No matches found";
             case util_errc::function_not_found:
                 return "Function not found";
             case util_errc::function_ambiguous:
@@ -77,16 +81,19 @@ namespace
     }
 
     const tep::dbg::function_base& to_function_base(
-        const tep::dbg::compilation_unit::any_function& any) noexcept
+        const tep::dbg::any_function& any) noexcept
     {
         return std::holds_alternative<tep::dbg::normal_function>(any) ?
             std::get<tep::dbg::normal_function>(any) :
             std::get<tep::dbg::static_function>(any);
     }
 
+    template<typename Iter, typename IterAccess>
     tep::dbg::result<const tep::dbg::function_symbol*>
-        find_function_symbol_exact(
-            const tep::dbg::object_info& oi,
+        find_function_symbol_exact_impl(
+            IterAccess access,
+            Iter first,
+            Iter last,
             std::string_view name)
     {
         using tep::dbg::function_symbol;
@@ -95,30 +102,31 @@ namespace
         using unexpected = nonstd::unexpected<std::error_code>;
 
         std::error_code ec;
-        auto pred = [&ec, name](const function_symbol& sym)
+        auto pred = [&ec, name, access](const auto& sym)
         {
-            auto demangled = tep::dbg::demangle(sym.name, ec);
+            auto demangled = tep::dbg::demangle(access(sym).name, ec);
             if (!demangled)
                 return true;
             return remove_spaces(*demangled) == remove_spaces(name);
         };
 
-        auto end_it = oi.function_symbols().end();
-        auto it = std::find_if(oi.function_symbols().begin(), end_it, pred);
+        auto it = std::find_if(first, last, pred);
         if (ec)
             return unexpected{ ec };
-        if (it == end_it)
+        if (it == last)
             return unexpected{ util_errc::symbol_not_found };
 
-        bool has_static = it->binding == symbol_binding::local;
-        bool has_weak = it->binding == symbol_binding::weak;
+        bool has_static = access(*it).binding == symbol_binding::local;
+        bool has_weak = access(*it).binding == symbol_binding::weak;
         bool has_ambiguity = false;
-        for (auto next_it = std::find_if(it + 1, end_it, pred);
-            next_it != end_it && (has_ambiguity = true);
-            next_it = std::find_if(next_it + 1, end_it, pred))
+        for (auto next_it = std::find_if(it + 1, last, pred);
+            next_it != last && (has_ambiguity = true);
+            next_it = std::find_if(next_it + 1, last, pred))
         {
-            has_static = has_static || next_it->binding == symbol_binding::local;
-            has_weak = has_weak || next_it->binding == symbol_binding::weak;
+            has_static = has_static ||
+                access(*next_it).binding == symbol_binding::local;
+            has_weak = has_weak ||
+                access(*next_it).binding == symbol_binding::weak;
         }
         if (has_ambiguity)
         {
@@ -128,20 +136,106 @@ namespace
                 return unexpected{ util_errc::symbol_ambiguous_static };
             return unexpected{ util_errc::symbol_ambiguous };
         }
-        return &*it;
+        return &access(*it);
     }
 
-    tep::dbg::result<const tep::dbg::compilation_unit::any_function*>
+    tep::dbg::result<const tep::dbg::function_symbol*>
+        find_function_symbol_exact(
+            const tep::dbg::object_info& oi,
+            std::string_view name)
+    {
+        return find_function_symbol_exact_impl(
+            [](auto& x) -> auto& { return x; },
+            oi.function_symbols().begin(),
+            oi.function_symbols().end(),
+            name);
+    }
+
+    tep::dbg::result<const tep::dbg::function_symbol*>
+        find_function_symbol_matched(
+            const tep::dbg::object_info& oi,
+            std::string_view name,
+            bool no_suffix)
+    {
+        using tep::dbg::function_symbol;
+        using tep::dbg::util_errc;
+        using tep::dbg::symbol_binding;
+        using unexpected = nonstd::unexpected<std::error_code>;
+
+        auto matches_pred = [name](const function_symbol& sym, std::error_code& ec)
+        {
+            auto demangled = tep::dbg::demangle(sym.name, ec);
+            if (!demangled)
+                return false;
+            std::string nospaces = remove_spaces(*demangled);
+            std::string to_match = remove_spaces(name);
+            std::string_view match_view{ to_match };
+            return std::string_view{ nospaces }.substr(0, match_view.size()) == match_view;
+        };
+
+        auto get_all_matches = [&](std::error_code& ec)
+        {
+            std::vector<const function_symbol*> matches;
+            for (const auto& sym : oi.function_symbols())
+            {
+                bool is_match = matches_pred(sym, ec);
+                if (ec)
+                    break;
+                if (is_match)
+                    matches.push_back(&sym);
+            }
+            return matches;
+        };
+
+        static constexpr auto get_suffix = [](std::string_view x)
+        {
+            size_t pos = x.find('.');
+            if (pos == std::string_view::npos)
+                return std::string_view{};
+            return x.substr(pos);
+        };
+
+        std::error_code ec;
+        auto matches = get_all_matches(ec);
+        if (ec)
+            return unexpected{ ec };
+        if (matches.empty())
+            return unexpected{ util_errc::no_matches };
+        auto exact_match = find_function_symbol_exact_impl(
+            [](auto& x) -> auto& { return *x; },
+            matches.begin(),
+            matches.end(),
+            name);
+        if (exact_match || exact_match.error() != util_errc::symbol_not_found)
+            return exact_match;
+        if (matches.size() == 1)
+            return matches.front();
+        if (!no_suffix)
+            return unexpected{ util_errc::symbol_ambiguous_suffix };
+        auto it = std::partition(matches.begin(), matches.end(),
+            [](const function_symbol* sym)
+            {
+                assert(sym);
+                return !get_suffix(sym->name).empty();
+            });
+        if (it == matches.end())
+            return unexpected{ util_errc::symbol_ambiguous_suffix };
+        if (std::distance(it, matches.end()) > 1)
+            return unexpected{ util_errc::symbol_ambiguous };
+        return *it;
+    }
+
+    tep::dbg::result<const tep::dbg::any_function*>
         find_function_by_linkage_name(
             mangled_name_t,
             const tep::dbg::compilation_unit& cu,
             std::string_view name) noexcept
     {
-        using tep::dbg::compilation_unit;
-        using tep::dbg::normal_function;
         using tep::dbg::util_errc;
+        using tep::dbg::any_function;
+        using tep::dbg::normal_function;
         using unexpected = nonstd::unexpected<std::error_code>;
-        auto pred = [name](const compilation_unit::any_function& af)
+        auto pred = [name](const any_function& af)
         {
             if (!std::holds_alternative<normal_function>(af))
                 return false;
@@ -154,18 +248,18 @@ namespace
         return &*it;
     }
 
-    tep::dbg::result<const tep::dbg::compilation_unit::any_function*>
+    tep::dbg::result<const tep::dbg::any_function*>
         find_function_by_linkage_name(
             demangled_name_t,
             const tep::dbg::compilation_unit& cu,
             std::string_view name)
     {
-        using tep::dbg::compilation_unit;
-        using tep::dbg::normal_function;
         using tep::dbg::util_errc;
+        using tep::dbg::any_function;
+        using tep::dbg::normal_function;
         using unexpected = nonstd::unexpected<std::error_code>;
         std::error_code ec;
-        auto pred = [&ec, name](const compilation_unit::any_function& af)
+        auto pred = [&ec, name](const any_function& af)
         {
             if (!std::holds_alternative<normal_function>(af))
                 return false;
@@ -334,20 +428,22 @@ namespace tep::dbg
     result<const function_symbol*> find_function_symbol(
         const object_info& oi,
         std::string_view name,
-        exact_symbol_name_flag exact_name)
+        exact_symbol_name_flag exact_name,
+        ignore_symbol_suffix_flag no_suffix)
     {
         using unexpected = nonstd::unexpected<std::error_code>;
         if (name.empty())
             return unexpected{ make_error_code(std::errc::invalid_argument) };
-        if (exact_name == exact_symbol_name_flag::no)
-            return unexpected{ make_error_code(std::errc::invalid_argument) };
-        return find_function_symbol_exact(oi, name);
+        return exact_name == exact_symbol_name_flag::yes ?
+            find_function_symbol_exact(oi, name) :
+            find_function_symbol_matched(oi, name,
+                no_suffix == ignore_symbol_suffix_flag::yes);
     }
 
     result<const function_symbol*>
         find_function_symbol(
             const object_info& oi,
-            const compilation_unit::any_function& f
+            const any_function& f
         ) noexcept
     {
         using unexpected = nonstd::unexpected<std::error_code>;
@@ -375,7 +471,7 @@ namespace tep::dbg
         return &*it;
     }
 
-    result<const compilation_unit::any_function*>
+    result<const any_function*>
         find_function(
             const compilation_unit& cu,
             const function_symbol& f)
@@ -387,7 +483,7 @@ namespace tep::dbg
         if (f.binding == symbol_binding::local)
         {
             auto it = std::find_if(cu.funcs.begin(), cu.funcs.end(),
-                [sym_addr = f.address](const compilation_unit::any_function& af)
+                [sym_addr = f.address](const any_function& af)
             {
                 if (!std::holds_alternative<static_function>(af))
                     return false;
@@ -405,7 +501,7 @@ namespace tep::dbg
         return find_function_by_linkage_name(mangled_name, cu, f.name);
     }
 
-    result<const compilation_unit::any_function*>
+    result<const any_function*>
         find_function(
             const object_info& oi,
             const function_symbol& f
@@ -421,7 +517,7 @@ namespace tep::dbg
         return unexpected{ util_errc::function_not_found };
     }
 
-    result<const compilation_unit::any_function*>
+    result<const any_function*>
         find_function(
             const object_info& oi,
             std::string_view name,
@@ -448,7 +544,7 @@ namespace tep::dbg
         return unexpected{ sym.error() };
     }
 
-    result<const compilation_unit::any_function*>
+    result<const any_function*>
         find_function(
             const object_info& oi,
             const compilation_unit& cu,
@@ -509,7 +605,7 @@ namespace tep::dbg
     {
         using unexpected = nonstd::unexpected<std::error_code>;
 
-        auto pred = [&file](const compilation_unit::any_function& x)
+        auto pred = [&file](const any_function& x)
         {
             const auto& f = to_function_base(x);
             return f.decl_loc && f.decl_loc->file == file;
@@ -523,7 +619,7 @@ namespace tep::dbg
         return std::pair{ start_it, end_it };
     }
 
-    result<const compilation_unit::any_function*>
+    result<const any_function*>
         find_function(
             const compilation_unit& cu,
             const std::filesystem::path& file,
@@ -533,7 +629,7 @@ namespace tep::dbg
     {
         using unexpected = nonstd::unexpected<std::error_code>;
         bool file_found{}, line_found{}, col_found{}, decl_loc_found{};
-        auto pred = [&](const compilation_unit::any_function& af)
+        auto pred = [&](const any_function& af)
         {
             const auto& f = std::holds_alternative<normal_function>(af) ?
                 std::get<normal_function>(af) :
