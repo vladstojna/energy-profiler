@@ -109,6 +109,7 @@ namespace tep::dbg
         using container = std::vector<T>;
 
         std::filesystem::path path;
+        container<contiguous_range> addresses;
         container<source_line> lines;
         container<any_function> funcs;
 

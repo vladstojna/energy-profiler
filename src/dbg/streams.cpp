@@ -221,6 +221,8 @@ namespace tep::dbg
     std::ostream& operator<<(std::ostream& os, const compilation_unit& x)
     {
         os << x.path.native() << "\n";
+        for (const auto& r : x.addresses)
+            os << r << "\n";
         for (const auto& l : x.lines)
             os << l << "\n";
         for (const auto& f : x.funcs)

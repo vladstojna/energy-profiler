@@ -303,8 +303,19 @@ namespace tep::dbg
     }
 
     compilation_unit::compilation_unit(const param& x) :
-        path(build_path(x.cu_die))
+        path(build_path(x.cu_die)),
+        addresses(get_ranges(x.cu_die))
     {
+        std::sort(addresses.begin(), addresses.end(),
+            [](const contiguous_range& lhs, const contiguous_range& rhs)
+            {
+                if (lhs.low_pc < rhs.low_pc)
+                    return true;
+                if (lhs.low_pc == rhs.low_pc)
+                    return lhs.high_pc < rhs.high_pc;
+                return false;
+            });
+
         load_lines(x);
         load_functions(x);
     }
