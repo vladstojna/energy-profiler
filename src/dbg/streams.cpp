@@ -180,12 +180,19 @@ namespace tep::dbg
             os << "Range: " << addrs.crange << "\n";
             os.flags(flags);
         }
-        else
+        else if (std::holds_alternative<inline_instances>(x.data))
         {
-            const auto& insts = std::get<static_function::inline_instances>(x.data);
+            const auto& insts = std::get<inline_instances>(x.data);
             os << "Instances (" << insts.size() << "):";
             for (const auto& inst : insts)
                 os << "\n" << inst;
+        }
+        else
+        {
+            const auto& rngs = std::get<ranges>(x.data);
+            os << "  Ranges: ";
+            for (const auto& r : rngs)
+                os << r << " ";
         }
         return os;
     }
@@ -197,7 +204,7 @@ namespace tep::dbg
         return os;
     }
 
-    std::ostream& operator<<(std::ostream& os, const compilation_unit::any_function& x)
+    std::ostream& operator<<(std::ostream& os, const any_function& x)
     {
         switch (x.index())
         {

@@ -80,10 +80,12 @@ namespace tep::dbg
         explicit function_base(const param&);
     };
 
+    using inline_instances = std::vector<inline_instance>;
+    using ranges = std::vector<contiguous_range>;
+
     struct static_function : function_base
     {
-        using inline_instances = std::vector<inline_instance>;
-        using data_t = std::variant<function_addresses, inline_instances>;
+        using data_t = std::variant<function_addresses, ranges, inline_instances>;
 
         data_t data;
 
@@ -99,10 +101,10 @@ namespace tep::dbg
         explicit normal_function(const param&);
     };
 
+    using any_function = std::variant<normal_function, static_function>;
+
     struct compilation_unit
     {
-        using any_function = std::variant<normal_function, static_function>;
-
         template<typename T>
         using container = std::vector<T>;
 
@@ -127,6 +129,6 @@ namespace tep::dbg
     std::ostream& operator<<(std::ostream&, const function_base&);
     std::ostream& operator<<(std::ostream&, const static_function&);
     std::ostream& operator<<(std::ostream&, const normal_function&);
-    std::ostream& operator<<(std::ostream&, const compilation_unit::any_function&);
+    std::ostream& operator<<(std::ostream&, const any_function&);
     std::ostream& operator<<(std::ostream&, const compilation_unit&);
 } // namespace tep::dbg

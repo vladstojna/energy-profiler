@@ -12,7 +12,7 @@
 namespace
 {
     const tep::dbg::function_base& to_function_base(
-        const tep::dbg::compilation_unit::any_function& any) noexcept
+        const tep::dbg::any_function& any) noexcept
     {
         return std::holds_alternative<tep::dbg::normal_function>(any) ?
             std::get<tep::dbg::normal_function>(any) :
@@ -105,21 +105,43 @@ namespace
         return { files, nfiles };
     }
 
+    tep::dbg::ranges get_ranges(Dwarf_Die& die)
+    {
+        using tep::dbg::ranges;
+        using tep::dbg::exception;
+        using tep::dbg::contiguous_range;
+        using tep::dbg::dwarf_category;
+        ranges rngs;
+        Dwarf_Addr base;
+        contiguous_range rng;
+        ptrdiff_t offset = 0;
+        while ((offset = dwarf_ranges(&die, offset, &base, &rng.low_pc, &rng.high_pc)))
+        {
+            if (offset == -1)
+                throw exception(dwarf_errno(), dwarf_category());
+            rngs.push_back(rng);
+        }
+        return rngs;
+    };
+
     tep::dbg::static_function::data_t create_function_data(
         Dwarf_Die& func_die, Dwarf_Files* files)
     {
-        using tep::dbg::static_function;
-        using tep::dbg::function_addresses;
         using tep::dbg::inline_instance;
+        using tep::dbg::inline_instances;
+        using tep::dbg::function_addresses;
         if (dwarf_func_inline(&func_die))
         {
-            static_function::inline_instances instances;
+            inline_instances instances;
             auto instance_dies = get_inline_instances(func_die);
             for (auto& inst : instance_dies)
                 instances.emplace_back(inline_instance::param{ inst, files });
             return instances;
         }
-        return function_addresses{ {func_die} };
+        else if (auto ranges = get_ranges(func_die); !ranges.empty())
+            return ranges;
+        else
+            return function_addresses{ {func_die} };
     }
 }
 
@@ -333,7 +355,9 @@ namespace tep::dbg
                 !dwarf_hasattr_integrate(&func_die, DW_AT_linkage_name) ||
                 !dwarf_hasattr_integrate(&func_die, DW_AT_external);
             bool is_concrete =
-                is_inline || dwarf_hasattr_integrate(&func_die, DW_AT_low_pc);
+                is_inline ||
+                dwarf_hasattr_integrate(&func_die, DW_AT_low_pc) ||
+                dwarf_hasattr_integrate(&func_die, DW_AT_ranges);
 
             if (is_static && is_concrete)
             {
