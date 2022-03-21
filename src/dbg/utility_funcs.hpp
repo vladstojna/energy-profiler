@@ -63,6 +63,18 @@ namespace tep::dbg
             const object_info&, const std::filesystem::path& cu) noexcept;
 
     /**
+     * @brief Find compilation unit from symbol
+     *
+     * @param sym the symbol that potentially belongs to a CU
+     * @return result<const compilation_unit*>
+     */
+    result<const compilation_unit*>
+        find_compilation_unit(
+            const object_info&,
+            const function_symbol& sym
+        ) noexcept;
+
+    /**
      * @brief Finds an interval of compatible lines according to constraints
      * passed as arguments
      *

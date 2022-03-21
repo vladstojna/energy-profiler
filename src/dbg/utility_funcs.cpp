@@ -385,6 +385,32 @@ namespace tep::dbg
         return &*it;
     }
 
+    result<const compilation_unit*>
+        find_compilation_unit(
+            const object_info& oi,
+            const function_symbol& sym
+        ) noexcept
+    {
+        using unexpected = nonstd::unexpected<std::error_code>;
+        auto it = std::find_if(
+            oi.compilation_units().begin(),
+            oi.compilation_units().end(),
+            [&](const compilation_unit& cu)
+            {
+                return cu.addresses.end() != std::find_if(
+                    cu.addresses.begin(),
+                    cu.addresses.end(),
+                    [&](contiguous_range rng)
+                    {
+                        return sym.address >= rng.low_pc &&
+                            sym.address <= rng.high_pc;
+                    });
+            });
+        if (it == oi.compilation_units().end())
+            return unexpected{ util_errc::cu_not_found };
+        return &*it;
+    }
+
     result<std::pair<lines::const_iterator, lines::const_iterator>>
         find_lines(
             const compilation_unit& cu,
