@@ -18,9 +18,9 @@ namespace tep
     class profiler
     {
     public:
-        template<typename D = dbg_info, typename C = config_data>
+        template<typename D = dbg_info, typename C = cfg::config_t>
         static nonstd::expected<profiler, tracer_error>
-            create(pid_t child, const flags& f, D&& dli, C&& cd);
+            create(pid_t, const flags&, D&&, C&&);
 
     private:
         struct output_mapping
@@ -36,38 +36,38 @@ namespace tep
 
             output_mapping() = default;
 
-            bool insert(addr_bounds bounds,
-                const reader_container& readers,
-                const config_data::section_group& group,
-                const config_data::section& sec);
+            bool insert(addr_bounds,
+                const reader_container&,
+                const cfg::group_t&,
+                const cfg::section_t&);
 
-            section_output* find(addr_bounds bounds);
+            section_output* find(addr_bounds);
         };
 
         pid_t _tid;
         pid_t _child;
         flags _flags;
         dbg_info _dli;
-        config_data _cd;
+        cfg::config_t _cd;
         reader_container _readers;
         registered_traps _traps;
         output_mapping _output;
 
     public:
         profiler(pid_t child, const flags& flags,
-            const dbg_info& dli, const config_data& cd, tracer_error& err);
+            const dbg_info& dli, const cfg::config_t& cd, tracer_error& err);
 
         profiler(pid_t child, const flags& flags,
-            const dbg_info& dli, config_data&& cd, tracer_error& err);
+            const dbg_info& dli, cfg::config_t&& cd, tracer_error& err);
 
         profiler(pid_t child, const flags& flags,
-            dbg_info&& dli, const config_data& cd, tracer_error& err);
+            dbg_info&& dli, const cfg::config_t& cd, tracer_error& err);
 
         profiler(pid_t child, const flags& flags,
-            dbg_info&& dli, config_data&& cd, tracer_error& err);
+            dbg_info&& dli, cfg::config_t&& cd, tracer_error& err);
 
         const dbg_info& debug_line_info() const;
-        const config_data& config() const;
+        const cfg::config_t& config() const;
         const registered_traps& traps() const;
 
         tracer_error await_executable(const std::string& name) const;
@@ -77,28 +77,28 @@ namespace tep
         tracer_error obtain_idle_results();
 
         tracer_error insert_traps_function(
-            const config_data::section_group& group,
-            const config_data::section& sec,
-            const config_data::function& func,
-            uintptr_t entrypoint);
+            const cfg::group_t&,
+            const cfg::section_t&,
+            const cfg::function_t&,
+            uintptr_t);
 
         tracer_error insert_traps_address_range(
-            const config_data::section_group&,
-            const config_data::section&,
-            const config_data::address_range&,
+            const cfg::group_t&,
+            const cfg::section_t&,
+            const cfg::address_range_t&,
             uintptr_t
         );
 
         nonstd::expected<start_addr, tracer_error> insert_traps_position_start(
-            const config_data::section& sec,
-            const config_data::position& pos,
-            uintptr_t entrypoint);
+            const cfg::section_t&,
+            const cfg::position_t&,
+            uintptr_t);
 
         tracer_error insert_traps_position_end(
-            const config_data::section_group& group,
-            const config_data::section& sec,
-            const config_data::position& pos,
-            uintptr_t entrypoint,
-            start_addr start);
+            const cfg::group_t&,
+            const cfg::section_t&,
+            const cfg::position_t&,
+            uintptr_t,
+            start_addr);
     };
 }

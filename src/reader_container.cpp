@@ -1,18 +1,16 @@
 // reader_container.cpp
-
-#include <cassert>
-#include <sstream>
-
-#include "error.hpp"
 #include "reader_container.hpp"
+#include "config.hpp"
+#include "error.hpp"
+#include "flags.hpp"
 #include "log.hpp"
 
 #include <nonstd/expected.hpp>
 
+#include <cassert>
+#include <sstream>
+
 using namespace tep;
-
-
-// begin helper functions
 
 static tracer_error handle_reader_error(const char* comment, const nrgprf::error& e)
 {
@@ -28,12 +26,33 @@ effective_readings_type(nrgprf::readings_type::type rt)
 }
 
 static nrgprf::reader_rapl
-create_cpu_reader(const flags& flags, const config_data::params& params, tracer_error& err)
+create_cpu_reader(
+    const flags& flags,
+    const cfg::config_t::opt_params_t& params,
+    tracer_error& err)
 {
+    auto get_domain_mask = [&flags, &params]()
+    {
+        if (flags.locations.any())
+            return flags.locations;
+        if (!params || !params->domain_mask)
+            return nrgprf::location_mask(~0x0);
+        return nrgprf::location_mask(*params->domain_mask);
+    };
+
+    auto get_socket_mask = [&flags, &params]()
+    {
+        if (flags.sockets.any())
+            return flags.sockets;
+        if (!params || !params->socket_mask)
+            return nrgprf::socket_mask(~0x0);
+        return nrgprf::socket_mask(*params->socket_mask);
+    };
+
     nrgprf::error error = nrgprf::error::success();
     nrgprf::reader_rapl reader(
-        flags.locations.any() ? flags.locations : nrgprf::location_mask(params.domain_mask()),
-        flags.sockets.any() ? flags.sockets : nrgprf::socket_mask(params.socket_mask()),
+        get_domain_mask(),
+        get_socket_mask(),
         error,
         log::stream());
     if (error)
@@ -44,10 +63,22 @@ create_cpu_reader(const flags& flags, const config_data::params& params, tracer_
 }
 
 static nrgprf::reader_gpu
-create_gpu_reader(const flags& flags, const config_data::params& params, tracer_error& err)
+create_gpu_reader(
+    const flags& flags,
+    const cfg::config_t::opt_params_t& params,
+    tracer_error& err)
 {
+    auto get_device_mask = [&flags, &params]()
+    {
+        if (flags.devices.any())
+            return flags.devices;
+        if (!params || !params->device_mask)
+            return nrgprf::device_mask(~0x0);
+        return nrgprf::device_mask(*params->device_mask);
+    };
+
     nrgprf::error error = nrgprf::error::success();
-    auto devmask = flags.devices.any() ? flags.devices : nrgprf::device_mask(params.device_mask());
+    auto devmask = get_device_mask();
     auto support = nrgprf::reader_gpu::support(devmask);
     if (!support)
         error = std::move(support.error());
@@ -63,20 +94,18 @@ create_gpu_reader(const flags& flags, const config_data::params& params, tracer_
     return reader;
 }
 
-// end helper functions
-
-reader_container::reader_container(const flags& flags, const config_data& cd, tracer_error& err) :
+reader_container::reader_container(const flags& flags, const cfg::config_t& cd, tracer_error& err) :
     _rdr_cpu(create_cpu_reader(flags, cd.parameters(), err)),
     _rdr_gpu(create_gpu_reader(flags, cd.parameters(), err))
 {
-    // iterate all sections and insert hybrid readers
-    for (auto sptr : cd.flat_sections())
+    for (const auto& g : cd.groups())
     {
-        const config_data::section& sec = *sptr;
-        assert(!sec.targets().empty());
-        if (sec.targets().size() < 2)
-            continue;
-        emplace_hybrid_reader<decltype(sec.targets()), true>(sec.targets());
+        for (const auto& s : g.sections)
+        {
+            assert(cfg::target_valid(s.targets));
+            if (cfg::target_multiple(s.targets))
+                emplace_hybrid_reader<true>(s.targets);
+        }
     }
 }
 
@@ -145,57 +174,47 @@ const nrgprf::reader_gpu& reader_container::reader_gpu() const
     return _rdr_gpu;
 }
 
-const nrgprf::reader*
-reader_container::find(const config_data::section::target_cont & targets) const
+const nrgprf::reader* reader_container::find(cfg::target target) const
 {
-    assert(!targets.empty());
-    if (targets.size() == 1)
-        return find(*targets.begin());
-
-    for (auto& [tgts, rdr] : _hybrids)
-        if (tgts == targets)
+    if (target == cfg::target::cpu)
+    {
+        log::logline(log::debug, "retrieved RAPL reader");
+        return &_rdr_cpu;
+    }
+    if (target == cfg::target::gpu)
+    {
+        log::logline(log::debug, "retrieved GPU reader");
+        return &_rdr_gpu;
+    }
+    for (const auto& [tgt, hr] : _hybrids)
+        if (tgt == target)
         {
             std::stringstream ss;
-            ss << tgts;
-            log::logline(log::debug, "retrieved hybrid reader for targets: %s", ss.str().c_str());
-            return &rdr;
+            ss << target;
+            log::logline(log::debug, "retrieved hybrid reader for targets: %s",
+                ss.str().c_str());
+            return &hr;
         }
     assert(false);
     return nullptr;
 }
 
-const nrgprf::reader* reader_container::find(config_data::target target) const
+template<bool Log>
+void reader_container::emplace_hybrid_reader(cfg::target targets)
 {
-    switch (target)
+    auto& [tgts, hr] = _hybrids.emplace_back(targets, nrgprf::hybrid_reader{});
+    for (cfg::target t = tgts, curr = cfg::target::cpu;
+        cfg::target_valid(t);
+        t &= ~curr, curr = cfg::target_next(curr))
     {
-    case config_data::target::cpu:
-        log::logline(log::debug, "retrieved RAPL reader");
-        return &_rdr_cpu;
-    case config_data::target::gpu:
-        log::logline(log::debug, "retrieved GPU reader");
-        return &_rdr_gpu;
-    default:
-        assert(false);
-        return nullptr;
-    }
-}
-
-template<typename T, bool Log>
-void reader_container::emplace_hybrid_reader(T && targets)
-{
-    auto& [tgts, hr] = _hybrids.emplace_back(
-        std::forward<T>(targets),
-        nrgprf::hybrid_reader{});
-    for (auto target : tgts)
-    {
-        switch (target)
+        switch (t & curr)
         {
-        case config_data::target::cpu:
+        case cfg::target::cpu:
             if constexpr (Log)
                 log::logline(log::debug, "insert RAPL reader to hybrid");
             hr.push_back(_rdr_cpu);
             break;
-        case config_data::target::gpu:
+        case cfg::target::gpu:
             if constexpr (Log)
                 log::logline(log::debug, "insert GPU reader to hybrid");
             hr.push_back(_rdr_gpu);

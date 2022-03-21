@@ -1,7 +1,6 @@
 // profiler.cpp
-
-#include "error.hpp"
 #include "profiler.hpp"
+#include "error.hpp"
 #include "ptrace_wrapper.hpp"
 #include "util.hpp"
 #include "log.hpp"
@@ -9,10 +8,8 @@
 #include "registers.hpp"
 #include "ptrace_misc.hpp"
 
-#include <algorithm>
-#include <cassert>
-#include <sstream>
-#include <utility>
+#include <util/concat.hpp>
+#include <nonstd/expected.hpp>
 
 #include <unistd.h>
 #include <sys/types.h>
@@ -21,8 +18,10 @@
 #include <sys/user.h>
 #include <sys/syscall.h>
 
-#include <util/concat.hpp>
-#include <nonstd/expected.hpp>
+#include <algorithm>
+#include <cassert>
+#include <sstream>
+#include <utility>
 
 using namespace tep;
 
@@ -89,72 +88,69 @@ namespace
 
     // instantiates a polymorphic sampler_creator from config section information
     sampler_creator creator_from_section(const reader_container& readers,
-        const config_data::section& section)
+        const cfg::section_t& section)
     {
-        const nrgprf::reader* reader = readers.find(section.targets());
-        const std::chrono::milliseconds& interval = section.interval();
-        size_t samples = section.samples();
-
+        const nrgprf::reader* reader = readers.find(section.targets);
+        const cfg::misc_attributes_t& misc = section.misc;
         assert(reader != nullptr);
-        switch (section.method())
+        if (misc.holds<cfg::method_total_t>())
         {
-        case config_data::profiling_method::energy_profile:
+            if (misc.get<cfg::method_total_t>().short_section)
+                return [reader]() { return std::make_unique<short_sampler>(reader); };
+            else
+                return[reader]() { return std::make_unique<bounded_ps>(reader); };
+        }
+        else if (misc.holds<cfg::method_profile_t>())
         {
-            return [reader, interval, samples]()
+            const auto& attr = misc.get<cfg::method_profile_t>();
+            const auto& interval = attr.interval;
+            size_t samples = attr.samples ? *attr.samples : 384UL;
+            return [reader, samples, interval]()
             {
                 return std::make_unique<unbounded_ps>(reader, samples, interval);
             };
-        } break;
-        case config_data::profiling_method::energy_total:
-        {
-            if (section.is_short())
-            {
-                return [reader]()
-                {
-                    return std::make_unique<short_sampler>(reader);
-                };
-            }
-            else
-            {
-                return [reader, interval]()
-                {
-                    return std::make_unique<bounded_ps>(reader, interval);
-                };
-            }
-        } break;
-        default:
-            assert(false);
         }
-        return []() { return std::make_unique<null_async_sampler>(); };
+        else
+        {
+            assert(false);
+            return []() { return std::make_unique<null_async_sampler>(); };
+        }
     }
 
     // instantiates a polymorphic results holder from config target information
     std::unique_ptr<readings_output> results_from_target(
         const reader_container& readers,
-        config_data::target target)
+        cfg::target target)
     {
-        switch (target)
+        assert(cfg::target_valid(target));
+        auto create_results = [&readers](cfg::target t)
         {
-        case config_data::target::cpu:
-            return std::make_unique<readings_output_cpu>(readers.reader_rapl());
-        case config_data::target::gpu:
-            return std::make_unique<readings_output_gpu>(readers.reader_gpu());
-        default:
-            assert(false);
-        }
-        return {};
-    }
+            std::unique_ptr<readings_output> retval;
+            switch (t)
+            {
+            case cfg::target::cpu:
+                retval = std::make_unique<readings_output_cpu>(readers.reader_rapl());
+                break;
+            case cfg::target::gpu:
+                retval = std::make_unique<readings_output_gpu>(readers.reader_gpu());
+                break;
+            };
+            return retval;
+        };
 
-    std::unique_ptr<readings_output> results_from_targets(
-        const reader_container& readers,
-        const config_data::section::target_cont& targets)
-    {
-        assert(!targets.empty());
-        if (targets.size() == 1)
-            return results_from_target(readers, *targets.begin());
-        std::unique_ptr<readings_output_holder> holder = std::make_unique<readings_output_holder>();
-        for (auto tgt : targets)
-            holder->push_back(results_from_target(readers, tgt));
+        if (target == cfg::target::cpu)
+            return std::make_unique<readings_output_cpu>(readers.reader_rapl());
+        if (target == cfg::target::gpu)
+            return std::make_unique<readings_output_gpu>(readers.reader_gpu());
+
+        std::unique_ptr<readings_output_holder> holder
+            = std::make_unique<readings_output_holder>();
+        for (cfg::target t = target, curr = cfg::target::cpu;
+            cfg::target_valid(t);
+            t &= ~curr, curr = cfg::target_next(curr))
+        {
+            holder->push_back(create_results(t & curr));
+        }
         return holder;
     }
 
@@ -192,11 +188,11 @@ namespace
     template<typename Container, typename Func>
     typename Container::iterator find_or_insert_output(
         Container& cont,
-        const std::string& label,
+        std::optional<std::string_view> label,
         Func func)
     {
         auto it = std::find_if(cont.begin(), cont.end(),
-            [&label](const typename Container::value_type& val)
+            [label](const typename Container::value_type& val)
             {
                 return label == val.label();
             });
@@ -216,20 +212,22 @@ namespace
 
 bool profiler::output_mapping::insert(addr_bounds bounds,
     const reader_container& readers,
-    const config_data::section_group& group,
-    const config_data::section& sec)
+    const cfg::group_t& group,
+    const cfg::section_t& sec)
 {
-    auto grp_it = find_or_insert_output(results.groups(), group.label(),
+    auto grp_it = find_or_insert_output(results.groups(), group.label,
         [&group]()
         {
-            return group_output{ group.label(), group.extra() };
+            return group_output{ group.label, group.extra };
         });
 
-    auto sec_it = find_or_insert_output(grp_it->sections(), sec.label(),
+    auto sec_it = find_or_insert_output(grp_it->sections(), sec.label,
         [&sec, &readers]()
         {
             return section_output{
-                results_from_targets(readers, sec.targets()), sec.label(), sec.extra()
+                results_from_target(readers, sec.targets),
+                sec.label,
+                sec.extra
             };
         });
 
@@ -264,7 +262,7 @@ section_output* profiler::output_mapping::find(addr_bounds bounds)
 
 
 profiler::profiler(pid_t child, const flags& flags,
-    const dbg_info& dli, const config_data& cd, tracer_error& err) :
+    const dbg_info& dli, const cfg::config_t& cd, tracer_error& err) :
     _tid(gettid()),
     _child(child),
     _flags(flags),
@@ -274,7 +272,7 @@ profiler::profiler(pid_t child, const flags& flags,
 {}
 
 profiler::profiler(pid_t child, const flags& flags,
-    const dbg_info& dli, config_data&& cd, tracer_error& err) :
+    const dbg_info& dli, cfg::config_t&& cd, tracer_error& err) :
     _tid(gettid()),
     _child(child),
     _flags(flags),
@@ -284,7 +282,7 @@ profiler::profiler(pid_t child, const flags& flags,
 {}
 
 profiler::profiler(pid_t child, const flags& flags,
-    dbg_info&& dli, const config_data& cd, tracer_error& err) :
+    dbg_info&& dli, const cfg::config_t& cd, tracer_error& err) :
     _tid(gettid()),
     _child(child),
     _flags(flags),
@@ -294,7 +292,7 @@ profiler::profiler(pid_t child, const flags& flags,
 {}
 
 profiler::profiler(pid_t child, const flags& flags,
-    dbg_info&& dli, config_data&& cd, tracer_error& err) :
+    dbg_info&& dli, cfg::config_t&& cd, tracer_error& err) :
     _tid(gettid()),
     _child(child),
     _flags(flags),
@@ -308,7 +306,7 @@ const dbg_info& profiler::debug_line_info() const
     return _dli;
 }
 
-const config_data& profiler::config() const
+const cfg::config_t& profiler::config() const
 {
     return _cd;
 }
@@ -497,15 +495,15 @@ tracer_expected<profiling_results> profiler::run()
     // iterate the sections defined in the config and insert their respective breakpoints
     for (const auto& group : _cd.groups())
     {
-        for (const auto& sec : group.sections())
+        for (const auto& sec : group.sections)
         {
-            if (sec.bounds().has_function())
+            if (sec.bounds.holds<cfg::function_t>())
             {
                 if (tracer_error err = insert_traps_function(group, sec,
-                    sec.bounds().func(), entrypoint))
+                    sec.bounds.get<cfg::function_t>(), entrypoint))
                     return move_error(err);
             }
-            else if (sec.bounds().has_positions())
+            else if (sec.bounds.holds<cfg::bounds_t::position_range_t>())
             {
                 if (!_dli.has_line_info())
                 {
@@ -515,18 +513,19 @@ tracer_expected<profiling_results> profiler::run()
                 }
 
                 auto insert_start = insert_traps_position_start(sec,
-                    sec.bounds().start(), entrypoint);
+                    sec.bounds.get<cfg::bounds_t::position_range_t>().first, entrypoint);
                 if (!insert_start)
                     return move_error(insert_start.error());
 
                 if (tracer_error err = insert_traps_position_end(group, sec,
-                    sec.bounds().end(), entrypoint, *insert_start))
+                    sec.bounds.get<cfg::bounds_t::position_range_t>().second,
+                    entrypoint, *insert_start))
                     return move_error(err);
             }
-            else if (sec.bounds().has_address_range())
+            else if (sec.bounds.holds<cfg::address_range_t>())
             {
                 if (tracer_error err = insert_traps_address_range(
-                    group, sec, sec.bounds().addr_range(), entrypoint))
+                    group, sec, sec.bounds.get<cfg::address_range_t>(), entrypoint))
                 {
                     return move_error(err);
                 }
@@ -578,8 +577,17 @@ tracer_expected<profiling_results> profiler::run()
 
 tracer_error profiler::obtain_idle_results()
 {
-    bool cpu = _cd.has_section_with(config_data::target::cpu);
-    bool gpu = _cd.has_section_with(config_data::target::gpu);
+    auto find_section = [](const cfg::config_t& c, cfg::target t)
+    {
+        for (const auto& g : c.groups())
+            for (const auto& s : g.sections)
+                if (cfg::target_valid(s.targets & t))
+                    return true;
+        return false;
+    };
+
+    bool cpu = find_section(_cd, cfg::target::cpu);
+    bool gpu = find_section(_cd, cfg::target::gpu);
 
     assert(cpu || gpu);
     if (!cpu && !gpu)
@@ -603,12 +611,14 @@ tracer_error profiler::obtain_idle_results()
 
 
 tracer_error profiler::insert_traps_function(
-    const config_data::section_group& group,
-    const config_data::section& sec,
-    const config_data::function& cfunc,
+    const cfg::group_t& group,
+    const cfg::section_t& sec,
+    const cfg::function_t& cfunc,
     uintptr_t entrypoint)
 {
-    dbg_expected<const function*> func_res = _dli.find_function(cfunc.name(), cfunc.cu());
+    dbg_expected<const function*> func_res = _dli.find_function(
+        cfunc.name,
+        cfunc.compilation_unit.value_or(""));
     if (!func_res)
     {
         log::logline(log::error, "[%d] function: %s", _tid, func_res.error().message.c_str());
@@ -635,7 +645,7 @@ tracer_error profiler::insert_traps_function(
         _tid, pos_func_str.c_str(), start.val(), start.val() - entrypoint);
 
     auto insert_res = _traps.insert(start,
-        start_trap(*origw, std::move(pf), sec.allow_concurrency(),
+        start_trap(*origw, std::move(pf), sec.allow_concurrency,
             creator_from_section(_readers, sec)));
 
     if (!insert_res.second)
@@ -677,13 +687,13 @@ tracer_error profiler::insert_traps_function(
 }
 
 tracer_error profiler::insert_traps_address_range(
-    const config_data::section_group& group,
-    const config_data::section& sec,
-    const config_data::address_range& addr_range,
+    const cfg::group_t& group,
+    const cfg::section_t& sec,
+    const cfg::address_range_t& addr_range,
     uintptr_t entrypoint)
 {
-    start_addr start = entrypoint + addr_range.start();
-    end_addr end = entrypoint + addr_range.end();
+    start_addr start = entrypoint + addr_range.start;
+    end_addr end = entrypoint + addr_range.end;
     tracer_expected<long> origw = insert_trap(_tid, _child, start.val());
     if (!origw)
         return std::move(origw.error());
@@ -693,7 +703,7 @@ tracer_error profiler::insert_traps_address_range(
             start_trap(
                 *origw,
                 pos::address{ start.val() - entrypoint },
-                sec.allow_concurrency(),
+                sec.allow_concurrency,
                 creator_from_section(_readers, sec)));
         if (!insert_res.second)
         {
@@ -728,22 +738,22 @@ tracer_error profiler::insert_traps_address_range(
 
 
 tracer_expected<start_addr> profiler::insert_traps_position_start(
-    const config_data::section& sec,
-    const config_data::position& pos,
+    const cfg::section_t& sec,
+    const cfg::position_t& pos,
     uintptr_t entrypoint)
 {
     using rettype = tracer_expected<start_addr>;
-    dbg_expected<unit_lines*> ul = _dli.find_lines(pos.compilation_unit());
+    dbg_expected<unit_lines*> ul = _dli.find_lines(pos.compilation_unit);
     if (!ul)
     {
         log::logline(log::error, "[%d] unit lines: %s", _tid, ul.error().message.c_str());
         return rettype(nonstd::unexpect,
             tracer_errcode::NO_SYMBOL, std::move(ul.error().message));
     }
-    dbg_expected<std::pair<uint32_t, uintptr_t>> line_addr = (*ul)->lowest_addr(pos.line());
+    dbg_expected<std::pair<uint32_t, uintptr_t>> line_addr = (*ul)->lowest_addr(pos.line);
     if (!line_addr)
     {
-        log::logline(log::error, "[%d] unit lines: invalid line %" PRIu32, _tid, pos.line());
+        log::logline(log::error, "[%d] unit lines: invalid line %" PRIu32, _tid, pos.line);
         return rettype(nonstd::unexpect,
             tracer_errcode::NO_SYMBOL, std::move(line_addr.error().message));
     }
@@ -759,7 +769,7 @@ tracer_expected<start_addr> profiler::insert_traps_position_start(
         _tid, eaddr.val(), eaddr.val() - entrypoint);
 
     auto insert_res = _traps.insert(eaddr,
-        start_trap(*origw, std::move(posline), sec.allow_concurrency(),
+        start_trap(*origw, std::move(posline), sec.allow_concurrency,
             creator_from_section(_readers, sec)));
     if (!insert_res.second)
     {
@@ -777,22 +787,22 @@ tracer_expected<start_addr> profiler::insert_traps_position_start(
 }
 
 tracer_error profiler::insert_traps_position_end(
-    const config_data::section_group& group,
-    const config_data::section& sec,
-    const config_data::position& pos,
+    const cfg::group_t& group,
+    const cfg::section_t& sec,
+    const cfg::position_t& pos,
     uintptr_t entrypoint,
     start_addr start)
 {
-    dbg_expected<unit_lines*> ul = _dli.find_lines(pos.compilation_unit());
+    dbg_expected<unit_lines*> ul = _dli.find_lines(pos.compilation_unit);
     if (!ul)
     {
         log::logline(log::error, "[%d] unit lines: %s", _tid, ul.error().message.c_str());
         return tracer_error(tracer_errcode::NO_SYMBOL, std::move(ul.error().message));
     }
-    dbg_expected<std::pair<uint32_t, uintptr_t>> line_addr = (*ul)->lowest_addr(pos.line());
+    dbg_expected<std::pair<uint32_t, uintptr_t>> line_addr = (*ul)->lowest_addr(pos.line);
     if (!line_addr)
     {
-        log::logline(log::error, "[%d] unit lines: invalid line %" PRIu32, _tid, pos.line());
+        log::logline(log::error, "[%d] unit lines: invalid line %" PRIu32, _tid, pos.line);
         return tracer_error(tracer_errcode::NO_SYMBOL, std::move(line_addr.error().message));
     }
 
@@ -836,13 +846,13 @@ nonstd::expected<profiler, tracer_error> profiler::create(pid_t child, const fla
 }
 
 template nonstd::expected<profiler, tracer_error>
-profiler::create(pid_t child, const flags& f, dbg_info&& dli, config_data&& cd);
+profiler::create(pid_t child, const flags& f, dbg_info&& dli, cfg::config_t&& cd);
 
 template nonstd::expected<profiler, tracer_error>
-profiler::create(pid_t child, const flags& f, dbg_info&& dli, const config_data& cd);
+profiler::create(pid_t child, const flags& f, dbg_info&& dli, const cfg::config_t& cd);
 
 template nonstd::expected<profiler, tracer_error>
-profiler::create(pid_t child, const flags& f, const dbg_info& dli, config_data&& cd);
+profiler::create(pid_t child, const flags& f, const dbg_info& dli, cfg::config_t&& cd);
 
 template nonstd::expected<profiler, tracer_error>
-profiler::create(pid_t child, const flags& f, const dbg_info& dli, const config_data& cd);
+profiler::create(pid_t child, const flags& f, const dbg_info& dli, const cfg::config_t& cd);

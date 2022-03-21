@@ -95,7 +95,16 @@ Configuration file used for profiling the main function:
 </config>
 ```
 
-More examples available in `examples/config`
+The `method` tag is required and can be either **total** or
+**profile**. This tag changes the profiling behaviour as described in a
+comment above and, depending on its value, allows other attributes to be provided.
+For example, when `method` is **profile**
+then `interval` or `freq` must be provided (other tags like `samples` and
+`duration` can be provided as well).
+When `method` is **total** then `interval` becomes an implementation-defined value
+and the `short` tag can be provided. Method-specific tags are ignored whenever
+the `method` value is different from the expected one.
+More examples with comments available in `examples/config`
 
 Output example (some information omitted for clarity):
 
