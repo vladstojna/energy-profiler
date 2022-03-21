@@ -34,6 +34,13 @@ namespace tep::dbg
         address_not_found,
     };
 
+    enum class util_errcause : uint32_t
+    {
+        not_found = 1,
+        ambiguous,
+        other,
+    };
+
     enum class new_statement_flag : bool { no, yes };
     enum class exact_line_value_flag : bool { no, yes };
     enum class exact_column_value_flag : bool { no, yes };
@@ -44,11 +51,13 @@ namespace tep::dbg
 namespace std
 {
     template<> struct is_error_code_enum<tep::dbg::util_errc> : std::true_type {};
+    template<> struct is_error_condition_enum<tep::dbg::util_errcause> : std::true_type {};
 }
 
 namespace tep::dbg
 {
     std::error_code make_error_code(util_errc) noexcept;
+    std::error_condition make_error_condition(util_errcause) noexcept;
     const std::error_category& util_category() noexcept;
 
     /**

@@ -52,9 +52,71 @@ namespace
             }
             return "(unrecognized error code)";
         }
+
+        std::error_condition default_error_condition(int ev) const noexcept override
+        {
+            using tep::dbg::util_errc;
+            using tep::dbg::util_errcause;
+            switch (static_cast<util_errc>(ev))
+            {
+            case util_errc::cu_not_found:
+            case util_errc::file_not_found:
+            case util_errc::line_not_found:
+            case util_errc::column_not_found:
+            case util_errc::symbol_not_found:
+            case util_errc::no_matches:
+            case util_errc::function_not_found:
+            case util_errc::decl_location_not_found:
+            case util_errc::address_not_found:
+                return util_errcause::not_found;
+            case util_errc::cu_ambiguous:
+            case util_errc::symbol_ambiguous:
+            case util_errc::symbol_ambiguous_static:
+            case util_errc::symbol_ambiguous_weak:
+            case util_errc::symbol_ambiguous_suffix:
+            case util_errc::function_ambiguous:
+                return util_errcause::ambiguous;
+            }
+            assert(false);
+            return std::error_condition{};
+        }
+    };
+
+    struct util_cause_category_t : std::error_category
+    {
+        const char* name() const noexcept override
+        {
+            return "dbg-util-cause";
+        }
+
+        std::string message(int ev) const override
+        {
+            using tep::dbg::util_errcause;
+            switch (static_cast<util_errcause>(ev))
+            {
+            case util_errcause::not_found:
+                return "Not found";
+            case util_errcause::ambiguous:
+                return "Ambiguous";
+            case util_errcause::other:
+                return "Other cause";
+            }
+            return "(unrecognized error cause)";
+        }
+
+        bool equivalent(const std::error_code& ec, int cv) const noexcept override
+        {
+            using tep::dbg::util_errcause;
+            using tep::dbg::util_category;
+            auto cond = static_cast<util_errcause>(cv);
+            if (ec.category() == util_category())
+                return cond == ec.default_error_condition();
+            return cond == util_errcause::other;
+        }
     };
 
     const util_category_t util_category_v;
+    const util_cause_category_t util_cause_category_v;
 
     struct mangled_name_t {};
     struct demangled_name_t {};
@@ -371,6 +433,11 @@ namespace tep::dbg
     std::error_code make_error_code(util_errc x) noexcept
     {
         return { static_cast<int>(x), util_category() };
+    }
+
+    std::error_condition make_error_condition(util_errcause x) noexcept
+    {
+        return { static_cast<int>(x), util_cause_category_v };
     }
 
     const std::error_category& util_category() noexcept
@@ -776,7 +843,7 @@ namespace tep::dbg
             exact_name, ignore_symbol_suffix_flag::yes);
         if (sym)
             return find_function(oi, **sym);
-        else if (sym.error() == util_errc::symbol_not_found)
+        else if (sym.error() == util_errcause::not_found)
         {
             for (const auto& cu : oi.compilation_units())
             {
