@@ -126,6 +126,14 @@ namespace tep::dbg
         return os;
     }
 
+    std::ostream& operator<<(std::ostream& os, const function_addresses& x)
+    {
+        os << "Ranges:";
+        for (const auto& r : x.values)
+            os << " " << r;
+        return os;
+    }
+
     std::ostream& operator<<(std::ostream& os, const inline_instance& x)
     {
         os << "  Called: ";
@@ -140,20 +148,21 @@ namespace tep::dbg
             os << std::hex << x.entry_pc;
         else
             os << "n/a";
-        os << "\n";
-        if (std::holds_alternative<contiguous_range>(x.addresses))
-            os << "  Range: " << std::get<contiguous_range>(x.addresses);
-        else
-        {
-            os << "  Ranges: ";
-            for (const auto& r : std::get<inline_instance::ranges>(x.addresses))
-                os << r << " ";
-        }
         os.flags(flags);
+        os << "\n";
+        os << "  " << x.addresses;
         return os;
     }
 
-    std::ostream& operator<<(std::ostream& os, const function_base& x)
+    std::ostream& operator<<(std::ostream& os, const inline_instances& x)
+    {
+        os << "Inline instances (" << x.insts.size() << "):";
+        for (const auto& x : x.insts)
+            os << "\n" << x;
+        return os;
+    }
+
+    std::ostream& operator<<(std::ostream& os, const function& x)
     {
         os << "DIE: " << x.die_name << "\n";
         os << "Declared: ";
@@ -161,60 +170,17 @@ namespace tep::dbg
             os << *x.decl_loc;
         else
             os << "n/a";
-        return os;
-    }
-
-    std::ostream& operator<<(std::ostream& os, const static_function& x)
-    {
-        os << static_cast<const function_base&>(x) << "\n";
-        if (std::holds_alternative<function_addresses>(x.data))
-        {
-            const auto& addrs = std::get<function_addresses>(x.data);
-            os << "Entry PC: ";
-            std::ios::fmtflags flags{ os.flags() };
-            if (addrs.entry_pc)
-                os << std::hex << addrs.entry_pc;
-            else
-                os << "n/a";
-            os << "\n";
-            os << "Range: " << addrs.crange << "\n";
-            os.flags(flags);
-        }
-        else if (std::holds_alternative<inline_instances>(x.data))
-        {
-            const auto& insts = std::get<inline_instances>(x.data);
-            os << "Instances (" << insts.size() << "):";
-            for (const auto& inst : insts)
-                os << "\n" << inst;
-        }
+        os << "\n";
+        os << "Linkage name: ";
+        if (x.linkage_name)
+            os << *x.linkage_name;
         else
-        {
-            const auto& rngs = std::get<ranges>(x.data);
-            os << "  Ranges: ";
-            for (const auto& r : rngs)
-                os << r << " ";
-        }
-        return os;
-    }
-
-    std::ostream& operator<<(std::ostream& os, const normal_function& x)
-    {
-        os << "Linkage name: " << x.linkage_name << "\n";
-        os << static_cast<const static_function&>(x) << "\n";
-        return os;
-    }
-
-    std::ostream& operator<<(std::ostream& os, const any_function& x)
-    {
-        switch (x.index())
-        {
-        case 0:
-            os << std::get<0>(x);
-            break;
-        case 1:
-            os << std::get<1>(x);
-            break;
-        }
+            os << "n/a";
+        os << "\n";
+        if (x.addresses)
+            os << *x.addresses << "\n";
+        if (x.instances)
+            os << *x.instances << "\n";
         return os;
     }
 

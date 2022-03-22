@@ -36,11 +36,9 @@ namespace tep::dbg
     };
 
     struct source_location::decl_param : function_addresses::param {};
-
     struct inline_instance::param : source_location::call_param {};
-    struct function_base::param : source_location::decl_param {};
-    struct static_function::param : inline_instance::param {};
-    struct normal_function::param : static_function::param {};
+    struct inline_instances::param : inline_instance::param {};
+    struct function::param : source_location::decl_param {};
 
     struct compilation_unit::param
     {

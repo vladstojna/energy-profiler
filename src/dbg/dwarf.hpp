@@ -10,6 +10,13 @@
 
 namespace tep::dbg
 {
+    template<typename T>
+    class passkey
+    {
+        friend T;
+        explicit passkey() = default;
+    };
+
     enum class line_context : uint32_t
     {
         prologue_end,
@@ -21,15 +28,6 @@ namespace tep::dbg
     {
         uintptr_t low_pc;
         uintptr_t high_pc;
-    };
-
-    struct function_addresses
-    {
-        uintptr_t entry_pc = 0;
-        contiguous_range crange = {};
-
-        struct param;
-        explicit function_addresses(const param&);
     };
 
     struct source_line
@@ -59,49 +57,56 @@ namespace tep::dbg
         explicit source_location(call_param);
     };
 
+    struct function_addresses
+    {
+        std::vector<contiguous_range> values;
+
+        struct param;
+        explicit function_addresses(const param&);
+    };
+
     struct inline_instance
     {
-        using ranges = std::vector<contiguous_range>;
-
         uintptr_t entry_pc = 0;
         std::optional<source_location> call_loc;
-        std::variant<contiguous_range, ranges> addresses;
+        function_addresses addresses;
 
         struct param;
         explicit inline_instance(const param&);
     };
 
-    struct function_base
+    struct inline_instances
+    {
+        std::vector<inline_instance> insts;
+
+        struct param;
+        explicit inline_instances(const param&);
+
+    private:
+        std::vector<inline_instance> get_instances(const param&);
+    };
+
+    struct compilation_unit;
+
+    struct function
     {
         std::string die_name;
         std::optional<source_location> decl_loc;
+        std::optional<std::string> linkage_name;
+        std::optional<function_addresses> addresses;
+        std::optional<inline_instances> instances;
 
         struct param;
-        explicit function_base(const param&);
+        explicit function(const param&);
+
+        void set_out_of_line_addresses(
+            function_addresses, passkey<compilation_unit>);
+        void set_inline_instances(
+            inline_instances, passkey<compilation_unit>);
+
+        bool is_static() const noexcept;
+        bool is_extern() const noexcept;
     };
-
-    using inline_instances = std::vector<inline_instance>;
-    using ranges = std::vector<contiguous_range>;
-
-    struct static_function : function_base
-    {
-        using data_t = std::variant<function_addresses, ranges, inline_instances>;
-
-        data_t data;
-
-        struct param;
-        explicit static_function(const param&);
-    };
-
-    struct normal_function final : static_function
-    {
-        std::string linkage_name;
-
-        struct param;
-        explicit normal_function(const param&);
-    };
-
-    using any_function = std::variant<normal_function, static_function>;
 
     struct compilation_unit
     {
@@ -111,7 +116,7 @@ namespace tep::dbg
         std::filesystem::path path;
         container<contiguous_range> addresses;
         container<source_line> lines;
-        container<any_function> funcs;
+        container<function> funcs;
 
         struct param;
         explicit compilation_unit(const param&);
@@ -121,15 +126,16 @@ namespace tep::dbg
         void load_functions(const param&);
     };
 
+    bool operator==(const source_location&, const source_location&) noexcept;
+
     std::ostream& operator<<(std::ostream&, line_context);
     std::ostream& operator<<(std::ostream&, const contiguous_range&);
     std::ostream& operator<<(std::ostream&, const function_addresses&);
     std::ostream& operator<<(std::ostream&, const source_line&);
     std::ostream& operator<<(std::ostream&, const source_location&);
+    std::ostream& operator<<(std::ostream&, const function_addresses&);
     std::ostream& operator<<(std::ostream&, const inline_instance&);
-    std::ostream& operator<<(std::ostream&, const function_base&);
-    std::ostream& operator<<(std::ostream&, const static_function&);
-    std::ostream& operator<<(std::ostream&, const normal_function&);
-    std::ostream& operator<<(std::ostream&, const any_function&);
+    std::ostream& operator<<(std::ostream&, const inline_instances&);
+    std::ostream& operator<<(std::ostream&, const function&);
     std::ostream& operator<<(std::ostream&, const compilation_unit&);
 } // namespace tep::dbg

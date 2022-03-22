@@ -144,14 +144,6 @@ namespace
         return ret;
     }
 
-    template<typename T>
-    const T& cast_to(const tep::dbg::any_function& any) noexcept
-    {
-        return std::holds_alternative<tep::dbg::normal_function>(any) ?
-            std::get<tep::dbg::normal_function>(any) :
-            std::get<tep::dbg::static_function>(any);
-    }
-
     template<typename Iter, typename IterAccess>
     tep::dbg::result<const tep::dbg::function_symbol*>
         find_function_symbol_exact_impl(
@@ -215,6 +207,14 @@ namespace
             name);
     }
 
+    bool is_match_demangled(std::string_view to_match, std::string_view name)
+    {
+        std::string nospaces = remove_spaces(name);
+        std::string nospaces_m = remove_spaces(to_match);
+        return std::string_view{ nospaces }.substr(
+            0, nospaces_m.size()) == nospaces_m;
+    }
+
     tep::dbg::result<bool> is_match(
         std::string_view to_match, std::string_view name)
     {
@@ -223,10 +223,7 @@ namespace
         auto demangled = tep::dbg::demangle(name, ec);
         if (!demangled)
             return unexpected{ ec };
-        std::string nospaces = remove_spaces(*demangled);
-        std::string nospaces_m = remove_spaces(to_match);
-        return std::string_view{ nospaces }.substr(
-            0, nospaces_m.size()) == nospaces_m;
+        return is_match_demangled(to_match, name);
     }
 
     tep::dbg::result<bool> is_equal(
@@ -322,22 +319,20 @@ namespace
         return *it;
     }
 
-    tep::dbg::result<const tep::dbg::any_function*>
+    tep::dbg::result<const tep::dbg::function*>
         find_function_by_linkage_name(
             mangled_name_t,
             const tep::dbg::compilation_unit& cu,
             std::string_view name) noexcept
     {
         using tep::dbg::util_errc;
-        using tep::dbg::any_function;
-        using tep::dbg::normal_function;
+        using tep::dbg::function;
         using unexpected = nonstd::unexpected<std::error_code>;
-        auto pred = [name](const any_function& af)
+        auto pred = [name](const function& af)
         {
-            if (!std::holds_alternative<normal_function>(af))
+            if (af.is_static())
                 return false;
-            const auto& f = std::get<normal_function>(af);
-            return f.linkage_name == name;
+            return *af.linkage_name == name;
         };
         auto it = std::find_if(cu.funcs.begin(), cu.funcs.end(), pred);
         if (it == cu.funcs.end())
@@ -345,7 +340,7 @@ namespace
         return &*it;
     }
 
-    tep::dbg::result<const tep::dbg::any_function*>
+    tep::dbg::result<const tep::dbg::function*>
         find_function_by_linkage_name(
             demangled_name_t,
             const tep::dbg::compilation_unit& cu,
@@ -353,17 +348,15 @@ namespace
             bool exact_name)
     {
         using tep::dbg::util_errc;
-        using tep::dbg::any_function;
-        using tep::dbg::normal_function;
+        using tep::dbg::function;
         using unexpected = nonstd::unexpected<std::error_code>;
 
         std::error_code ec;
-        auto exact_pred = [&ec, name](const any_function& af)
+        auto exact_pred = [&ec, name](const function& af)
         {
-            if (!std::holds_alternative<normal_function>(af))
+            if (af.is_static())
                 return false;
-            const auto& f = std::get<normal_function>(af);
-            auto demangled = tep::dbg::demangle(f.linkage_name, ec);
+            auto demangled = tep::dbg::demangle(*af.linkage_name, ec);
             if (!demangled)
                 return true;
             return remove_spaces(*demangled) == remove_spaces(name);
@@ -379,12 +372,11 @@ namespace
             return &*it;
         }
 
-        auto matches_pred = [name](const any_function& af, std::error_code& ec)
+        auto matches_pred = [name](const function& af, std::error_code& ec)
         {
-            if (!std::holds_alternative<normal_function>(af))
+            if (af.is_static())
                 return false;
-            const auto& f = std::get<normal_function>(af);
-            auto is_match_res = is_match(name, f.linkage_name);
+            auto is_match_res = is_match(name, *af.linkage_name);
             if (!is_match_res)
             {
                 ec = is_match_res.error();
@@ -395,7 +387,7 @@ namespace
 
         auto get_all_matches = [&](std::error_code& ec)
         {
-            std::vector<const any_function*> matches;
+            std::vector<const function*> matches;
             for (const auto& sym : cu.funcs)
             {
                 bool is_match = matches_pred(sym, ec);
@@ -415,7 +407,7 @@ namespace
         if (matches.size() == 1)
             return matches.front();
         auto it = std::find_if(matches.begin(), matches.end(),
-            [exact_pred](const any_function* f)
+            [exact_pred](const function* f)
             {
                 assert(f);
                 return exact_pred(*f);
@@ -749,35 +741,37 @@ namespace tep::dbg
     result<const function_symbol*>
         find_function_symbol(
             const object_info& oi,
-            const any_function& f
+            const function& f
         ) noexcept
     {
         using unexpected = nonstd::unexpected<std::error_code>;
         const auto& syms = oi.function_symbols();
-        if (std::holds_alternative<normal_function>(f))
+        if (f.is_extern())
         {
             auto it = std::find_if(syms.begin(), syms.end(), [&f](const function_symbol& sym)
                 {
-                    return sym.name == std::get<normal_function>(f).linkage_name;
+                    return sym.name == *f.linkage_name;
                 });
             if (it == syms.end())
                 return unexpected{ util_errc::symbol_not_found };
             return &*it;
         }
-        if (!std::holds_alternative<function_addresses>(std::get<static_function>(f).data))
+        if (!f.addresses)
+            return unexpected{ util_errc::symbol_not_found };
+        if (f.addresses->values.size() > 1)
             return unexpected{ util_errc::symbol_ambiguous };
+        assert(!f.addresses->values.empty());
         auto it = std::find_if(syms.begin(), syms.end(), [&f](const function_symbol& sym)
             {
-                const auto& addrs = std::get<function_addresses>(std::get<static_function>(f).data);
-                assert(addrs.entry_pc == addrs.crange.low_pc);
-                return sym.address == addrs.entry_pc;
+                const auto& addrs = f.addresses->values;
+                return sym.address == addrs.front().low_pc;
             });
         if (it == syms.end())
             return unexpected{ util_errc::symbol_not_found };
         return &*it;
     }
 
-    result<const any_function*>
+    result<const function*>
         find_function(
             const compilation_unit& cu,
             const function_symbol& f)
@@ -789,20 +783,14 @@ namespace tep::dbg
         if (f.binding == symbol_binding::local)
         {
             auto it = std::find_if(cu.funcs.begin(), cu.funcs.end(),
-                [sym_addr = f.address](const any_function& af)
+                [sym_addr = f.address](const function& f)
             {
-                if (!std::holds_alternative<static_function>(af))
+                if (!f.is_static())
                     return false;
-                const auto& f = std::get<static_function>(af);
-                if (std::holds_alternative<inline_instances>(f.data))
+                if (!f.addresses)
                     return false;
-                else if (auto ptr = std::get_if<function_addresses>(&f.data))
-                {
-                    assert(ptr->entry_pc == ptr->crange.low_pc);
-                    return ptr->entry_pc == sym_addr;
-                }
                 // multiple ranges but not inlined
-                const auto& rngs = std::get<ranges>(f.data);
+                const auto& rngs = f.addresses->values;
                 return rngs.end() != std::find_if(rngs.begin(), rngs.end(),
                     [sym_addr](const contiguous_range& rng)
                     {
@@ -816,7 +804,7 @@ namespace tep::dbg
         return find_function_by_linkage_name(mangled_name, cu, f.name);
     }
 
-    result<const any_function*>
+    result<const function*>
         find_function(
             const object_info& oi,
             const function_symbol& f
@@ -832,7 +820,7 @@ namespace tep::dbg
         return unexpected{ util_errc::function_not_found };
     }
 
-    result<const any_function*>
+    result<const function*>
         find_function(
             const object_info& oi,
             std::string_view name,
@@ -857,7 +845,7 @@ namespace tep::dbg
         return unexpected{ sym.error() };
     }
 
-    result<const any_function*>
+    result<const function*>
         find_function(
             const object_info& oi,
             const compilation_unit& cu,
@@ -867,61 +855,52 @@ namespace tep::dbg
         using unexpected = nonstd::unexpected<std::error_code>;
         auto sym = find_function_symbol(oi, cu, name,
             exact_name, ignore_symbol_suffix_flag::yes);
-        if (!sym)
+        if (!sym && sym.error() != util_errcause::not_found)
             return unexpected{ sym.error() };
 
-        const any_function* found = nullptr;
-        for (const auto& any_f : cu.funcs)
+        // if symbol is not found we can check by linkage name
+        // only if the function is extern
+        // if it is a static function, then assume it was not
+        // inlined and symbol has been found
+        // TODO: maybe possible to still have symbol
+        // but direct calls be inlined ? (e.g. function pointers)
+        const function* found = nullptr;
+        for (const auto& f : cu.funcs)
         {
-            if (auto f = std::get_if<normal_function>(&any_f))
+            if (f.is_extern())
             {
-                // normal function -> compare with linkage name
-                if (f->linkage_name != (*sym)->name)
-                    continue;
-                if (std::get_if<inline_instances>(&f->data))
-                    return &any_f;
-                else if (auto addrs = std::get_if<function_addresses>(&f->data))
+                if (!sym)
                 {
-                    assert(addrs->entry_pc == (*sym)->address);
-                    found = &any_f;
+                    std::error_code ec;
+                    auto demangled = demangle(*f.linkage_name, ec);
+                    if (!demangled)
+                        return unexpected{ ec };
+                    if (bool(exact_name))
+                    {
+                        if (remove_spaces(*demangled) == remove_spaces(name))
+                            return &f;
+                    }
+                    else if (is_match_demangled(name, *demangled))
+                    {
+                        if (found)
+                            return unexpected{ util_errc::function_ambiguous };
+                        found = &f;
+                    }
                 }
-                else
-                {
-                    auto rngs = std::get_if<ranges>(&f->data);
-                    (void)rngs;
-                    assert(rngs->end() != std::find_if(rngs->begin(), rngs->end(),
-                        [&](contiguous_range rng)
-                        {
-                            return rng.low_pc == (*sym)->address;
-                        }));
-                    found = &any_f;
-                }
+                else if (*f.linkage_name == (*sym)->name)
+                    return &f;
             }
-            else
+            else if (sym && f.addresses)
             {
-                // static function -> assume it was not
-                // inlined since symbol has been found
-                // TODO: maybe possible to still have symbol
-                // but direct calls be inlined ? (e.g. function pointers)
-                const auto& sf = std::get<static_function>(any_f);
-                if (std::get_if<inline_instances>(&sf.data))
-                    continue;
-                else if (auto addrs = std::get_if<function_addresses>(&f->data))
-                {
-                    assert(addrs->entry_pc == (*sym)->address);
-                    return &any_f;
-                }
-                else
-                {
-                    auto rngs = std::get_if<ranges>(&f->data);
-                    auto it = std::find_if(rngs->begin(), rngs->end(),
-                        [&](contiguous_range rng)
-                        {
-                            return rng.low_pc == (*sym)->address;
-                        });
-                    if (it != rngs->end())
-                        return &any_f;
-                }
+
+                auto it = std::find_if(
+                    f.addresses->values.begin(), f.addresses->values.end(),
+                    [&](contiguous_range rng)
+                    {
+                        return rng.low_pc == (*sym)->address;
+                    });
+                if (it != f.addresses->values.end())
+                    return &f;
             }
         }
         if (found)
@@ -937,9 +916,8 @@ namespace tep::dbg
     {
         using unexpected = nonstd::unexpected<std::error_code>;
 
-        auto pred = [&file](const any_function& x)
+        auto pred = [&file](const function& f)
         {
-            const auto& f = cast_to<function_base>(x);
             return f.decl_loc && f.decl_loc->file == file;
         };
 
@@ -951,7 +929,7 @@ namespace tep::dbg
         return std::pair{ start_it, end_it };
     }
 
-    result<const any_function*>
+    result<const function*>
         find_function(
             const compilation_unit& cu,
             const std::filesystem::path& file,
@@ -961,11 +939,8 @@ namespace tep::dbg
     {
         using unexpected = nonstd::unexpected<std::error_code>;
         bool file_found{}, line_found{}, col_found{}, decl_loc_found{};
-        auto pred = [&](const any_function& af)
+        auto pred = [&](const function& f)
         {
-            const auto& f = std::holds_alternative<normal_function>(af) ?
-                std::get<normal_function>(af) :
-                std::get<static_function>(af);
             return f.decl_loc && (decl_loc_found = true) &&
                 f.decl_loc->file == file && (file_found = true) &&
                 f.decl_loc->line_number == lineno && (line_found = true) &&

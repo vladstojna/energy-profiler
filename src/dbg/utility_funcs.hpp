@@ -13,7 +13,7 @@ namespace tep::dbg
     using result = nonstd::expected<T, std::error_code>;
 
     using lines = compilation_unit::container<source_line>;
-    using functions = compilation_unit::container<any_function>;
+    using functions = compilation_unit::container<function>;
 
     enum class util_errc : uint32_t
     {
@@ -203,7 +203,7 @@ namespace tep::dbg
     result<const function_symbol*>
         find_function_symbol(
             const object_info&,
-            const any_function& f
+            const function& f
         ) noexcept;
 
     /**
@@ -213,7 +213,7 @@ namespace tep::dbg
      * @param f the function symbol to match
      * @return result<const compilation_unit::any_function*>
      */
-    result<const any_function*>
+    result<const function*>
         find_function(
             const compilation_unit& cu,
             const function_symbol& f)
@@ -225,7 +225,7 @@ namespace tep::dbg
      * @param f the function symbol to match
      * @return result<const compilation_unit::any_function*>
      */
-    result<const any_function*>
+    result<const function*>
         find_function(
             const object_info&,
             const function_symbol& f)
@@ -240,7 +240,7 @@ namespace tep::dbg
      * a prefix to the actual full name
      * @return result<const compilation_unit::any_function*>
      */
-    result<const any_function*>
+    result<const function*>
         find_function(
             const object_info&,
             std::string_view name,
@@ -257,7 +257,7 @@ namespace tep::dbg
      * a prefix to the actual full name
      * @return result<const compilation_unit::any_function*>
      */
-    result<const any_function*>
+    result<const function*>
         find_function(
             const object_info&,
             const compilation_unit& cu,
@@ -286,7 +286,7 @@ namespace tep::dbg
      * @param colno function declaration column or 0 to match any column
      * @return result<const compilation_unit::any_function*>
      */
-    result<const any_function*>
+    result<const function*>
         find_function(
             const compilation_unit& cu,
             const std::filesystem::path& file,
