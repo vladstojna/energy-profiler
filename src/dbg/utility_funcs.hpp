@@ -211,7 +211,7 @@ namespace tep::dbg
      *
      * @param cu the compilation unit to search
      * @param f the function symbol to match
-     * @return result<const compilation_unit::any_function*>
+     * @return result<const function*>
      */
     result<const function*>
         find_function(
@@ -223,7 +223,7 @@ namespace tep::dbg
      * @brief Find function (DWARF data) from ELF symbol
      *
      * @param f the function symbol to match
-     * @return result<const compilation_unit::any_function*>
+     * @return result<const function*>
      */
     result<const function*>
         find_function(
@@ -238,9 +238,10 @@ namespace tep::dbg
      * @param name demangled function name
      * @param exact_name whether to match name exactly or as just
      * a prefix to the actual full name
-     * @return result<const compilation_unit::any_function*>
+     * @return result<std::pair<const function*, const function_symbol*>>
+     * the function symbol may be a nullptr if not found
      */
-    result<const function*>
+    result<std::pair<const function*, const function_symbol*>>
         find_function(
             const object_info&,
             std::string_view name,
@@ -255,11 +256,28 @@ namespace tep::dbg
      * @param name demangled function name
      * @param exact_name whether to match name exactly or as just
      * a prefix to the actual full name
-     * @return result<const compilation_unit::any_function*>
+     * @return result<std::pair<const function*, const function_symbol*>>
+     * the function symbol may be a nullptr if not found
+     */
+    result<std::pair<const function*, const function_symbol*>>
+        find_function(
+            const object_info&,
+            const compilation_unit& cu,
+            std::string_view name,
+            exact_symbol_name_flag exact_name = exact_symbol_name_flag::no);
+
+    /**
+     * @brief Find function (DWARF data) in a compilation unit without looking
+     * up symbol first. The behaviour is as if the symbol had not been found.
+     *
+     * @param cu the function's compilation unit
+     * @param name demangled function name
+     * @param exact_name whether to match name exactly or as just
+     * a prefix to the actual full name
+     * @return result<const function*>
      */
     result<const function*>
         find_function(
-            const object_info&,
             const compilation_unit& cu,
             std::string_view name,
             exact_symbol_name_flag exact_name = exact_symbol_name_flag::no);
@@ -284,7 +302,7 @@ namespace tep::dbg
      * @param file function declaration file
      * @param lineno function declaration line
      * @param colno function declaration column or 0 to match any column
-     * @return result<const compilation_unit::any_function*>
+     * @return result<const function*>
      */
     result<const function*>
         find_function(

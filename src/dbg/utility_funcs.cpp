@@ -820,7 +820,7 @@ namespace tep::dbg
         return unexpected{ util_errc::function_not_found };
     }
 
-    result<const function*>
+    result<std::pair<const function*, const function_symbol*>>
         find_function(
             const object_info& oi,
             std::string_view name,
@@ -830,22 +830,29 @@ namespace tep::dbg
         auto sym = find_function_symbol(oi, name,
             exact_name, ignore_symbol_suffix_flag::yes);
         if (sym)
-            return find_function(oi, **sym);
+        {
+            if (auto res = find_function(oi, **sym))
+                return std::pair{ *res, *sym };
+            else
+                return unexpected{ res.error() };
+        }
         else if (sym.error() == util_errcause::not_found)
         {
             for (const auto& cu : oi.compilation_units())
             {
                 auto func = find_function_by_linkage_name(
                     demangled_name, cu, name, exact_name == exact_symbol_name_flag::yes);
-                if (func || func.error() != util_errc::function_not_found)
-                    return func;
+                if (func)
+                    return std::pair{ *func, nullptr };
+                if (func.error() != util_errc::function_not_found)
+                    return unexpected{ func.error() };
             }
             return unexpected{ util_errc::function_not_found };
         }
         return unexpected{ sym.error() };
     }
 
-    result<const function*>
+    result<std::pair<const function*, const function_symbol*>>
         find_function(
             const object_info& oi,
             const compilation_unit& cu,
@@ -857,42 +864,19 @@ namespace tep::dbg
             exact_name, ignore_symbol_suffix_flag::yes);
         if (!sym && sym.error() != util_errcause::not_found)
             return unexpected{ sym.error() };
-
-        // if symbol is not found we can check by linkage name
-        // only if the function is extern
-        // if it is a static function, then assume it was not
-        // inlined and symbol has been found
-        // TODO: maybe possible to still have symbol
-        // but direct calls be inlined ? (e.g. function pointers)
-        const function* found = nullptr;
+        if (!sym)
+        {
+            if (auto res = find_function(oi, **sym))
+                return std::pair{ *res, nullptr };
+            else
+                return unexpected{ res.error() };
+        }
         for (const auto& f : cu.funcs)
         {
-            if (f.is_extern())
+            if (f.is_extern() && *f.linkage_name == (*sym)->name)
+                return std::pair{ &f, *sym };
+            if (f.is_static() && f.addresses)
             {
-                if (!sym)
-                {
-                    std::error_code ec;
-                    auto demangled = demangle(*f.linkage_name, ec);
-                    if (!demangled)
-                        return unexpected{ ec };
-                    if (bool(exact_name))
-                    {
-                        if (remove_spaces(*demangled) == remove_spaces(name))
-                            return &f;
-                    }
-                    else if (is_match_demangled(name, *demangled))
-                    {
-                        if (found)
-                            return unexpected{ util_errc::function_ambiguous };
-                        found = &f;
-                    }
-                }
-                else if (*f.linkage_name == (*sym)->name)
-                    return &f;
-            }
-            else if (sym && f.addresses)
-            {
-
                 auto it = std::find_if(
                     f.addresses->values.begin(), f.addresses->values.end(),
                     [&](contiguous_range rng)
@@ -900,7 +884,44 @@ namespace tep::dbg
                         return rng.low_pc == (*sym)->address;
                     });
                 if (it != f.addresses->values.end())
+                    return std::pair{ &f, *sym };
+            }
+        }
+        return unexpected{ util_errc::function_not_found };
+    }
+
+    result<const function*>
+        find_function(
+            const compilation_unit& cu,
+            std::string_view name,
+            exact_symbol_name_flag exact_name)
+    {
+        using unexpected = result<const function*>::unexpected_type;
+        const function* found = nullptr;
+        // if symbol is not found we can check by linkage name
+        // only if the function is extern
+        // if it is a static function, then assume it was not
+        // inlined and symbol has been found
+        // TODO: maybe possible to still have symbol
+        // but direct calls be inlined ? (e.g. function pointers)
+        for (const auto& f : cu.funcs)
+        {
+            if (f.is_static())
+                continue;
+            std::error_code ec;
+            auto demangled = demangle(*f.linkage_name, ec);
+            if (!demangled)
+                return unexpected{ ec };
+            if (bool(exact_name))
+            {
+                if (remove_spaces(*demangled) == remove_spaces(name))
                     return &f;
+            }
+            else if (is_match_demangled(name, *demangled))
+            {
+                if (found)
+                    return unexpected{ util_errc::function_ambiguous };
+                found = &f;
             }
         }
         if (found)
