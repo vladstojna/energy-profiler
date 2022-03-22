@@ -364,11 +364,17 @@ namespace tep::dbg
         assert(dwarf_tag(&x.func_die) == DW_TAG_subprogram);
         if (decl_loc->file.empty() || !decl_loc->line_number)
             decl_loc = std::nullopt;
-        if (dwarf_hasattr_integrate(&x.func_die, DW_AT_linkage_name))
+
+        if (dwarf_hasattr_integrate(&x.func_die, DW_AT_external))
         {
-            Dwarf_Attribute attr;
-            linkage_name = dwarf_formstring(
-                dwarf_attr_integrate(&x.func_die, DW_AT_linkage_name, &attr));
+            if (dwarf_hasattr_integrate(&x.func_die, DW_AT_linkage_name))
+            {
+                Dwarf_Attribute attr;
+                linkage_name = dwarf_formstring(
+                    dwarf_attr_integrate(&x.func_die, DW_AT_linkage_name, &attr));
+            }
+            else
+                linkage_name = die_name;
         }
     }
 
