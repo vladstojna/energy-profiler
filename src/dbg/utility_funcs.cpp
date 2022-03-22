@@ -223,7 +223,7 @@ namespace
         auto demangled = tep::dbg::demangle(name, ec);
         if (!demangled)
             return unexpected{ ec };
-        return is_match_demangled(to_match, name);
+        return is_match_demangled(to_match, *demangled);
     }
 
     tep::dbg::result<bool> is_equal(
@@ -316,106 +316,6 @@ namespace
             return unexpected{ util_errc::symbol_ambiguous_suffix };
         if (std::distance(it, matches.end()) > 1)
             return unexpected{ util_errc::symbol_ambiguous };
-        return *it;
-    }
-
-    tep::dbg::result<const tep::dbg::function*>
-        find_function_by_linkage_name(
-            mangled_name_t,
-            const tep::dbg::compilation_unit& cu,
-            std::string_view name) noexcept
-    {
-        using tep::dbg::util_errc;
-        using tep::dbg::function;
-        using unexpected = nonstd::unexpected<std::error_code>;
-        auto pred = [name](const function& af)
-        {
-            if (af.is_static())
-                return false;
-            return *af.linkage_name == name;
-        };
-        auto it = std::find_if(cu.funcs.begin(), cu.funcs.end(), pred);
-        if (it == cu.funcs.end())
-            return unexpected{ util_errc::function_not_found };
-        return &*it;
-    }
-
-    tep::dbg::result<const tep::dbg::function*>
-        find_function_by_linkage_name(
-            demangled_name_t,
-            const tep::dbg::compilation_unit& cu,
-            std::string_view name,
-            bool exact_name)
-    {
-        using tep::dbg::util_errc;
-        using tep::dbg::function;
-        using unexpected = nonstd::unexpected<std::error_code>;
-
-        std::error_code ec;
-        auto exact_pred = [&ec, name](const function& af)
-        {
-            if (af.is_static())
-                return false;
-            auto demangled = tep::dbg::demangle(*af.linkage_name, ec);
-            if (!demangled)
-                return true;
-            return remove_spaces(*demangled) == remove_spaces(name);
-        };
-
-        if (exact_name)
-        {
-            auto it = std::find_if(cu.funcs.begin(), cu.funcs.end(), exact_pred);
-            if (ec)
-                return unexpected{ ec };
-            if (it == cu.funcs.end())
-                return unexpected{ util_errc::function_not_found };
-            return &*it;
-        }
-
-        auto matches_pred = [name](const function& af, std::error_code& ec)
-        {
-            if (af.is_static())
-                return false;
-            auto is_match_res = is_match(name, *af.linkage_name);
-            if (!is_match_res)
-            {
-                ec = is_match_res.error();
-                return true;
-            }
-            return *is_match_res;
-        };
-
-        auto get_all_matches = [&](std::error_code& ec)
-        {
-            std::vector<const function*> matches;
-            for (const auto& sym : cu.funcs)
-            {
-                bool is_match = matches_pred(sym, ec);
-                if (ec)
-                    break;
-                if (is_match)
-                    matches.push_back(&sym);
-            }
-            return matches;
-        };
-
-        auto matches = get_all_matches(ec);
-        if (ec)
-            return unexpected{ ec };
-        if (matches.empty())
-            return unexpected{ util_errc::no_matches };
-        if (matches.size() == 1)
-            return matches.front();
-        auto it = std::find_if(matches.begin(), matches.end(),
-            [exact_pred](const function* f)
-            {
-                assert(f);
-                return exact_pred(*f);
-            });
-        if (ec)
-            return unexpected{ ec };
-        if (it == matches.end())
-            return unexpected{ util_errc::function_ambiguous };
         return *it;
     }
 }
@@ -746,16 +646,6 @@ namespace tep::dbg
     {
         using unexpected = nonstd::unexpected<std::error_code>;
         const auto& syms = oi.function_symbols();
-        if (f.is_extern())
-        {
-            auto it = std::find_if(syms.begin(), syms.end(), [&f](const function_symbol& sym)
-                {
-                    return sym.name == *f.linkage_name;
-                });
-            if (it == syms.end())
-                return unexpected{ util_errc::symbol_not_found };
-            return &*it;
-        }
         if (!f.addresses)
             return unexpected{ util_errc::symbol_not_found };
         if (f.addresses->values.size() > 1)
@@ -774,34 +664,26 @@ namespace tep::dbg
     result<const function*>
         find_function(
             const compilation_unit& cu,
-            const function_symbol& f)
+            const function_symbol& sym)
         noexcept
     {
+        // lookup function using symbol address
         using unexpected = nonstd::unexpected<std::error_code>;
-        // static function, lookup using address
-        // otherwise, lookup using linkage name
-        if (f.binding == symbol_binding::local)
+        auto it = std::find_if(cu.funcs.begin(), cu.funcs.end(),
+            [sym_addr = sym.address](const function& f)
         {
-            auto it = std::find_if(cu.funcs.begin(), cu.funcs.end(),
-                [sym_addr = f.address](const function& f)
-            {
-                if (!f.is_static())
-                    return false;
-                if (!f.addresses)
-                    return false;
-                // multiple ranges but not inlined
-                const auto& rngs = f.addresses->values;
-                return rngs.end() != std::find_if(rngs.begin(), rngs.end(),
-                    [sym_addr](const contiguous_range& rng)
-                    {
-                        return rng.low_pc == sym_addr;
-                    });
-            });
-            if (it == cu.funcs.end())
-                return unexpected{ util_errc::function_not_found };
-            return &*it;
-        }
-        return find_function_by_linkage_name(mangled_name, cu, f.name);
+            if (!f.addresses)
+                return false;
+            const auto& rngs = f.addresses->values;
+            return rngs.end() != std::find_if(rngs.begin(), rngs.end(),
+                [sym_addr](contiguous_range rng)
+                {
+                    return rng.low_pc == sym_addr;
+                });
+        });
+        if (it == cu.funcs.end())
+            return unexpected{ util_errc::function_not_found };
+        return &*it;
     }
 
     result<const function*>
@@ -840,8 +722,7 @@ namespace tep::dbg
         {
             for (const auto& cu : oi.compilation_units())
             {
-                auto func = find_function_by_linkage_name(
-                    demangled_name, cu, name, exact_name == exact_symbol_name_flag::yes);
+                auto func = find_function(cu, name, exact_name);
                 if (func)
                     return std::pair{ *func, nullptr };
                 if (func.error() != util_errc::function_not_found)
@@ -873,19 +754,16 @@ namespace tep::dbg
         }
         for (const auto& f : cu.funcs)
         {
-            if (f.is_extern() && *f.linkage_name == (*sym)->name)
+            if (!f.addresses)
+                continue;
+            auto it = std::find_if(
+                f.addresses->values.begin(), f.addresses->values.end(),
+                [&](contiguous_range rng)
+                {
+                    return rng.low_pc == (*sym)->address;
+                });
+            if (it != f.addresses->values.end())
                 return std::pair{ &f, *sym };
-            if (f.is_static() && f.addresses)
-            {
-                auto it = std::find_if(
-                    f.addresses->values.begin(), f.addresses->values.end(),
-                    [&](contiguous_range rng)
-                    {
-                        return rng.low_pc == (*sym)->address;
-                    });
-                if (it != f.addresses->values.end())
-                    return std::pair{ &f, *sym };
-            }
         }
         return unexpected{ util_errc::function_not_found };
     }
@@ -898,35 +776,54 @@ namespace tep::dbg
     {
         using unexpected = result<const function*>::unexpected_type;
         const function* found = nullptr;
-        // if symbol is not found we can check by linkage name
-        // only if the function is extern
-        // if it is a static function, then assume it was not
-        // inlined and symbol has been found
-        // TODO: maybe possible to still have symbol
-        // but direct calls be inlined ? (e.g. function pointers)
-        for (const auto& f : cu.funcs)
+
+        auto match_func = [exact_name, &found](
+            const function& f, std::string_view to_match, std::string full_name)
+            -> result<const function*>
         {
-            if (f.is_static())
-                continue;
-            std::error_code ec;
-            auto demangled = demangle(*f.linkage_name, ec);
-            if (!demangled)
-                return unexpected{ ec };
             if (bool(exact_name))
             {
-                if (remove_spaces(*demangled) == remove_spaces(name))
+                if (remove_spaces(full_name) == remove_spaces(to_match))
                     return &f;
             }
-            else if (is_match_demangled(name, *demangled))
+            else if (is_match_demangled(to_match, full_name))
             {
+                if (remove_spaces(full_name) == remove_spaces(to_match))
+                    return &f;
                 if (found)
                     return unexpected{ util_errc::function_ambiguous };
                 found = &f;
             }
+            return nullptr;
+        };
+
+        // if symbol is not found we can check by linkage name
+        // only if the function is extern
+        // if it is a static function, do a best-effort search using DIE name
+        for (const auto& f : cu.funcs)
+        {
+            if (f.is_static())
+            {
+                if (auto res = match_func(f, name, f.die_name); res && *res)
+                    return *res;
+                else if (!res)
+                    return unexpected{ res.error() };
+            }
+            else
+            {
+                std::error_code ec;
+                auto demangled = demangle(*f.linkage_name, ec);
+                if (!demangled)
+                    return unexpected{ ec };
+                if (auto res = match_func(f, name, *demangled); res && *res)
+                    return *res;
+                else if (!res)
+                    return unexpected{ res.error() };
+            }
         }
         if (found)
             return found;
-        return unexpected{ util_errc::function_not_found };
+        return unexpected{ util_errc::no_matches };
     }
 
     result<std::pair<functions::const_iterator, functions::const_iterator>>
