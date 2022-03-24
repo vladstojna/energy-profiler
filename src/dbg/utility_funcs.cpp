@@ -3,8 +3,6 @@
 
 #include <nonstd/expected.hpp>
 
-#include <iostream>
-
 namespace
 {
     struct util_category_t : std::error_category
