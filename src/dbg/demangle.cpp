@@ -55,5 +55,14 @@ namespace tep
             }
             return std::nullopt;
         }
+
+        std::string demangle(std::string_view mangled, bool demangle_types)
+        {
+            std::error_code ec;
+            auto res = demangle(mangled, ec, demangle_types);
+            if (!res)
+                throw demangle_exception(ec, "Error demangling name");
+            return *res;
+        }
     }
 }

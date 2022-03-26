@@ -72,6 +72,18 @@ namespace tep::dbg
             const object_info&, const std::filesystem::path& cu) noexcept;
 
     /**
+     * @brief Find compilation unit in object info by address,
+     * i.e., check whether an address belongs to the range of valid addresses
+     * of a CU
+     *
+     * @param addr the address
+     * @return result<const compilation_unit*>
+     */
+    result<const compilation_unit*>
+        find_compilation_unit(
+            const object_info&, uintptr_t addr) noexcept;
+
+    /**
      * @brief Find compilation unit from symbol
      *
      * @param sym the symbol that potentially belongs to a CU

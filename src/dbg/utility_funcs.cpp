@@ -362,6 +362,18 @@ namespace tep::dbg
 
     result<const compilation_unit*>
         find_compilation_unit(
+            const object_info& oi, uintptr_t addr) noexcept
+    {
+        using unexpected = nonstd::unexpected<std::error_code>;
+        for (const auto& cu : oi.compilation_units())
+            for (const auto& range : cu.addresses)
+                if (addr >= range.low_pc && addr < range.high_pc)
+                    return &cu;
+        return unexpected{ util_errc::address_not_found };
+    }
+
+    result<const compilation_unit*>
+        find_compilation_unit(
             const object_info& oi,
             const function_symbol& sym
         ) noexcept
