@@ -6,7 +6,7 @@
 
 namespace tep::dbg
 {
-    enum class executable_type
+    enum class executable_type : uint32_t
     {
         executable,
         shared_object,
