@@ -122,8 +122,12 @@ namespace tep
 
     static void to_json(nlohmann::json& j, const function_return& x)
     {
-        to_json(j, static_cast<const address&>(x));
         j["function_return"] = true;
+        j["absolute_address"] = address_to_hex_string(x.value);
+        if (x.cu)
+            j["compilation_unit"] = *x.cu;
+        else
+            j["compilation_unit"] = nullptr;
     }
 
     static void to_json(nlohmann::json& j, const inline_function& x)
@@ -189,6 +193,12 @@ namespace tep
     }
 
     std::ostream& operator<<(std::ostream& os, const function_call& x)
+    {
+        os << to_string(x);
+        return os;
+    }
+
+    std::ostream& operator<<(std::ostream& os, const function_return& x)
     {
         os << to_string(x);
         return os;
