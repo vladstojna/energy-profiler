@@ -36,7 +36,7 @@ namespace
         auto msg = ec.message();
         log::logline(log::error, "[%d] %s: %s", tid, comment, msg.c_str());
         return tracer_error(tracer_errcode::NO_SYMBOL, std::move(msg));
-    };
+    }
 
     std::ostream&
         operator<<(std::ostream& os, const std::vector<std::string>& vec)
