@@ -112,7 +112,7 @@ namespace
             rngs.push_back(rng);
         }
         return rngs;
-    };
+    }
 }
 
 namespace tep::dbg

@@ -241,7 +241,7 @@ namespace
         if (pos == std::string_view::npos)
             return false;
         return !x.substr(pos).empty();
-    };
+    }
 
     tep::dbg::result<const tep::dbg::function_symbol*>
         find_function_symbol_matched(
