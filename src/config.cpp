@@ -86,7 +86,7 @@ namespace
             using tep::cfg::errc;
             auto ec = static_cast<errc>(ev);
             if (ec >= errc::config_io_error && ec <= errc::addr_range_invalid_value)
-                return std::string(error_messages[ev]);
+                return std::string(error_messages[ev - 1]);
             return "(unrecognized error code)";
         }
     };
