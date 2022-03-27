@@ -60,34 +60,6 @@ namespace
         return ss.str();
     }
 
-    // inserts trap at 'addr'
-    // returns either error or original word at address 'addr'
-    tracer_expected<long> insert_trap(pid_t my_tid, pid_t pid, uintptr_t addr)
-    {
-        using rettype = tracer_expected<long>;
-        auto ptrace_error = [](int code, pid_t tid, const char* comment)
-        {
-            return rettype(nonstd::unexpect,
-                get_syserror(code, tracer_errcode::PTRACE_ERROR, tid, comment));
-        };
-        ptrace_wrapper& pw = ptrace_wrapper::instance;
-        int error;
-        long word = pw.ptrace(error, PTRACE_PEEKDATA, pid, addr, 0);
-        if (error)
-        {
-            log::logline(log::error, "[%d] error inserting trap @ 0x%" PRIxPTR, my_tid, addr);
-            return ptrace_error(error, my_tid, "insert_trap: PTRACE_PEEKDATA");
-        }
-        long new_word = set_trap(word);
-        if (pw.ptrace(error, PTRACE_POKEDATA, pid, addr, new_word) < 0)
-        {
-            log::logline(log::error, "[%d] error inserting trap @ 0x%" PRIxPTR, my_tid, addr);
-            return ptrace_error(error, my_tid, "insert_trap: PTRACE_POKEDATA");
-        }
-        log::logline(log::debug, "[%d] 0x%" PRIxPTR ": %lx -> %lx", my_tid, addr, word, new_word);
-        return word;
-    }
-
     // instantiates a polymorphic sampler_creator from config section information
     sampler_creator creator_from_section(const reader_container& readers,
         const cfg::section_t& section)
@@ -622,7 +594,7 @@ tracer_error profiler::insert_traps_function(
         log::logline(log::info, "[%d] [%s] symbol: %s",
             _tid, __func__, func_res->second->name.c_str());
         start_addr start = entrypoint + func_res->second->local_entrypoint();
-        tracer_expected<long> origw = insert_trap(_tid, _child, start.val());
+        tracer_expected<long> origw = insert_trap(_child, start.val());
         if (!origw)
             return std::move(origw.error());
         auto cu = dbg::find_compilation_unit(_dli, *func_res->second);
@@ -676,7 +648,7 @@ tracer_error profiler::insert_traps_function(
         auto insert = [&](auto addr, auto creator)
         {
             auto offset = addr.val() - entrypoint;
-            tracer_expected<long> origw = insert_trap(_tid, _child, addr.val());
+            tracer_expected<long> origw = insert_trap(_child, addr.val());
             if (!origw)
                 return std::move(origw.error());
             auto cu = dbg::find_compilation_unit(_dli, offset);
@@ -777,7 +749,7 @@ tracer_error profiler::insert_traps_address_range(
 {
     start_addr start = entrypoint + addr_range.start;
     end_addr end = entrypoint + addr_range.end;
-    tracer_expected<long> origw = insert_trap(_tid, _child, start.val());
+    tracer_expected<long> origw = insert_trap(_child, start.val());
     if (!origw)
         return std::move(origw.error());
     {
@@ -799,7 +771,7 @@ tracer_error profiler::insert_traps_address_range(
         log::logline(log::info, "[%d] inserted trap at start address 0x%" PRIxPTR
             " (offset 0x%" PRIxPTR ")", _tid, start.val(), start.val() - entrypoint);
     }
-    origw = insert_trap(_tid, _child, end.val());
+    origw = insert_trap(_child, end.val());
     if (!origw)
         return std::move(origw.error());
     {
@@ -843,7 +815,7 @@ tracer_expected<start_addr> profiler::insert_traps_position_start(
         return unexpected{ generic_error(_tid, __func__, cu.error()) };
 
     start_addr eaddr = entrypoint + (*line)->address;
-    tracer_expected<long> origw = insert_trap(_tid, _child, eaddr.val());
+    tracer_expected<long> origw = insert_trap(_child, eaddr.val());
     if (!origw)
         return unexpected{ std::move(origw).error() };
     log::logline(log::info, "[%d] inserted trap @ 0x%" PRIxPTR " (offset 0x%" PRIxPTR ")",
@@ -890,7 +862,7 @@ tracer_error profiler::insert_traps_position_end(
         return generic_error(_tid, __func__, cu.error());
 
     end_addr eaddr = entrypoint + (*line)->address;
-    tracer_expected<long> origw = insert_trap(_tid, _child, eaddr.val());
+    tracer_expected<long> origw = insert_trap(_child, eaddr.val());
     if (!origw)
         return std::move(origw.error());
     log::logline(log::info, "[%d] inserted trap @ 0x%" PRIxPTR " (offset 0x%" PRIxPTR ")",
