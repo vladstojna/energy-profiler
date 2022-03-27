@@ -507,42 +507,39 @@ tracer_expected<profiling_results> profiler::run()
     if (!results)
         return move_error(results.error());
 
-    for (auto& [pair, execs] : *results)
+    for (auto& [start, end, values] : *results)
     {
-        start_trap* strap = _traps.find(pair.first);
-        end_trap* etrap = _traps.find(pair.second, pair.first);
-
-        assert(strap && etrap);
-        if (!strap || !etrap)
+        start_trap* strap = _traps.find(entrypoint + start.addr());
+        assert(strap);
+        if (!strap)
             return rettype(nonstd::unexpect,
-                tracer_errcode::NO_TRAP, "Starting or ending traps are malformed");
-        section_output* sec_out = _output.find(pair.first);
-        assert(sec_out != nullptr);
-        if (sec_out == nullptr)
+                tracer_errcode::NO_TRAP,
+                "Registered start traps are malformed");
+        section_output* sec_out = _output.find(entrypoint + start.addr());
+        assert(sec_out);
+        if (!sec_out)
             return rettype(nonstd::unexpect,
-                tracer_errcode::NO_TRAP, "Address bounds not found");
+                tracer_errcode::NO_TRAP,
+                "Starting address not found in output map");
 
-        for (auto& exec : execs)
+        if (!values)
         {
-            if (!exec)
-            {
-                log::logline(log::error,
-                    "[%d] failed to gather results for section %s - %s: %s",
-                    _tid,
-                    to_string(strap->context()).c_str(),
-                    to_string(etrap->context()).c_str(),
-                    exec.error().message().c_str());
-            }
-            else
-            {
-                log::logline(log::success,
-                    "[%d] registered execution of section %s - %s as successful",
-                    _tid,
-                    to_string(strap->context()).c_str(),
-                    to_string(etrap->context()).c_str());
-                sec_out->push_back({ { strap->context(), etrap->context() },
-                        std::move(*exec) });
-            }
+            log::logline(log::error,
+                "[%d] failed to gather results for section %s - %s: %s",
+                _tid,
+                to_string(start).c_str(),
+                to_string(end).c_str(),
+                values.error().message().c_str());
+        }
+        else
+        {
+            log::logline(log::success,
+                "[%d] registered execution of section %s - %s as successful",
+                _tid,
+                to_string(start).c_str(),
+                to_string(end).c_str());
+            sec_out->push_back(
+                position_exec{ { start, end }, std::move(*values) });
         }
     }
     return std::move(_output.results);
@@ -652,6 +649,9 @@ tracer_error profiler::insert_traps_function(
         log::logline(log::info,
             "[%d] inserted trap at function call address 0x%" PRIxPTR " (offset 0x%" PRIxPTR ")",
             _tid, start.val(), start.val() - entrypoint);
+        if (!_output.insert(start, _readers, group, sec))
+            return tracer_error(tracer_errcode::NO_TRAP,
+                "Trap address already exists");
         ++inserted_traps;
     }
     if (func_res->first->instances)
@@ -748,6 +748,9 @@ tracer_error profiler::insert_traps_function(
             if (auto err = insert(end, end_creator))
                 return err;
             ++inserted_traps;
+            if (!_output.insert(start, _readers, group, sec))
+                return tracer_error(tracer_errcode::NO_TRAP,
+                    "Trap address already exists");
         }
     }
     if (!inserted_traps)

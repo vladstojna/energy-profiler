@@ -7,6 +7,7 @@
 #include "util.hpp"
 #include "log.hpp"
 #include "registers.hpp"
+#include "trap.hpp"
 
 #include <nonstd/expected.hpp>
 
@@ -95,22 +96,19 @@ pid_t tracer::tracee_tgid() const
 
 tracer_expected<tracer::gathered_results> tracer::results()
 {
-    using rettype = tracer_expected<tracer::gathered_results>;
+    using unexpected =
+        tracer_expected<tracer::gathered_results>::unexpected_type;
     if (tracer_error error = _tracer_ftr.get())
-        return rettype(nonstd::unexpect, std::move(error));
+        return unexpected{ std::move(error) };
     for (auto& child : _children)
     {
-        tracer_expected<gathered_results> results = child->results();
-        if (!results)
-            return results;
-        for (auto& [addr, entry] : *results)
-        {
-            auto& entries = _results[addr];
-            entries.insert(
-                entries.end(),
-                std::make_move_iterator(entry.begin()),
-                std::make_move_iterator(entry.end()));
-        }
+        tracer_expected<gathered_results> child_res = child->results();
+        if (!child_res)
+            return unexpected{ std::move(child_res.error()) };
+        _results.insert(
+            _results.end(),
+            std::make_move_iterator(child_res->begin()),
+            std::make_move_iterator(child_res->end()));
     }
     return std::move(_results);
 }
@@ -370,7 +368,12 @@ tracer_error tracer::trace(const registered_traps* traps)
                     log::logline(log::success, "[%d] sampling thread exited successfully with %zu samples",
                         tid, sampling_results->size());
 
-                _results[{start_bp_addr, end_bp_addr}].emplace_back(std::move(sampling_results));
+                _results.push_back(
+                    results_entry{
+                        strap->context(),
+                        etrap->context(),
+                        std::move(sampling_results)
+                    });
 
                 if (auto error = handle_breakpoint(regs, entrypoint, etrap->origword()))
                     return error;
