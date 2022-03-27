@@ -8,6 +8,7 @@
 #include "log.hpp"
 #include "dbg/object_info.hpp"
 #include "dbg/error.hpp"
+#include "dbg/dump.hpp"
 
 #include <cstring>
 #include <iostream>
@@ -58,6 +59,9 @@ int main(int argc, char* argv[])
         log::stream() << config << std::endl;
         log::stream() << oinfo << std::endl;
     #endif
+
+        if (args->debug_dump)
+            args->debug_dump << dbg::debug_dump{ oinfo };
 
         int errnum;
         pid_t child_pid = ptrace_wrapper::instance.fork(errnum, &run_target, args->argv);
