@@ -670,7 +670,7 @@ tracer_error profiler::insert_traps_function(
                 return { false, {} };
             if (end != std::find_if(it + 1, end, pred))
                 return { false, {} };
-            return { false, *it };
+            return { true, *it };
         };
 
         auto insert = [&](auto addr, auto creator)
@@ -708,9 +708,6 @@ tracer_error profiler::insert_traps_function(
                     inst.call_loc ? ::to_string(*inst.call_loc).c_str() : "n/a");
                 continue;
             }
-            log::logline(log::info, "[%d] [%s] instance inlined at %s",
-                _tid, __func__,
-                inst.call_loc ? ::to_string(*inst.call_loc).c_str() : "n/a");
 
             auto cu = dbg::find_compilation_unit(_dli, range_idx.low_pc);
             start_addr start = entrypoint + range_idx.low_pc;
@@ -722,8 +719,13 @@ tracer_error profiler::insert_traps_function(
                 func_res->second,
                 &inst };
             address end_ctx{
-                range_idx.low_pc,
+                range_idx.high_pc,
                 cu ? *cu : nullptr };
+
+            log::logline(log::info, "[%d] [%s] %s at %s",
+                _tid, __func__,
+                to_string(start_ctx).c_str(),
+                inst.call_loc ? ::to_string(*inst.call_loc).c_str() : "n/a");
 
             auto start_creator = [&](long origw)
             {
