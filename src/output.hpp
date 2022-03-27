@@ -4,20 +4,15 @@
 
 #include "sampler.hpp"
 #include "trap.hpp"
+#include "output/fwd.hpp"
 
 #include <optional>
 
 namespace tep
 {
-
-    namespace detail
-    {
-        class output_impl;
-    }
-
     struct position_exec
     {
-        pos::interval interval;
+        std::pair<trap_context, trap_context> interval;
         timed_execution exec;
     };
 
@@ -25,7 +20,7 @@ namespace tep
     {
     public:
         virtual ~readings_output() = default;
-        virtual void output(detail::output_impl& os, const timed_execution& exec) const = 0;
+        virtual void output(output_writer& os, const timed_execution& exec) const = 0;
     };
 
     class readings_output_holder final : public readings_output
@@ -36,7 +31,7 @@ namespace tep
     public:
         readings_output_holder() = default;
         void push_back(std::unique_ptr<readings_output>&& outputs);
-        void output(detail::output_impl& os, const timed_execution& exec) const override;
+        void output(output_writer& os, const timed_execution& exec) const override;
     };
 
     template<typename Reader>
@@ -48,7 +43,7 @@ namespace tep
     public:
         readings_output_dev(const Reader& reader);
 
-        void output(detail::output_impl& os, const timed_execution& exec) const override;
+        void output(output_writer& os, const timed_execution& exec) const override;
     };
 
     class idle_output

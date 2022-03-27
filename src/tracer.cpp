@@ -313,7 +313,7 @@ tracer_error tracer::trace(const registered_traps* traps)
                 return tracer_error(tracer_errcode::NO_TRAP, "No such trap registered");
             }
             log::logline(log::info, "[%d] reached starting trap located @ %s",
-                tid, to_string(strap->at()).c_str());
+                tid, to_string(strap->context()).c_str());
 
             if (!strap->allow_concurrency())
             {
@@ -360,7 +360,7 @@ tracer_error tracer::trace(const registered_traps* traps)
                     return tracer_error(tracer_errcode::NO_TRAP, "No such trap registered");
                 }
                 log::logline(log::info, "[%d] reached ending trap located @ %s",
-                    tid, to_string(etrap->at()).c_str());
+                    tid, to_string(etrap->context()).c_str());
 
                 // if sampling thread generated an error, register execution as a failed one
                 // in the gathered results collection
