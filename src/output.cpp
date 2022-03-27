@@ -2,7 +2,6 @@
 
 #include "output.hpp"
 #include "output/output_writer.hpp"
-#include "trap.hpp"
 
 #include <nrg/reader_gpu.hpp>
 #include <nrg/reader_rapl.hpp>

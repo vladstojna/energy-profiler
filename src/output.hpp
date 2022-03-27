@@ -3,7 +3,7 @@
 #pragma once
 
 #include "sampler.hpp"
-#include "trap.hpp"
+#include "trap_context.hpp"
 #include "output/fwd.hpp"
 
 #include <optional>
