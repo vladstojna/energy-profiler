@@ -66,7 +66,7 @@ default: $(tgt)
 $(tgt_dir):
 	@mkdir -p $@
 $(obj_dir) $(dep_dir):
-	@mkdir -p $@/dbg
+	@mkdir -p $@/dbg $@/output
 
 $(tgt): $(obj) | $(tgt_dir)
 	$(cc) $^ $(ldflags) -o $@
