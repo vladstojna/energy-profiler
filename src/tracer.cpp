@@ -376,7 +376,25 @@ tracer_error tracer::trace(const registered_traps* traps)
                 if (*func_end_ctx)
                 {
                     auto addr = func_end_ctx.value().value().addr();
-                    assert(regs.get_ip() == addr);
+                    if (regs.get_ip() != addr)
+                    {
+                        log::logline(log::error,
+                            "[%d] reached trap @ 0x%" PRIxPTR " (0x%" PRIxPTR
+                            ") which is not %s's return @ 0x%" PRIxPTR,
+                            tid,
+                            regs.get_ip(),
+                            regs.get_ip() - entrypoint,
+                            to_string(strap->context()).c_str(),
+                            addr);
+                        const start_trap* strap = traps->find(start_addr{ regs.get_ip() });
+                        if (strap)
+                            log::logline(log::error,
+                                "[%d] reached trap of %s",
+                                tid,
+                                to_string(strap->context()).c_str());
+                        return tracer_error(tracer_errcode::NO_TRAP,
+                            "Not a return trap reached");
+                    }
                     if (auto error = regs.setregs())
                         return error;
                     if (pw.ptrace(errnum, PTRACE_POKEDATA, _tracee, addr, origword) == -1)
