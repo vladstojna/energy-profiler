@@ -3,6 +3,7 @@ std := c++17
 override cpp +=
 
 LIB_PREFIX ?= lib
+ELFUTILS_PREFIX ?=
 
 # directories
 src_dir := src
@@ -14,6 +15,11 @@ dep_dir := $(obj_dir)/.deps
 # external libs
 extlibs_incl := $(addprefix $(lib_dir)/, pugixml/include json/single_include expected/include)
 extlibs_dirs := $(addprefix $(lib_dir)/, pugixml/lib)
+
+ifdef ELFUTILS_PREFIX
+extlibs_incl += $(ELFUTILS_PREFIX)/include
+extlibs_dirs += $(ELFUTILS_PREFIX)/lib
+endif
 
 # files
 src  := $(shell find src/ -type f -name '*.cpp')
