@@ -401,8 +401,9 @@ tracer_error tracer::trace(const registered_traps* traps)
                         return get_syserror(errnum,
                             tracer_errcode::PTRACE_ERROR, tid, "PTRACE_POKEDATA");
                     log::logline(log::debug,
-                        "[%d] reset original word at function return @ 0x%" PRIxPTR,
-                        tid, addr);
+                        "[%d] reset original word at function return @ 0x%" PRIxPTR
+                        " (0x%lx -> 0x%lx)",
+                        tid, addr, set_trap(origword), origword);
                     end_ctx = &**func_end_ctx;
                 }
                 else
