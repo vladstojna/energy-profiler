@@ -31,6 +31,7 @@ This project can be divided into three components:
 * `cmake` - for building the necessary dependencies
 * `gcc` - any version with C++17 support or later (tested with 10.1 and later)
 * `libdwarf` - for source code line profiling (optional)
+* `elfutils` (`libelf` and `libdw`) - used to gather ELF and DWARF information
 * `libnrg` - for reading the energy/power sensors (located in `nrg`)
 
 Make sure to build [`libnrg`](nrg/README.md) before proceeding further.
