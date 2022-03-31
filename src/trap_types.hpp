@@ -26,8 +26,10 @@ namespace tep
 
     struct function_return : address {};
 
-    struct inline_function : function_call
+    struct inline_function : address
     {
+        const dbg::function* func;
+        const dbg::function_symbol* sym;
         const dbg::inline_instance* inst;
     };
 
