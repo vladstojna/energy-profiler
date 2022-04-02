@@ -10,6 +10,8 @@ namespace tep
 {
     struct address
     {
+        using is_trap_context = void;
+
         uintptr_t value;
         const dbg::compilation_unit* cu;
 
