@@ -48,7 +48,7 @@ namespace tep
         const nrgprf::reader* _reader;
 
     public:
-        sampler(const nrgprf::reader*);
+        explicit sampler(const nrgprf::reader*);
 
     protected:
         const nrgprf::reader* reader() const;
@@ -77,7 +77,7 @@ namespace tep
     class sync_sampler : public sampler
     {
     public:
-        sync_sampler(const nrgprf::reader*);
+        using sampler::sampler;
 
     private:
         sampler_expected results() override;
@@ -89,20 +89,16 @@ namespace tep
 
     class async_sampler : public sampler
     {
-    private:
+    protected:
         std::future<sampler_expected> _future;
 
     public:
-        async_sampler(const nrgprf::reader*);
+        explicit async_sampler(const nrgprf::reader*);
         ~async_sampler();
 
         bool valid() const;
 
     protected:
-        decltype(_future)& ftr();
-        const decltype(_future)& ftr() const;
-        void ftr(decltype(_future)&&);
-
         virtual sampler_expected async_work() = 0;
     };
 
@@ -162,12 +158,17 @@ namespace tep
     class periodic_sampler : public async_sampler
     {
     private:
-        signaler _sig;
         std::atomic_bool _finished;
         std::chrono::milliseconds _period;
 
+    protected:
+        signaler _sig;
+
     public:
-        periodic_sampler(const nrgprf::reader*, const std::chrono::milliseconds& period);
+        periodic_sampler(
+            const nrgprf::reader*,
+            const std::chrono::milliseconds& period);
+
         ~periodic_sampler();
 
         sampler_promise run() & override;
@@ -176,9 +177,6 @@ namespace tep
         const std::chrono::milliseconds& period() const;
 
     protected:
-        signaler& sig();
-        const signaler& sig() const;
-
         bool finished() const;
 
     private:
@@ -188,10 +186,16 @@ namespace tep
 
     class bounded_ps final : public periodic_sampler
     {
-    public:
-        static std::chrono::milliseconds default_period;
+    private:
+        timed_sample _first;
+        timed_sample _last;
 
-        bounded_ps(const nrgprf::reader*, const std::chrono::milliseconds& period = default_period);
+    public:
+        static const std::chrono::milliseconds default_period;
+
+        bounded_ps(
+            const nrgprf::reader*,
+            const std::chrono::milliseconds& period = default_period);
 
     protected:
         sampler_expected async_work() override;
@@ -201,12 +205,15 @@ namespace tep
     class unbounded_ps final : public periodic_sampler
     {
     private:
-        size_t _initial_size;
+        timed_execution _exec;
 
     public:
-        static std::chrono::milliseconds default_period;
+        static const std::chrono::milliseconds default_period;
+        static const size_t default_initial_size;
 
-        unbounded_ps(const nrgprf::reader*, size_t initial_size,
+        unbounded_ps(
+            const nrgprf::reader*,
+            size_t initial_size = default_initial_size,
             const std::chrono::milliseconds& period = default_period);
 
     protected:

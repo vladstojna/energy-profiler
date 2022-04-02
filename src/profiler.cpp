@@ -70,19 +70,42 @@ namespace
         if (misc.holds<cfg::method_total_t>())
         {
             if (misc.get<cfg::method_total_t>().short_section)
-                return [reader]() { return std::make_unique<short_sampler>(reader); };
+            {
+                return [reader]()
+                {
+                    return std::make_unique<short_sampler>(reader);
+                };
+            }
             else
-                return[reader]() { return std::make_unique<bounded_ps>(reader); };
+            {
+                return[reader]()
+                {
+                    return std::make_unique<bounded_ps>(reader,
+                        bounded_ps::default_period);
+                };
+            }
         }
         else if (misc.holds<cfg::method_profile_t>())
         {
             const auto& attr = misc.get<cfg::method_profile_t>();
             const auto& interval = attr.interval;
-            size_t samples = attr.samples ? *attr.samples : 384UL;
-            return [reader, samples, interval]()
+            if (attr.samples)
             {
-                return std::make_unique<unbounded_ps>(reader, samples, interval);
-            };
+                auto samples = *attr.samples;
+                return [reader, samples, interval]()
+                {
+                    return std::make_unique<unbounded_ps>(
+                        reader, samples, interval);
+                };
+            }
+            else
+            {
+                return [reader, interval]()
+                {
+                    return std::make_unique<unbounded_ps>(
+                        reader, unbounded_ps::default_initial_size, interval);
+                };
+            }
         }
         else
         {
