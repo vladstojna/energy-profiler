@@ -11,12 +11,10 @@
 
 #include <atomic>
 #include <future>
-#include <vector>
 
 namespace tep
 {
 
-    using timed_execution = std::vector<timed_sample>;
     using sampler_expected = nonstd::expected<timed_execution, std::error_code>;
     using sampler_promise = std::function<sampler_expected()>;
 

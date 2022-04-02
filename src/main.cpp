@@ -9,6 +9,8 @@
 #include "dbg/object_info.hpp"
 #include "dbg/error.hpp"
 
+#include <nonstd/expected.hpp>
+
 #include <cstring>
 #include <iostream>
 
