@@ -4,6 +4,8 @@
 
 #include "syscall_types.hpp"
 
+#include <util/expectedfwd.hpp>
+
 #include <cstddef>
 #include <cstdint>
 #include <sys/user.h>
@@ -42,6 +44,11 @@ namespace tep
         void set_ip(uintptr_t addr) noexcept;
         void rewind_trap() noexcept;
         syscall_entry get_syscall_entry() const noexcept;
+
+        uintptr_t get_stack_pointer() const noexcept;
+
+        nonstd::expected<uintptr_t, tracer_error>
+            get_return_address() const noexcept;
     };
 
 }

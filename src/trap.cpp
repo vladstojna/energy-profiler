@@ -83,123 +83,37 @@ bool tep::operator!=(start_addr lhs, start_addr rhs)
     return !(lhs == rhs);
 }
 
-namespace tep::pos
-{
-
-    std::filesystem::path line::filename() const
-    {
-        return path.filename();
-    }
-
-    std::ostream& operator<<(std::ostream& os, const none&)
-    {
-        return os << "<none>";
-    }
-
-    std::ostream& operator<<(std::ostream& os, const line& l)
-    {
-        return os << l.filename().string() << ":" << l.line;
-    }
-
-    std::ostream& operator<<(std::ostream& os, const function& f)
-    {
-        return os << f.name;
-    }
-
-    std::ostream& operator<<(std::ostream& os, const function_full& ff)
-    {
-        return os << ff.at << ":" << ff.name;
-    }
-
-    std::ostream& operator<<(std::ostream& os, const address& a)
-    {
-        std::ios::fmtflags flags(os.flags());
-        os << "0x" << std::hex << a.at;
-        os.flags(flags);
-        return os;
-    }
-
-    std::ostream& operator<<(std::ostream& os, const named_pos& sp)
-    {
-        std::visit([&os](auto&& p)
-            {
-                os << p;
-            }, sp);
-        return os;
-    }
-
-    std::ostream& operator<<(std::ostream& os, const interval& i)
-    {
-        os << i.start << " - " << i.end;
-        return os;
-    }
-
-    std::ostream& operator<<(std::ostream& os, const offset& o)
-    {
-        os << o.start << "+" << address{ o.off };
-        return os;
-    }
-
-    std::ostream& operator<<(std::ostream& os, const single_pos& sp)
-    {
-        std::visit([&os](auto&& p)
-            {
-                os << p;
-            }, sp);
-        return os;
-    }
-
-    std::ostream& operator<<(std::ostream& os, const any& a)
-    {
-        std::visit([&os](auto&& p)
-            {
-                os << p;
-            }, a);
-        return os;
-    }
-}
-
 std::ostream& tep::operator<<(std::ostream& os, const trap& t)
 {
-    return t.print(os);
+    t.print(os);
+    return os;
 }
 
-trap::trap(long origword, const pos::single_pos& at) :
+trap::trap(long origword, trap_context ctx) noexcept :
     _origword(origword),
-    _at(at)
+    _context(std::move(ctx))
 {}
 
-trap::trap(long origword, pos::single_pos&& at) :
-    _origword(origword),
-    _at(std::move(at))
-{}
-
-long trap::origword() const
+long trap::origword() const noexcept
 {
     return _origword;
 }
 
-pos::single_pos& trap::at()
+const trap_context& trap::context() const noexcept
 {
-    return _at;
+    return _context;
 }
 
-const pos::single_pos& trap::at() const
+void trap::print(std::ostream& os) const
 {
-    return _at;
-}
-
-std::ostream& trap::print(std::ostream& os) const
-{
-    os << at() << " [";
+    os << context() << " [";
     std::ios::fmtflags flags(os.flags());
     os << std::hex << std::setfill('0') << std::setw(16) << origword();
     os.flags(flags);
     os << "]";
-    return os;
 }
 
-bool start_trap::allow_concurrency() const
+bool start_trap::allow_concurrency() const noexcept
 {
     return _allow_concurrency;
 }
@@ -209,26 +123,20 @@ std::unique_ptr<sampler> start_trap::create_sampler() const
     return _creator();
 }
 
-end_trap::end_trap(long origword, pos::single_pos&& at, start_addr addr) :
-    trap(origword, std::move(at)),
+end_trap::end_trap(long origword, trap_context ctx, start_addr addr) :
+    trap(origword, std::move(ctx)),
     _start(addr)
 {}
 
-end_trap::end_trap(long origword, const pos::single_pos& at, start_addr addr) :
-    trap(origword, at),
-    _start(addr)
-{}
-
-start_addr end_trap::associated_with() const
+start_addr end_trap::associated_with() const noexcept
 {
     return _start;
 }
 
-std::ostream& end_trap::print(std::ostream& os) const
+void end_trap::print(std::ostream& os) const
 {
     trap::print(os);
     os << " <-> " << associated_with();
-    return os;
 }
 
 std::pair<const start_trap*, bool> registered_traps::insert(start_addr a, start_trap&& st)

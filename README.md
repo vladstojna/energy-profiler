@@ -30,7 +30,7 @@ This project can be divided into three components:
 * `wget` - for downloading the necessary dependencies
 * `cmake` - for building the necessary dependencies
 * `gcc` - any version with C++17 support or later (tested with 10.1 and later)
-* `libdwarf` - for source code line profiling (optional)
+* `elfutils` (`libelf` and `libdw`) - used to gather ELF and DWARF information
 * `libnrg` - for reading the energy/power sensors (located in `nrg`)
 
 Make sure to build [`libnrg`](nrg/README.md) before proceeding further.
@@ -69,8 +69,6 @@ make cpp="MY_MACRO_DEFINITION"
 
 Supported preprocessor definitions are:
 
-* `TEP_USE_LIBDWARF` - enable support for source line profiling
-  (requires `libdwarf` and is disabled by default)
 * `NO_ASLR` - disable ASLR for the target executable (enabled by default)
 
 The building procedure will generate an executable `profiler` in `bin`.
@@ -85,8 +83,8 @@ Configuration file used for profiling the main function:
         <!-- read from the CPU energy/power interfaces -->
         <section target="cpu">
             <bounds>
-                <!-- measure the 'main' function -->
-                <func name="main"/>
+                <!-- measure the 'hello' function -->
+                <func name="hello"/>
             </bounds>
             <!-- allow execution of other threads during the profiling -->
             <allow_concurrency/>
@@ -148,8 +146,34 @@ Output example (some information omitted for clarity):
                                 }
                             ],
                             "range": {
-                                "end": "main+0x123",
-                                "start": "main"
+                                "start": {
+                                    "address": "0x200",
+                                    "compilation_unit": {
+                                        "path": "main.cpp"
+                                    },
+                                    "function_call": {
+                                        "function": {
+                                            "static": false,
+                                            "declared": {
+                                                "column": 6,
+                                                "file": "main.cpp",
+                                                "line": 10
+                                            }
+                                        },
+                                        "symbol": {
+                                            "binding": "global",
+                                            "address": "0x200",
+                                            "local_entrypoint": "0x200",
+                                            "size": "0x20",
+                                            "mangled_name": "_Z5hellov",
+                                            "demangled_name": "hello()"
+                                        }
+                                    }
+                                },
+                                "end": {
+                                    "function_return": true,
+                                    "absolute_address": "0x323"
+                                }
                             },
                             "sample_times": [
                                 1633599496065031147,
@@ -221,8 +245,10 @@ The profiler does not yet support profiling:
 
 * Sections/functions which require inter-thread communication during their execution.
   This is only the case when `<allow_concurrency/>` is omitted in the configuration file.
-* Functions which have been inlined by the compiler.
-* Functions whose return instructions have been optimised out.
+* Nested evaluated sections: one or more sections to be profiled inside another
+  section to be profiled.
+* Functions which have been inlined non-contiguously by the compiler into multiple
+  contiguous ranges and interleaved with other code.
 
 ## Additional Information
 

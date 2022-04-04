@@ -3,11 +3,11 @@
 #pragma once
 
 #include "config.hpp"
-#include "dbg.hpp"
 #include "flags.hpp"
 #include "output.hpp"
 #include "reader_container.hpp"
 #include "trap.hpp"
+#include "dbg/object_info.hpp"
 
 #include <util/expectedfwd.hpp>
 
@@ -25,44 +25,34 @@ namespace tep
                 std::iterator_traits<profiling_results::container::iterator>::difference_type,
                 std::iterator_traits<group_output::container::iterator>::difference_type
             >;
-            using map_type = std::unordered_map<addr_bounds, distance_pair, addr_bounds_hash>;
+            using map_type = std::unordered_map<start_addr, distance_pair, start_addr::hash>;
 
             map_type map;
             profiling_results results;
 
             output_mapping() = default;
 
-            bool insert(addr_bounds,
+            bool insert(start_addr,
                 const reader_container&,
                 const cfg::group_t&,
                 const cfg::section_t&);
 
-            section_output* find(addr_bounds);
+            section_output* find(start_addr);
         };
 
         pid_t _tid;
         pid_t _child;
         flags _flags;
-        dbg_info _dli;
+        dbg::object_info _dli;
         cfg::config_t _cd;
         reader_container _readers;
         registered_traps _traps;
         output_mapping _output;
 
     public:
-        profiler(pid_t child, const flags& flags,
-            const dbg_info& dli, const cfg::config_t& cd);
+        profiler(pid_t child, flags, dbg::object_info, cfg::config_t);
 
-        profiler(pid_t child, const flags& flags,
-            const dbg_info& dli, cfg::config_t&& cd);
-
-        profiler(pid_t child, const flags& flags,
-            dbg_info&& dli, const cfg::config_t& cd);
-
-        profiler(pid_t child, const flags& flags,
-            dbg_info&& dli, cfg::config_t&& cd);
-
-        const dbg_info& debug_line_info() const;
+        const dbg::object_info& debug_line_info() const;
         const cfg::config_t& config() const;
         const registered_traps& traps() const;
 

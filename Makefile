@@ -3,6 +3,7 @@ std := c++17
 override cpp +=
 
 LIB_PREFIX ?= lib
+ELFUTILS_PREFIX ?=
 
 # directories
 src_dir := src
@@ -15,8 +16,13 @@ dep_dir := $(obj_dir)/.deps
 extlibs_incl := $(addprefix $(lib_dir)/, pugixml/include json/single_include expected/include)
 extlibs_dirs := $(addprefix $(lib_dir)/, pugixml/lib)
 
+ifdef ELFUTILS_PREFIX
+extlibs_incl += $(ELFUTILS_PREFIX)/include
+extlibs_dirs += $(ELFUTILS_PREFIX)/lib
+endif
+
 # files
-src  := $(wildcard src/*.cpp)
+src  := $(shell find src/ -type f -name '*.cpp')
 obj  := $(patsubst $(src_dir)/%.cpp, $(obj_dir)/%.o, $(src))
 deps := $(patsubst $(src_dir)/%.cpp, $(dep_dir)/%.d, $(src))
 tgt  := $(tgt_dir)/profiler
@@ -42,12 +48,8 @@ ldflags += -flto
 endif
 
 # linker flags
-ldflags := -pthread -lpugixml -lnrg -lstdc++fs
+ldflags := -pthread -lpugixml -lnrg -lstdc++fs -lelf -ldw
 ldflags += $(addprefix -L, $(extlibs_dirs) nrg/lib)
-
-ifneq (,$(findstring TEP_USE_LIBDWARF, $(cpp)))
-ldflags += -lbfd -ldwarf
-endif
 
 # rpath
 ldflags += -Wl,-rpath='$$ORIGIN/../nrg/lib'
@@ -59,10 +61,8 @@ default: $(tgt)
 
 $(tgt_dir):
 	@mkdir -p $@
-$(obj_dir):
-	@mkdir -p $@
-$(dep_dir):
-	@mkdir -p $@
+$(obj_dir) $(dep_dir):
+	@mkdir -p $@/dbg $@/output
 
 $(tgt): $(obj) | $(tgt_dir)
 	$(cc) $^ $(ldflags) -o $@

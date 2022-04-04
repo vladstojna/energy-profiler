@@ -20,4 +20,14 @@ namespace tep
     // i.e., null-terminated array of null-terminated strings
     nonstd::expected<std::vector<std::string>, tracer_error>
         get_strings(pid_t pid, uintptr_t address);
+
+    /**
+     * @brief Insert trap at address and returns the old word value
+     *
+     * @param pid the pid of the tracee process
+     * @param addr the address
+     * @return nonstd::expected<long, tracer_error>
+     */
+    nonstd::expected<long, tracer_error>
+        insert_trap(pid_t pid, uintptr_t addr);
 }

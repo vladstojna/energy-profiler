@@ -1,6 +1,7 @@
 #include "ptrace_misc.hpp"
 #include "ptrace_wrapper.hpp"
 #include "error.hpp"
+#include "util.hpp"
 
 #include "nonstd/expected.hpp"
 
@@ -63,5 +64,24 @@ namespace tep
             vec.push_back(*str);
         }
         return vec;
+    }
+
+    nonstd::expected<long, tracer_error>
+        insert_trap(pid_t pid, uintptr_t addr)
+    {
+        using unexpected = nonstd::expected<long, tracer_error>::unexpected_type;
+        ptrace_wrapper& pw = ptrace_wrapper::instance;
+        int error;
+        long word = pw.ptrace(error, PTRACE_PEEKDATA, pid, addr, 0);
+        if (error)
+            return unexpected{
+                get_syserror(error, tracer_errcode::PTRACE_ERROR, pid,
+                "insert_trap: PTRACE_PEEKDATA") };
+        long new_word = set_trap(word);
+        if (pw.ptrace(error, PTRACE_POKEDATA, pid, addr, new_word) < 0)
+            return unexpected{
+                get_syserror(error, tracer_errcode::PTRACE_ERROR, pid,
+                "insert_trap: PTRACE_POKEDATA") };
+        return word;
     }
 }

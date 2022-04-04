@@ -2,6 +2,8 @@
 
 #pragma once
 
+#include "trap_context.hpp"
+
 #include <chrono>
 #include <cstdint>
 #include <filesystem>
@@ -16,63 +18,6 @@ namespace tep
     class sampler;
 
     using sampler_creator = std::function<std::unique_ptr<sampler>()>;
-
-    namespace pos
-    {
-        struct none
-        {};
-
-        struct line
-        {
-            std::filesystem::path path;
-            uint32_t line;
-            std::filesystem::path filename() const;
-        };
-
-        struct function
-        {
-            std::string name;
-        };
-
-        struct function_full : function
-        {
-            line at;
-        };
-
-        struct address
-        {
-            uintptr_t at;
-        };
-
-        using named_pos = std::variant<line, function, function_full>;
-
-        struct offset
-        {
-            named_pos start;
-            uintptr_t off;
-        };
-
-        using single_pos = std::variant<address, named_pos, offset>;
-
-        struct interval
-        {
-            single_pos start;
-            single_pos end;
-        };
-
-        using any = std::variant<none, single_pos, interval>;
-
-        std::ostream& operator<<(std::ostream& os, const none&);
-        std::ostream& operator<<(std::ostream& os, const line&);
-        std::ostream& operator<<(std::ostream& os, const function&);
-        std::ostream& operator<<(std::ostream& os, const function_full&);
-        std::ostream& operator<<(std::ostream& os, const address&);
-        std::ostream& operator<<(std::ostream& os, const named_pos&);
-        std::ostream& operator<<(std::ostream& os, const offset&);
-        std::ostream& operator<<(std::ostream& os, const single_pos&);
-        std::ostream& operator<<(std::ostream& os, const interval&);
-        std::ostream& operator<<(std::ostream& os, const any&);
-    }
 
     // trap related classes
 
@@ -119,26 +64,23 @@ namespace tep
     {
     private:
         long _origword;
-        pos::single_pos _at;
-
-    protected:
-        ~trap() = default;
+        trap_context _context;
 
     public:
-        trap(long origword, const pos::single_pos& at);
-        trap(long origword, pos::single_pos&& at);
+        trap(long origword, trap_context) noexcept;
 
-        trap(trap&& other) = default;
-        trap& operator=(trap&& other) = default;
+        trap(trap&&) = default;
+        trap& operator=(trap&&) = default;
 
-        long origword() const;
-        pos::single_pos& at();
-        const pos::single_pos& at() const;
+        long origword() const noexcept;
+        const trap_context& context() const noexcept;
 
         friend std::ostream& operator<<(std::ostream&, const trap&);
 
     protected:
-        virtual std::ostream& print(std::ostream& os) const;
+        ~trap() = default;
+
+        virtual void print(std::ostream&) const;
     };
 
     class start_trap : public trap
@@ -151,28 +93,16 @@ namespace tep
         template<typename Creator>
         start_trap(
             long origword,
-            pos::single_pos&& at,
+            trap_context ctx,
             bool allow_concurrency,
             Creator&& callable)
             :
-            trap(origword, std::move(at)),
+            trap(origword, std::move(ctx)),
             _allow_concurrency(allow_concurrency),
             _creator(std::forward<Creator>(callable))
         {}
 
-        template<typename Creator>
-        start_trap(
-            long origword,
-            const pos::single_pos& at,
-            bool allow_concurrency,
-            Creator&& callable)
-            :
-            trap(origword, at),
-            _allow_concurrency(allow_concurrency),
-            _creator(std::forward<Creator>(callable))
-        {}
-
-        bool allow_concurrency() const;
+        bool allow_concurrency() const noexcept;
         std::unique_ptr<sampler> create_sampler() const;
     };
 
@@ -182,13 +112,12 @@ namespace tep
         start_addr _start;
 
     public:
-        end_trap(long origword, pos::single_pos&&, start_addr);
-        end_trap(long origword, const pos::single_pos&, start_addr);
+        end_trap(long origword, trap_context, start_addr);
 
-        start_addr associated_with() const;
+        start_addr associated_with() const noexcept;
 
     protected:
-        std::ostream& print(std::ostream& os) const override;
+        void print(std::ostream&) const override;
     };
 
     class registered_traps
