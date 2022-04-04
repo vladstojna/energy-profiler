@@ -75,7 +75,7 @@ The building procedure will generate an executable `profiler` in `bin`.
 
 ## Examples
 
-Configuration file used for profiling the main function:
+Configuration file used for profiling the `hello` function:
 
 ```xml
 <config>
