@@ -211,6 +211,7 @@ options:
   -o, --output <file>           (optional) write profiling results to <file>; if <file> is 'stdout' then stdout is used (default: stdout)
   -q, --quiet                   suppress log messages except errors to stderr (default: off)
   -l, --log <file>              (optional) write log to <file> (default: stdout)
+  --debug-dump <file>           (optional) dump gathered debug info in JSON format to <file>
   --idle                        gather idle readings at startup (default)
   --no-idle                     opposite of --idle
   --cpu-sensors {MASK,all}      mask of CPU sensors to read in hexadecimal, overwrites config value (default: use value in config)

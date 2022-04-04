@@ -44,6 +44,7 @@ namespace tep
         flags profiler_flags;
         optional_input_file config;
         optional_output_file output;
+        std::ofstream debug_dump;
         log_args logargs;
         std::string target;
         char* const* argv;

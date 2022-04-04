@@ -165,6 +165,10 @@ void print_usage(const char* profiler_name)
         << "(optional) write log to <file> (default: stdout)"
         << "\n";
 
+    std::cout << parameter{ "--debug-dump <file>" }
+        << "(optional) dump gathered debug info in JSON format to <file>"
+        << "\n";
+
     std::cout << parameter{ "--idle" }
         << "gather idle readings at startup (default)"
         << "\n";
@@ -208,6 +212,7 @@ std::optional<arguments> tep::parse_arguments(int argc, char* const argv[])
     std::string config;
     std::string logpath;
     std::string executable;
+    std::string debug_dump;
 
     unsigned long long cpu_sensors = 0;
     unsigned long long cpu_sockets = 0;
@@ -226,6 +231,7 @@ std::optional<arguments> tep::parse_arguments(int argc, char* const argv[])
         { cpu_sockets_str.data(), required_argument, nullptr, 0x101 },
         { gpu_devices_str.data(), required_argument, nullptr, 0x102 },
         { "exec",                 required_argument, nullptr, 0x103 },
+        { "debug-dump",           required_argument, nullptr, 0x104 },
         { nullptr, 0, nullptr, 0 }
     };
 
@@ -265,6 +271,14 @@ std::optional<arguments> tep::parse_arguments(int argc, char* const argv[])
                 return std::nullopt;
             }
             break;
+        case 0x104:
+            debug_dump = optarg;
+            if (debug_dump.empty())
+            {
+                std::cerr << "--" << long_options[option_index].name << " cannot be empty\n";
+                return std::nullopt;
+            }
+            break;
         case 'c':
             config = optarg;
             break;
@@ -299,8 +313,16 @@ std::optional<arguments> tep::parse_arguments(int argc, char* const argv[])
         return std::nullopt;
     }
 
+    auto create_debug_dump = [](const std::string& path)
+    {
+        if (path.empty())
+            return std::ofstream{};
+        return std::ofstream{ path };
+    };
+
     optional_output_file of(output);
     optional_input_file cfg(config);
+    std::ofstream dd = create_debug_dump(debug_dump);
 
     if (!of)
     {
@@ -311,6 +333,12 @@ std::optional<arguments> tep::parse_arguments(int argc, char* const argv[])
     if (!cfg)
     {
         std::cerr << "error opening config file '" << config << "': "
+            << strerror(errno) << "\n";
+        return std::nullopt;
+    }
+    if (!dd)
+    {
+        std::cerr << "error opening debug dump file '" << debug_dump << "': "
             << strerror(errno) << "\n";
         return std::nullopt;
     }
@@ -338,6 +366,7 @@ std::optional<arguments> tep::parse_arguments(int argc, char* const argv[])
         flags{ bool(idle), cpu_sensors, cpu_sockets, gpu_devices },
         std::move(config),
         std::move(of),
+        std::move(dd),
         log_args{ bool(quiet), std::move(logpath) },
         std::move(executable),
         &argv[optind]
