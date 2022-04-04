@@ -20,6 +20,7 @@ namespace tep
 
     class cpu_gp_regs;
     class registered_traps;
+    class trap;
 
     template<typename R>
     using tracer_expected = nonstd::expected<R, tracer_error>;
@@ -80,7 +81,8 @@ namespace tep
         tracer_error stop_tracees(const tracer& excl) const;
         tracer_error stop_self() const;
         tracer_error wait_for_tracee(int& wait_status) const;
-        tracer_error handle_breakpoint(cpu_gp_regs& regs, uintptr_t ep, long origw) const;
+        tracer_error reset_trap(const trap&, uintptr_t addr) const;
+        tracer_error handle_breakpoint(cpu_gp_regs& regs, const trap&) const;
         tracer_error trace(const registered_traps* traps);
     };
 

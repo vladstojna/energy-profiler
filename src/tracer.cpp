@@ -178,7 +178,7 @@ tracer_error tracer::wait_for_tracee(int& wait_status) const
     return tracer_error::success();
 }
 
-tracer_error tracer::handle_breakpoint(cpu_gp_regs& regs, uintptr_t ep, long origw) const
+tracer_error tracer::handle_breakpoint(cpu_gp_regs& regs, const trap& t) const
 {
     ptrace_wrapper& pw = ptrace_wrapper::instance;
     int errnum;
@@ -191,15 +191,15 @@ tracer_error tracer::handle_breakpoint(cpu_gp_regs& regs, uintptr_t ep, long ori
     if (errnum)
         return get_syserror(errnum, tracer_errcode::PTRACE_ERROR, tid, "PTRACE_PEEKDATA");
     log::logline(log::debug, "[%d] peeked word @ 0x%" PRIxPTR " (0x%" PRIxPTR ") with value 0x%lx",
-        tid, bp_addr, bp_addr - ep, trap_word);
+        tid, bp_addr, bp_addr - _ep, trap_word);
 
     // set the registers and write the original word
     if (auto error = regs.setregs())
         return error;
-    if (pw.ptrace(errnum, PTRACE_POKEDATA, _tracee, bp_addr, origw) == -1)
+    if (pw.ptrace(errnum, PTRACE_POKEDATA, _tracee, bp_addr, t.origword()) == -1)
         return get_syserror(errnum, tracer_errcode::PTRACE_ERROR, tid, "PTRACE_POKEDATA");
     log::logline(log::debug, "[%d] reset original word @ 0x%" PRIxPTR " (0x%" PRIxPTR "), 0x%lx -> 0x%lx",
-        tid, bp_addr, bp_addr - ep, trap_word, origw);
+        tid, bp_addr, bp_addr - _ep, trap_word, t.origword());
 
     // single-step and reset the trap instruction
     if (pw.ptrace(errnum, PTRACE_SINGLESTEP, _tracee, 0, 0) == -1)
@@ -221,7 +221,7 @@ tracer_error tracer::handle_breakpoint(cpu_gp_regs& regs, uintptr_t ep, long ori
         if (auto error = regs.getregs())
             return error;
         log::logline(log::warning, "[%d] SIGSTOP signal suppressed @ 0x%" PRIxPTR " (0x%" PRIxPTR ")", tid,
-            regs.get_ip(), regs.get_ip() - ep);
+            regs.get_ip(), regs.get_ip() - _ep);
     }
 
     if (!is_breakpoint_trap(wait_status))
@@ -234,13 +234,7 @@ tracer_error tracer::handle_breakpoint(cpu_gp_regs& regs, uintptr_t ep, long ori
     if (auto error = regs.getregs())
         return error;
     log::logline(log::info, "[%d] single-stepped @ 0x%" PRIxPTR " (0x%" PRIxPTR ")", tid,
-        regs.get_ip(), regs.get_ip() - ep);
-
-    // reset the trap byte
-    if (pw.ptrace(errnum, PTRACE_POKEDATA, _tracee, bp_addr, trap_word) == -1)
-        return get_syserror(errnum, tracer_errcode::PTRACE_ERROR, tid, "PTRACE_POKEDATA");
-    log::logline(log::debug, "[%d] reset trap word @ 0x%" PRIxPTR " (0x%" PRIxPTR "), 0x%lx -> 0x%lx",
-        tid, bp_addr, bp_addr - ep, origw, trap_word);
+        regs.get_ip(), regs.get_ip() - _ep);
 
     return tracer_error::success();
 }
@@ -325,7 +319,7 @@ tracer_error tracer::trace(const registered_traps* traps)
             else
                 log::logline(log::info, "[%d] concurrency allowed; not stopping tracees", tid);
 
-            if (auto error = handle_breakpoint(regs, entrypoint, strap->origword()))
+            if (auto error = handle_breakpoint(regs, *strap))
                 return error;
             _sampler = strap->create_sampler();
 
@@ -421,10 +415,14 @@ tracer_error tracer::trace(const registered_traps* traps)
                     }
                     log::logline(log::info, "[%d] reached ending trap located @ %s",
                         tid, to_string(etrap->context()).c_str());
-                    if (auto error = handle_breakpoint(regs, entrypoint, etrap->origword()))
+                    if (auto error = handle_breakpoint(regs, *etrap))
                         return error;
+                    if (auto err = reset_trap(*etrap, end_bp_addr.val()))
+                        return err;
                     end_ctx = &etrap->context();
                 }
+                if (auto err = reset_trap(*strap, start_bp_addr.val()))
+                    return err;
 
                 // if sampling thread generated an error, register execution as a failed one
                 // in the gathered results collection
@@ -495,4 +493,25 @@ bool tep::operator==(const tracer& lhs, const tracer& rhs)
 bool tep::operator!=(const tracer& lhs, const tracer& rhs)
 {
     return lhs.tracee() != rhs.tracee();
+}
+
+tracer_error tep::tracer::reset_trap(const trap& t, uintptr_t addr) const
+{
+    int errnum;
+    pid_t tid = gettid();
+    auto& pw = ptrace_wrapper::instance;
+    if (pw.ptrace(errnum, PTRACE_POKEDATA, _tracee,
+        addr, set_trap(t.origword())) == -1)
+    {
+        return get_syserror(errnum,
+            tracer_errcode::PTRACE_ERROR, tid, "PTRACE_POKEDATA");
+    }
+    log::logline(log::debug,
+        "[%d] reset %s trap word @ 0x%" PRIxPTR
+        " (0x%" PRIxPTR "), 0x%lx -> 0x%lx",
+        tid,
+        to_string(t.context()).c_str(),
+        addr, addr - _ep,
+        t.origword(), set_trap(t.origword()));
+    return tracer_error::success();
 }
