@@ -2,7 +2,7 @@
 
 #pragma once
 
-#include "sampler.hpp"
+#include "timed_sample.hpp"
 #include "trap_context.hpp"
 #include "output/fwd.hpp"
 

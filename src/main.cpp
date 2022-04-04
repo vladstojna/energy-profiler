@@ -10,6 +10,8 @@
 #include "dbg/error.hpp"
 #include "dbg/dump.hpp"
 
+#include <nonstd/expected.hpp>
+
 #include <cstring>
 #include <iostream>
 

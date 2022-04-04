@@ -3,6 +3,7 @@
 #include <nrg/sample.hpp>
 
 #include <chrono>
+#include <vector>
 
 namespace tep
 {
@@ -27,4 +28,6 @@ namespace tep
 
         duration operator-(const timed_sample&) const noexcept;
     };
+
+    using timed_execution = std::vector<timed_sample>;
 }
