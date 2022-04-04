@@ -10,7 +10,7 @@
 #include "reader_container.hpp"
 #include "error.hpp"
 #include "sampler.hpp"
-#include "trap.hpp"
+#include "trap_context.hpp"
 #include "util.hpp"
 
 #include <util/expectedfwd.hpp>
@@ -19,16 +19,22 @@ namespace tep
 {
 
     class cpu_gp_regs;
+    class registered_traps;
 
     template<typename R>
     using tracer_expected = nonstd::expected<R, tracer_error>;
 
+    struct results_entry
+    {
+        trap_context start;
+        trap_context end;
+        sampler_expected values;
+    };
+
     class tracer
     {
     public:
-        using gathered_results = std::unordered_map<addr_bounds,
-            std::vector<sampler_expected>,
-            addr_bounds_hash>;
+        using gathered_results = std::vector<results_entry>;
 
     private:
         static std::mutex TRAP_BARRIER;

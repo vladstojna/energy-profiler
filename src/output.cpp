@@ -1,7 +1,7 @@
 // output.cpp
 
 #include "output.hpp"
-#include "trap.hpp"
+#include "output/output_writer.hpp"
 
 #include <nrg/reader_gpu.hpp>
 #include <nrg/reader_rapl.hpp>
@@ -66,32 +66,6 @@ namespace
     }
 }
 
-namespace tep::detail
-{
-    class output_impl
-    {
-    private:
-        nlohmann::json* _json;
-
-    public:
-        output_impl(nlohmann::json& json) :
-            _json(&json)
-        {}
-
-        nlohmann::json& json()
-        {
-            assert(_json != nullptr);
-            return *_json;
-        }
-
-        const nlohmann::json& json() const
-        {
-            assert(_json != nullptr);
-            return *_json;
-        }
-    };
-}
-
 namespace nlohmann
 {
     template<>
@@ -146,21 +120,21 @@ namespace nlohmann
 
 namespace tep
 {
-    namespace pos
+    static void to_json(nlohmann::json& j, const trap_context& ctx)
     {
-        static void to_json(nlohmann::json& j, const pos::interval& interval)
-        {
-            j = { { "start", to_string(interval.start) }, { "end", to_string(interval.end) } };
-        }
+        output_writer ow;
+        ow << ctx;
+        j = std::move(ow.json);
     }
 
     static void to_json(nlohmann::json& j, const idle_output& io)
     {
         if (!io.exec().empty())
         {
-            j["sample_times"] = io.exec();
-            detail::output_impl impl(j);
-            io.readings_out().output(impl, io.exec());
+            output_writer ow;
+            ow.json["sample_times"] = io.exec();
+            io.readings_out().output(ow, io.exec());
+            j = std::move(ow.json);
         }
     }
 
@@ -173,12 +147,12 @@ namespace tep
         json& execs = j["executions"] = nlohmann::json::array();
         for (const auto& pe : so.executions())
         {
-            json exec;
-            exec["range"] = pe.interval;
-            exec["sample_times"] = pe.exec;
-            detail::output_impl impl(exec);
-            so.readings_out().output(impl, pe.exec);
-            execs.push_back(std::move(exec));
+            output_writer exec;
+            exec.json["range"]["start"] = pe.interval.first;
+            exec.json["range"]["end"] = pe.interval.second;
+            exec.json["sample_times"] = pe.exec;
+            so.readings_out().output(exec, pe.exec);
+            execs.push_back(std::move(exec.json));
         }
     }
 
@@ -204,7 +178,7 @@ void readings_output_holder::push_back(std::unique_ptr<readings_output>&& output
     _outputs.push_back(std::move(outputs));
 }
 
-void readings_output_holder::output(detail::output_impl& os, const timed_execution& exec) const
+void readings_output_holder::output(output_writer& os, const timed_execution& exec) const
 {
     for (const auto& out : _outputs)
         out->output(os, exec);
@@ -222,14 +196,14 @@ readings_output_dev<Reader>::readings_output_dev(const Reader& r) :
 {}
 
 template<>
-void readings_output_dev<nrgprf::reader_rapl>::output(detail::output_impl& os,
+void readings_output_dev<nrgprf::reader_rapl>::output(output_writer& os,
     const timed_execution& exec) const
 {
     assert(exec.size() > 1);
     using namespace nrgprf;
     using json = nlohmann::json;
 
-    os.json()["cpu"] = json::array();
+    os.json["cpu"] = json::array();
     for (uint32_t skt = 0; skt < nrgprf::max_sockets; skt++)
     {
         json readings;
@@ -259,20 +233,20 @@ void readings_output_dev<nrgprf::reader_rapl>::output(detail::output_impl& os,
         if (!jpkg.empty() || !jcores.empty() || !juncore.empty()
             || !jdram.empty() || !jgpu.empty() || !jsys.empty())
         {
-            os.json()["cpu"].push_back(std::move(readings));
+            os.json["cpu"].push_back(std::move(readings));
         }
     }
 }
 
 template<>
-void readings_output_dev<nrgprf::reader_gpu>::output(detail::output_impl& os,
+void readings_output_dev<nrgprf::reader_gpu>::output(output_writer& os,
     const timed_execution& exec) const
 {
     assert(exec.size() > 1);
     using namespace nrgprf;
     using json = nlohmann::json;
 
-    os.json()["gpu"] = json::array();
+    os.json["gpu"] = json::array();
     for (uint32_t dev = 0; dev < nrgprf::max_devices; dev++)
     {
         json readings;
@@ -288,7 +262,7 @@ void readings_output_dev<nrgprf::reader_gpu>::output(detail::output_impl& os,
                     json::array({ unit_cast<watts<double>>(*power).count() }));
         }
         if (!readings["board"].empty())
-            os.json()["gpu"].push_back(std::move(readings));
+            os.json["gpu"].push_back(std::move(readings));
     }
 }
 

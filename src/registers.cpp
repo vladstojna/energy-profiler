@@ -4,6 +4,8 @@
 #include "ptrace_wrapper.hpp"
 #include "registers.hpp"
 
+#include <nonstd/expected.hpp>
+
 #include <elf.h>
 
 using namespace tep;
@@ -158,3 +160,55 @@ syscall_entry cpu_gp_regs::get_syscall_entry() const noexcept
 }
 
 #endif // defined(__x86_64__)
+
+#if defined(__x86_64__)
+
+uintptr_t cpu_gp_regs::get_stack_pointer() const noexcept
+{
+    return _regs.rsp;
+}
+
+#elif defined(__i386__)
+
+uintptr_t cpu_gp_regs::get_stack_pointer() const noexcept
+{
+    return _regs.esp;
+}
+
+#elif defined(__powerpc64__)
+
+uintptr_t cpu_gp_regs::get_stack_pointer() const noexcept
+{
+    return _regs.gpr[PT_R1];
+}
+
+#else
+#error Unsupported architecture
+#endif // defined(__x86_64__)
+
+#if defined(__x86_64__) || defined(__i386__)
+
+nonstd::expected<uintptr_t, tracer_error> cpu_gp_regs::get_return_address() const noexcept
+{
+    using unexpected = nonstd::expected<uintptr_t, tracer_error>::unexpected_type;
+    ptrace_wrapper& pw = ptrace_wrapper::instance;
+    int error;
+    long ret_addr = pw.ptrace(
+        error, PTRACE_PEEKDATA, _pid, get_stack_pointer() + sizeof(long), 0);
+    if (error)
+        return unexpected{
+            get_syserror(error, tracer_errcode::PTRACE_ERROR, _pid,
+            "get_return_address: PTRACE_PEEKDATA") };
+    return ret_addr;
+}
+
+#elif defined(__powerpc64__)
+
+nonstd::expected<uintptr_t, tracer_error> cpu_gp_regs::get_return_address() const noexcept
+{
+    return _regs.link;
+}
+
+#else
+#error Unsupported architecture detected
+#endif

@@ -51,10 +51,6 @@ endif
 ldflags := -pthread -lpugixml -lnrg -lstdc++fs -lelf -ldw
 ldflags += $(addprefix -L, $(extlibs_dirs) nrg/lib)
 
-ifneq (,$(findstring TEP_USE_LIBDWARF, $(cpp)))
-ldflags += -lbfd -ldwarf
-endif
-
 # rpath
 ldflags += -Wl,-rpath='$$ORIGIN/../nrg/lib'
 
@@ -66,7 +62,7 @@ default: $(tgt)
 $(tgt_dir):
 	@mkdir -p $@
 $(obj_dir) $(dep_dir):
-	@mkdir -p $@/dbg
+	@mkdir -p $@/dbg $@/output
 
 $(tgt): $(obj) | $(tgt_dir)
 	$(cc) $^ $(ldflags) -o $@
