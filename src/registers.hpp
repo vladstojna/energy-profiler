@@ -8,6 +8,7 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <sys/types.h>
 #include <sys/user.h>
 
 namespace tep {

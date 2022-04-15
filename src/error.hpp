@@ -50,8 +50,7 @@ std::ostream &operator<<(std::ostream &os, const tracer_error &e);
 // other
 
 tracer_error get_syserror__(const char *file, int line, int errnum,
-                            tracer_errcode code, pid_t tid,
-                            const char *comment);
+                            tracer_errcode code, int tid, const char *comment);
 
 #define get_syserror(errnum, code, tid, comment)                               \
   get_syserror__(__FILE__, __LINE__, errnum, code, tid, comment)

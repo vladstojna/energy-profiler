@@ -48,7 +48,7 @@ std::ostream &tep::operator<<(std::ostream &os, const tracer_error &e) {
 }
 
 tracer_error tep::get_syserror__(const char *file, int line, int errnum,
-                                 tracer_errcode code, pid_t tid,
+                                 tracer_errcode code, int tid,
                                  const char *comment) {
   char error_msg[256];
   char *msg = strerror_r(errnum, error_msg, sizeof(error_msg));
