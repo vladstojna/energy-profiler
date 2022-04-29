@@ -61,7 +61,9 @@ enum class errc : uint32_t {
   pos_no_comp_unit,
   pos_no_line,
   pos_invalid_comp_unit,
+  pos_invalid_file,
   pos_invalid_line,
+  pos_invalid_column,
   func_invalid_comp_unit,
   func_no_name,
   func_invalid_name,
@@ -120,7 +122,9 @@ struct address_range_t {
 
 struct position_t {
   std::string compilation_unit;
+  std::optional<std::string> file;
   uint32_t line;
+  uint32_t column;
 
   explicit position_t(const config_entry &);
 };
