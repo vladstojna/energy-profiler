@@ -713,13 +713,17 @@ profiler::insert_traps_position_start(const cfg::section_t &sec,
   auto cu = dbg::find_compilation_unit(_dli, pos.compilation_unit);
   if (!cu)
     return unexpected{generic_error(_tid, __func__, cu.error())};
-  auto lines = dbg::find_lines(**cu, (*cu)->path, pos.line,
-                               dbg::exact_line_value_flag::no);
+
+  std::filesystem::path file_path =
+      pos.file ? std::filesystem::path{*pos.file} : (*cu)->path;
+  auto lines =
+      dbg::find_lines(**cu, file_path, pos.line, dbg::exact_line_value_flag::no,
+                      pos.column, dbg::exact_column_value_flag::no);
   if (!lines)
-    return unexpected{generic_error(_tid, __func__, cu.error())};
+    return unexpected{generic_error(_tid, __func__, lines.error())};
   auto line = dbg::lowest_address_line(lines->first, lines->second);
   if (!line)
-    return unexpected{generic_error(_tid, __func__, cu.error())};
+    return unexpected{generic_error(_tid, __func__, line.error())};
 
   start_addr eaddr = entrypoint + (*line)->address;
   tracer_expected<long> origw = insert_trap(_child, eaddr.val());
@@ -759,15 +763,28 @@ tracer_error profiler::insert_traps_position_end(const cfg::group_t &group,
   auto cu = dbg::find_compilation_unit(_dli, pos.compilation_unit);
   if (!cu)
     return generic_error(_tid, __func__, cu.error());
-  auto lines = dbg::find_lines(**cu, (*cu)->path, pos.line,
-                               dbg::exact_line_value_flag::no);
+
+  std::filesystem::path file_path =
+      pos.file ? std::filesystem::path{*pos.file} : (*cu)->path;
+  auto lines =
+      dbg::find_lines(**cu, file_path, pos.line, dbg::exact_line_value_flag::no,
+                      pos.column, dbg::exact_column_value_flag::no);
   if (!lines)
-    return generic_error(_tid, __func__, cu.error());
+    return generic_error(_tid, __func__, lines.error());
   auto line = dbg::lowest_address_line(lines->first, lines->second);
   if (!line)
-    return generic_error(_tid, __func__, cu.error());
+    return generic_error(_tid, __func__, line.error());
 
   end_addr eaddr = entrypoint + (*line)->address;
+  if (eaddr.val() == start.val()) {
+    log::logline(log::error,
+                 "[%d] end trap @ 0x%" PRIxPTR " (offset 0x%" PRIxPTR
+                 ") address is the same as the start address",
+                 _tid, eaddr.val(), eaddr.val() - entrypoint);
+    return tracer_error(
+        tracer_errcode::NO_TRAP,
+        cmmn::concat("Trap ", ::to_string(eaddr), " equals the start trap"));
+  }
   tracer_expected<long> origw = insert_trap(_child, eaddr.val());
   if (!origw)
     return std::move(origw.error());
