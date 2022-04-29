@@ -82,7 +82,7 @@ reader_gpu_impl::reader_gpu_impl(readings_type::type rt, device_mask dev_mask,
     throw exception(sup.error());
   auto device_cnt = get_device_count();
   if (!device_cnt)
-    throw exception(sup.error());
+    throw exception(device_cnt.error());
   for (uint32_t dev_idx = 0; dev_idx < *device_cnt; dev_idx++) {
     if (!dev_mask[dev_idx])
       continue;
