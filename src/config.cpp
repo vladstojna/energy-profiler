@@ -55,7 +55,9 @@ static constexpr std::string_view error_messages[] = {
     "start/end: node <cu></cu> or attribute 'cu' not found",
     "start/end: node <line></line> or attribute 'line' not found",
     "start/end: invalid compilation unit: cannot be empty",
+    "start/end: invalid file: cannot be empty",
     "start/end: invalid line number: must be a positive integer",
+    "start/end: invalid column number: must be a positive integer",
 
     "func: invalid compilation unit: cannot be empty",
     "func: attribute 'name' not found",
@@ -178,6 +180,18 @@ result<std::string> get_cu(const pugi::xml_node &pos_node) {
   return cu.child_value();
 }
 
+result<std::optional<std::string>> get_file(const pugi::xml_node &pos_node) {
+  using unexpected = result<std::optional<std::string>>::unexpected_type;
+  using tep::cfg::errc;
+  using namespace pugi;
+  xml_attribute file_attr = pos_node.attribute("file");
+  if (!file_attr)
+    return std::nullopt;
+  if (!*file_attr.value())
+    return unexpected{errc::pos_invalid_file};
+  return file_attr.value();
+}
+
 result<uint32_t> get_lineno(const pugi::xml_node &pos_node) {
   using rettype = decltype(get_lineno(std::declval<decltype(pos_node)>()));
   using tep::cfg::errc;
@@ -203,6 +217,22 @@ result<uint32_t> get_lineno(const pugi::xml_node &pos_node) {
   if ((lineno = line.text().as_int(0)) <= 0)
     return rettype(nonstd::unexpect, errc::pos_invalid_line);
   return lineno;
+}
+
+result<uint32_t> get_columnno(const pugi::xml_node &pos_node) {
+  using unexpected = result<uint32_t>::unexpected_type;
+  using tep::cfg::errc;
+  using namespace pugi;
+  // attribute "column" exists
+  xml_attribute col_attr = pos_node.attribute("col");
+  if (!col_attr)
+    return 0;
+  if (!*col_attr.value())
+    return unexpected{errc::pos_invalid_column};
+  int column;
+  if ((column = col_attr.as_int(0)) <= 0)
+    return unexpected{errc::pos_invalid_column};
+  return column;
 }
 
 bool valid_hex_prefix(std::string_view x) noexcept {
@@ -384,11 +414,19 @@ position_t::position_t(const config_entry &entry) {
   auto cu = get_cu(entry.node);
   if (!cu)
     throw exception(cu.error());
+  auto file = get_file(entry.node);
+  if (!file)
+    throw exception(file.error());
   auto lineno = get_lineno(entry.node);
   if (!lineno)
-    throw exception(cu.error());
+    throw exception(lineno.error());
+  auto colno = get_columnno(entry.node);
+  if (!colno)
+    throw exception(colno.error());
   compilation_unit = std::move(*cu);
+  this->file = std::move(*file);
   line = *lineno;
+  column = *colno;
 }
 
 function_t::function_t(const config_entry &entry)
@@ -670,7 +708,10 @@ std::ostream &operator<<(std::ostream &os, const address_range_t &x) {
 }
 
 std::ostream &operator<<(std::ostream &os, const position_t &x) {
-  os << x.compilation_unit << ":" << x.line;
+  os << x.compilation_unit << ":";
+  if (x.file)
+    os << *x.file << ":";
+  os << x.line << ":" << x.column;
   return os;
 }
 
