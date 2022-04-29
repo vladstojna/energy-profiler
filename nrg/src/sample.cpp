@@ -8,22 +8,15 @@
 
 using namespace nrgprf;
 
-sample::sample() :
-    data{}
-{}
+sample::sample() : data{} {}
 
-bool sample::operator==(const sample& rhs) const
-{
-    return !std::memcmp(this, &rhs, sizeof(rhs));
+bool sample::operator==(const sample &rhs) const {
+  return !std::memcmp(this, &rhs, sizeof(rhs));
 }
 
-bool sample::operator!=(const sample& rhs) const
-{
-    return !(*this == rhs);
-}
+bool sample::operator!=(const sample &rhs) const { return !(*this == rhs); }
 
-sample::operator bool() const
-{
-    sample empty{};
-    return *this != empty;
+sample::operator bool() const {
+  sample empty{};
+  return *this != empty;
 }

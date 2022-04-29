@@ -2,9 +2,8 @@
 
 #pragma once
 
-namespace tep
-{
+namespace tep {
 
-    void run_target(char* const argv[]);
+void run_target(char *const argv[]);
 
 }
