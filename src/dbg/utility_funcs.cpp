@@ -602,13 +602,19 @@ find_function(const object_info &oi, std::string_view name,
     else
       return unexpected{res.error()};
   } else if (sym.error() == util_errcause::not_found) {
+    const function *found = nullptr;
     for (const auto &cu : oi.compilation_units()) {
       auto func = find_function(cu, name, exact_name);
-      if (func)
-        return std::pair{*func, nullptr};
-      if (func.error() != util_errc::function_not_found)
+      if (func) {
+        if (found)
+          return unexpected{util_errc::function_ambiguous};
+        found = *func;
+      } else if (func.error() != util_errc::function_not_found) {
         return unexpected{func.error()};
+      }
     }
+    if (found)
+      return std::pair{found, nullptr};
     return unexpected{util_errc::function_not_found};
   }
   return unexpected{sym.error()};
@@ -620,24 +626,18 @@ find_function(const object_info &oi, const compilation_unit &cu,
   using unexpected = nonstd::unexpected<std::error_code>;
   auto sym = find_function_symbol(oi, cu, name, exact_name,
                                   ignore_symbol_suffix_flag::yes);
-  if (!sym && sym.error() != util_errcause::not_found)
-    return unexpected{sym.error()};
-  if (!sym) {
+  if (sym) {
     if (auto res = find_function(oi, **sym))
-      return std::pair{*res, nullptr};
+      return std::pair{*res, *sym};
     else
       return unexpected{res.error()};
+  } else if (sym.error() == util_errcause::not_found) {
+    auto func = find_function(cu, name, exact_name);
+    if (func)
+      return std::pair{*func, nullptr};
+    return unexpected{util_errc::function_not_found};
   }
-  for (const auto &f : cu.funcs) {
-    if (!f.addresses)
-      continue;
-    auto it = std::find_if(
-        f.addresses->values.begin(), f.addresses->values.end(),
-        [&](contiguous_range rng) { return rng.low_pc == (*sym)->address; });
-    if (it != f.addresses->values.end())
-      return std::pair{&f, *sym};
-  }
-  return unexpected{util_errc::function_not_found};
+  return unexpected{sym.error()};
 }
 
 result<const function *> find_function(const compilation_unit &cu,
