@@ -212,8 +212,8 @@ options:
   -q, --quiet                   suppress log messages except errors to stderr (default: off)
   -l, --log <file>              (optional) write log to <file> (default: stdout)
   --debug-dump <file>           (optional) dump gathered debug info in JSON format to <file>
-  --idle                        gather idle readings at startup (default)
-  --no-idle                     opposite of --idle
+  --idle                        gather idle readings at startup
+  --no-idle                     do not gather idle readings at startup (default)
   --cpu-sensors {MASK,all}      mask of CPU sensors to read in hexadecimal, overwrites config value (default: use value in config)
   --cpu-sockets {MASK,all}      mask of CPU sockets to profile in hexadecimal, overwrites config value (default: use value in config)
   --gpu-devices {MASK,all}      mask of GPU devices to profile in hexadecimal, overwrites config value (default: use value in config)

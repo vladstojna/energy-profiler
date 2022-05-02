@@ -143,11 +143,11 @@ void print_usage(const char *profiler_name) {
             << "(optional) dump gathered debug info in JSON format to <file>"
             << "\n";
 
-  std::cout << parameter{"--idle"}
-            << "gather idle readings at startup (default)"
+  std::cout << parameter{"--idle"} << "gather idle readings at startup"
             << "\n";
 
-  std::cout << parameter{"--no-idle"} << "opposite of --idle"
+  std::cout << parameter{"--no-idle"}
+            << "do not gather idle readings at startup (default)"
             << "\n";
 
   std::cout << parameter{"--cpu-sensors {MASK,all}"}
@@ -178,7 +178,7 @@ void print_usage(const char *profiler_name) {
 std::optional<arguments> tep::parse_arguments(int argc, char *const argv[]) {
   int c;
   int option_index = 0;
-  int idle = 1;
+  int idle = 0;
   bool quiet = false;
   std::string output;
   std::string config;
