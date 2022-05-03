@@ -257,9 +257,14 @@ tracer_error tracer::trace(const registered_traps *traps) {
       cpu_gp_regs regs(_tracee);
       if (auto err = regs.getregs())
         return err;
+      regs.rewind_trap();
+      start_addr start_bp_addr = regs.get_ip();
+      const start_trap *strap = traps->find(start_bp_addr);
       log::logline(log::info,
                    "[%d] reached breakpoint @ 0x%" PRIxPTR " (0x%" PRIxPTR ")",
                    tid, regs.get_ip(), regs.get_ip() - entrypoint);
+      log::logline(log::debug, "[%d] stack pointer @ 0x%" PRIxPTR, tid,
+                   regs.get_stack_pointer());
 
       std::scoped_lock lock(TRAP_BARRIER);
       log::logline(log::debug, "[%d] entered global tracer barrier", tid);
@@ -270,10 +275,6 @@ tracer_error tracer::trace(const registered_traps *traps) {
         return std::move(toggler.error());
       log::logline(log::info, "[%d] child tracing disabled", tid);
 
-      regs.rewind_trap();
-
-      start_addr start_bp_addr = regs.get_ip();
-      const start_trap *strap = traps->find(start_bp_addr);
       if (!strap) {
         log::logline(log::error,
                      "[%d] reached start trap which is not registered as "
@@ -294,10 +295,6 @@ tracer_error tracer::trace(const registered_traps *traps) {
         log::logline(log::info,
                      "[%d] concurrency allowed; not stopping tracees", tid);
 
-      if (auto error = handle_breakpoint(regs, *strap))
-        return error;
-      _sampler = strap->create_sampler();
-
       auto get_func_return_ctx = [&](const trap_context &x)
           -> tracer_expected<std::optional<trap_context>> {
         using unexpected = tracer_expected<trap_context>::unexpected_type;
@@ -314,24 +311,30 @@ tracer_error tracer::trace(const registered_traps *traps) {
       if (!func_end_ctx)
         return std::move(func_end_ctx).error();
       if (*func_end_ctx) {
+        log::logline(
+            log::debug,
+            "[%d] function return address @ 0x%" PRIxPTR " (0x%" PRIxPTR ")",
+            tid, (*func_end_ctx)->addr(), (*func_end_ctx)->addr() - entrypoint);
         auto res = insert_trap(_tracee, func_end_ctx.value().value().addr());
         if (!res)
           return std::move(res).error();
         origword = *res;
       }
 
-      // it is during this time that the energy readings are done
+      if (auto error = handle_breakpoint(regs, *strap))
+        return error;
+      _sampler = strap->create_sampler();
       sampler_promise _promise = _sampler->run();
       if (pw.ptrace(errnum, PTRACE_CONT, _tracee, 0, 0) == -1)
         return get_syserror(errnum, tracer_errcode::PTRACE_ERROR, tid,
                             "PTRACE_CONT");
+      // it is during this time that the energy readings are done
       if (auto error = wait_for_tracee(wait_status))
         return error;
 
       // reached end breakpoint
       if (is_breakpoint_trap(wait_status)) {
         auto sampling_results = _promise();
-
         if (auto error = regs.getregs())
           return error;
         log::logline(log::info,

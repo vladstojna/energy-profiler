@@ -126,8 +126,9 @@ cpu_gp_regs::get_return_address() const noexcept {
   using unexpected = nonstd::expected<uintptr_t, tracer_error>::unexpected_type;
   ptrace_wrapper &pw = ptrace_wrapper::instance;
   int error;
-  long ret_addr = pw.ptrace(error, PTRACE_PEEKDATA, _pid,
-                            get_stack_pointer() + sizeof(long), 0);
+  // read a word of 8 bytes in [sp, sp+8)
+  long ret_addr =
+      pw.ptrace(error, PTRACE_PEEKDATA, _pid, get_stack_pointer(), 0);
   if (error)
     return unexpected{get_syserror(error, tracer_errcode::PTRACE_ERROR, _pid,
                                    "get_return_address: PTRACE_PEEKDATA")};
