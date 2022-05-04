@@ -73,6 +73,9 @@ private:
   tracer_error reset_trap(const trap &, uintptr_t addr) const;
   tracer_error handle_breakpoint(cpu_gp_regs &regs, const trap &) const;
   tracer_error trace(const registered_traps *traps);
+
+  tracer_expected<std::pair<trap_context, long>>
+  handle_function_entry(const cpu_gp_regs &) const;
 };
 
 // operator overloads

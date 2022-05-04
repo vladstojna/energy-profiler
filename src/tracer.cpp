@@ -214,6 +214,32 @@ tracer_error tracer::handle_breakpoint(cpu_gp_regs &regs, const trap &t) const {
   return tracer_error::success();
 }
 
+tracer_expected<std::pair<trap_context, long>>
+tracer::handle_function_entry(const cpu_gp_regs &regs) const {
+  auto get_func_return_ctx =
+      [](const cpu_gp_regs &regs) -> tracer_expected<trap_context> {
+    using unexpected = tracer_expected<trap_context>::unexpected_type;
+    auto ret_addr = regs.get_return_address();
+    if (!ret_addr)
+      return unexpected{std::move(ret_addr).error()};
+    return trap_context{function_return{*ret_addr, nullptr}};
+  };
+
+  using unexpected =
+      tracer_expected<std::pair<trap_context, long>>::unexpected_type;
+  long origword = 0;
+  auto func_end_ctx = get_func_return_ctx(regs);
+  if (!func_end_ctx)
+    return unexpected{std::move(func_end_ctx).error()};
+  log::logline(log::debug, "function return address @ 0x%" PRIxPTR,
+               func_end_ctx->addr());
+  auto res = insert_trap(_tracee, func_end_ctx->addr());
+  if (!res)
+    return unexpected{std::move(res).error()};
+  origword = *res;
+  return std::pair{*std::move(func_end_ctx), origword};
+}
+
 tracer_error tracer::trace(const registered_traps *traps) {
   assert(traps != nullptr);
 
@@ -257,9 +283,14 @@ tracer_error tracer::trace(const registered_traps *traps) {
       cpu_gp_regs regs(_tracee);
       if (auto err = regs.getregs())
         return err;
+      regs.rewind_trap();
+      start_addr start_bp_addr = regs.get_ip();
+      const start_trap *strap = traps->find(start_bp_addr);
       log::logline(log::info,
                    "[%d] reached breakpoint @ 0x%" PRIxPTR " (0x%" PRIxPTR ")",
                    tid, regs.get_ip(), regs.get_ip() - entrypoint);
+      log::logline(log::debug, "[%d] stack pointer @ 0x%" PRIxPTR, tid,
+                   regs.get_stack_pointer());
 
       std::scoped_lock lock(TRAP_BARRIER);
       log::logline(log::debug, "[%d] entered global tracer barrier", tid);
@@ -270,10 +301,6 @@ tracer_error tracer::trace(const registered_traps *traps) {
         return std::move(toggler.error());
       log::logline(log::info, "[%d] child tracing disabled", tid);
 
-      regs.rewind_trap();
-
-      start_addr start_bp_addr = regs.get_ip();
-      const start_trap *strap = traps->find(start_bp_addr);
       if (!strap) {
         log::logline(log::error,
                      "[%d] reached start trap which is not registered as "
@@ -294,44 +321,28 @@ tracer_error tracer::trace(const registered_traps *traps) {
         log::logline(log::info,
                      "[%d] concurrency allowed; not stopping tracees", tid);
 
+      std::optional<std::pair<trap_context, long>> func_return;
+      if (strap->context().is_function_call()) {
+        auto res = handle_function_entry(regs);
+        if (!res)
+          return std::move(res).error();
+        func_return = *std::move(res);
+      }
+
       if (auto error = handle_breakpoint(regs, *strap))
         return error;
       _sampler = strap->create_sampler();
-
-      auto get_func_return_ctx = [&](const trap_context &x)
-          -> tracer_expected<std::optional<trap_context>> {
-        using unexpected = tracer_expected<trap_context>::unexpected_type;
-        if (!x.is_function_call())
-          return std::nullopt;
-        auto ret_addr = regs.get_return_address();
-        if (!ret_addr)
-          return unexpected{std::move(ret_addr).error()};
-        return trap_context{function_return{*ret_addr, nullptr}};
-      };
-
-      long origword = 0;
-      auto func_end_ctx = get_func_return_ctx(strap->context());
-      if (!func_end_ctx)
-        return std::move(func_end_ctx).error();
-      if (*func_end_ctx) {
-        auto res = insert_trap(_tracee, func_end_ctx.value().value().addr());
-        if (!res)
-          return std::move(res).error();
-        origword = *res;
-      }
-
-      // it is during this time that the energy readings are done
       sampler_promise _promise = _sampler->run();
       if (pw.ptrace(errnum, PTRACE_CONT, _tracee, 0, 0) == -1)
         return get_syserror(errnum, tracer_errcode::PTRACE_ERROR, tid,
                             "PTRACE_CONT");
+      // it is during this time that the energy readings are done
       if (auto error = wait_for_tracee(wait_status))
         return error;
 
       // reached end breakpoint
       if (is_breakpoint_trap(wait_status)) {
         auto sampling_results = _promise();
-
         if (auto error = regs.getregs())
           return error;
         log::logline(log::info,
@@ -341,14 +352,14 @@ tracer_error tracer::trace(const registered_traps *traps) {
 
         const trap_context *end_ctx = nullptr;
         regs.rewind_trap();
-        if (*func_end_ctx) {
-          auto addr = func_end_ctx.value().value().addr();
-          if (regs.get_ip() != addr) {
+        if (func_return) {
+          auto [ctx, origword] = *func_return;
+          if (regs.get_ip() != ctx.addr()) {
             log::logline(log::error,
                          "[%d] reached trap @ 0x%" PRIxPTR " (0x%" PRIxPTR
                          ") which is not %s's return @ 0x%" PRIxPTR,
                          tid, regs.get_ip(), regs.get_ip() - entrypoint,
-                         to_string(strap->context()).c_str(), addr);
+                         to_string(strap->context()).c_str(), ctx.addr());
             const start_trap *strap = traps->find(start_addr{regs.get_ip()});
             if (strap)
               log::logline(log::error, "[%d] reached trap of %s", tid,
@@ -358,15 +369,16 @@ tracer_error tracer::trace(const registered_traps *traps) {
           }
           if (auto error = regs.setregs())
             return error;
-          if (pw.ptrace(errnum, PTRACE_POKEDATA, _tracee, addr, origword) == -1)
+          if (pw.ptrace(errnum, PTRACE_POKEDATA, _tracee, ctx.addr(),
+                        origword) == -1)
             return get_syserror(errnum, tracer_errcode::PTRACE_ERROR, tid,
                                 "PTRACE_POKEDATA");
           log::logline(
               log::debug,
               "[%d] reset original word at function return @ 0x%" PRIxPTR
               " (0x%lx -> 0x%lx)",
-              tid, addr, set_trap(origword), origword);
-          end_ctx = &**func_end_ctx;
+              tid, ctx.addr(), set_trap(origword), origword);
+          end_ctx = &(func_return->first);
         } else {
           end_addr end_bp_addr = regs.get_ip();
           const end_trap *etrap = traps->find(end_bp_addr, start_bp_addr);
