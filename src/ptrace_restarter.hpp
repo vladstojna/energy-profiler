@@ -13,7 +13,7 @@ public:
   ptrace_restarter(pid_t tid, pid_t tracee) noexcept;
   ~ptrace_restarter() noexcept;
 
-  tracer_error cont() noexcept;
+  tracer_error resume(int signo = 0) noexcept;
 
   ptrace_restarter(ptrace_restarter &&other) noexcept;
   ptrace_restarter &operator=(ptrace_restarter &&other) noexcept;
