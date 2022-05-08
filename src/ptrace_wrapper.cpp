@@ -9,7 +9,11 @@ using namespace tep;
 
 ptrace_wrapper ptrace_wrapper::instance;
 
-enum class ptrace_wrapper::request { ptrace, fork, finish };
+enum class ptrace_wrapper::request : uint32_t {
+  ptrace,
+  fork,
+  finish,
+};
 
 ptrace_wrapper::ptrace_wrapper() : _data(), _global_mx(), _calling_thread() {
   if (sem_init(&_req_sem, 0, 0))
@@ -32,8 +36,8 @@ ptrace_wrapper::~ptrace_wrapper() noexcept {
   sem_destroy(&_res_sem);
 }
 
-long ptrace_wrapper::ptrace(int &error, __ptrace_request req, pid_t pid,
-                            ...) noexcept {
+long ptrace_wrapper::ptrace(int &error, ptrace_wrapper::ptrace_req req,
+                            pid_t pid, ...) noexcept {
   std::lock_guard lock(_global_mx);
   va_list va;
   va_start(va, pid);
@@ -49,12 +53,12 @@ long ptrace_wrapper::ptrace(int &error, __ptrace_request req, pid_t pid,
   return _data.ptrace.result;
 }
 
-pid_t ptrace_wrapper::fork(int &error, void (*callback)(char *const[]),
-                           char *const *arg) noexcept {
+pid_t ptrace_wrapper::fork(int &error, callback_t *callback,
+                           callback_args_t args) noexcept {
   std::lock_guard lock(_global_mx);
   _data.req = request::fork;
   _data.fork.callback = callback;
-  _data.fork.arg = arg;
+  _data.fork.args = args;
   sem_post(&_req_sem);
   sem_wait(&_res_sem);
   error = _data.error;
@@ -69,7 +73,7 @@ void ptrace_wrapper::thread_work() noexcept {
       errno = 0;
       _data.fork.result = ::fork();
       if (_data.fork.result == 0) {
-        _data.fork.callback(_data.fork.arg);
+        _data.fork.callback(_data.fork.args);
         _exit(1);
       }
       _data.error = errno;

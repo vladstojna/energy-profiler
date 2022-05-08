@@ -5,14 +5,11 @@
 
 #include <cerrno>
 #include <cstring>
+#include <sys/personality.h>
 #include <sys/ptrace.h>
 #include <unistd.h>
 
-#if defined(NO_ASLR)
-
-#include <sys/personality.h>
-
-int disable_aslr(pid_t pid) {
+static int disable_aslr(pid_t pid) {
   using namespace tep;
   int old = personality(0xffffffff);
   if (old == -1) {
@@ -30,16 +27,7 @@ int disable_aslr(pid_t pid) {
   return result;
 }
 
-#else
-
-int disable_aslr(pid_t pid) {
-  (void)pid;
-  return 0;
-}
-
-#endif
-
-void tep::run_target(char *const argv[]) {
+void tep::run_target(bool aslr_randomization, char *const argv[]) {
   using namespace tep;
   pid_t pid = getpid();
   log::logline(log::info, "[%d] running target: %s", pid, argv[0]);
@@ -50,7 +38,7 @@ void tep::run_target(char *const argv[]) {
     log::logline(log::error, "[%d] PTRACE_TRACEME: %s", pid, strerror(errno));
     return;
   }
-  if (disable_aslr(pid))
+  if (!aslr_randomization && disable_aslr(pid))
     return;
   log::flush();
   // execute target executable

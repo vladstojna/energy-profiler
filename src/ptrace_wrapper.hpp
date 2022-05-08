@@ -14,23 +14,32 @@ class ptrace_wrapper {
 public:
   static ptrace_wrapper instance;
 
+  struct callback_args_t {
+    bool randomize;
+    char *const *argv;
+  };
+
+  using callback_t = void(callback_args_t);
+
 private:
-  enum class request;
+  using ptrace_req = __ptrace_request;
+
+  enum class request : uint32_t;
 
   struct request_data {
     request req;
     union {
       struct {
         long result;
-        __ptrace_request req;
+        ptrace_req req;
         pid_t pid;
         void *addr;
         void *data;
       } ptrace;
       struct {
         pid_t result;
-        void (*callback)(char *const[]);
-        char *const *arg;
+        callback_t *callback;
+        callback_args_t args;
       } fork;
     };
     int error;
@@ -48,9 +57,8 @@ private:
   ~ptrace_wrapper() noexcept;
 
 public:
-  long ptrace(int &error, __ptrace_request req, pid_t pid, ...) noexcept;
-  pid_t fork(int &error, void (*callback)(char *const[]),
-             char *const *arg) noexcept;
+  long ptrace(int &error, ptrace_req req, pid_t pid, ...) noexcept;
+  pid_t fork(int &error, callback_t *callback, callback_args_t args) noexcept;
 };
 
 } // namespace tep
