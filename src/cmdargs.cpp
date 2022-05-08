@@ -174,7 +174,7 @@ void print_usage(const char *profiler_name) {
                "\n";
 
   std::cout << parameter{"--enable-randomization"}
-            << "Enable Address Space Layout Randomization (ASLR) for the target"
+            << "enable Address Space Layout Randomization (ASLR) for the target"
                " application"
                "\n";
 
