@@ -118,58 +118,65 @@ void print_usage(const char *profiler_name) {
 
   std::cout << "options:\n";
 
-  std::cout << parameter{"-h, --help"} << "print this message and exit"
-            << "\n";
+  std::cout << parameter{"-h, --help"}
+            << "print this message and exit"
+               "\n";
 
   std::cout << parameter{"-c, --config <file>"}
             << "(optional) read from configuration file <file>; "
-            << "if <file> is 'stdin' then stdin is used (default: stdin)"
-            << "\n";
+               "if <file> is 'stdin' then stdin is used (default: stdin)"
+               "\n";
 
   std::cout << parameter{"-o, --output <file>"}
             << "(optional) write profiling results to <file>; "
-            << "if <file> is 'stdout' then stdout is used (default: stdout)"
-            << "\n";
+               "if <file> is 'stdout' then stdout is used (default: stdout)"
+               "\n";
 
   std::cout << parameter{"-q, --quiet"}
             << "suppress log messages except errors to stderr (default: off)"
-            << "\n";
+               "\n";
 
   std::cout << parameter{"-l, --log <file>"}
             << "(optional) write log to <file> (default: stdout)"
-            << "\n";
+               "\n";
 
   std::cout << parameter{"--debug-dump <file>"}
             << "(optional) dump gathered debug info in JSON format to <file>"
-            << "\n";
+               "\n";
 
-  std::cout << parameter{"--idle"} << "gather idle readings at startup"
-            << "\n";
+  std::cout << parameter{"--idle"}
+            << "gather idle readings at startup"
+               "\n";
 
   std::cout << parameter{"--no-idle"}
             << "do not gather idle readings at startup (default)"
-            << "\n";
+               "\n";
 
   std::cout << parameter{"--cpu-sensors {MASK,all}"}
             << "mask of CPU sensors to read in hexadecimal, "
-            << "overwrites config value (default: use value in config)"
-            << "\n";
+               "overwrites config value (default: use value in config)"
+               "\n";
 
   std::cout << parameter{"--cpu-sockets {MASK,all}"}
             << "mask of CPU sockets to profile in hexadecimal, "
-            << "overwrites config value (default: use value in config)"
-            << "\n";
+               "overwrites config value (default: use value in config)"
+               "\n";
 
   std::cout << parameter{"--gpu-devices {MASK,all}"}
             << "mask of GPU devices to profile in hexadecimal, "
-            << "overwrites config value (default: use value in config)"
-            << "\n";
+               "overwrites config value (default: use value in config)"
+               "\n";
 
   std::cout << parameter{"--exec <path>"}
             << "evaluate executable <path> instead of <executable>; "
-            << "used when <executable> is some wrapper program "
-            << "which launches <path> (default: <executable>)"
-            << "\n";
+               "used when <executable> is some wrapper program "
+               "which launches <path> (default: <executable>)"
+               "\n";
+
+  std::cout << parameter{"--enable-randomization"}
+            << "Enable Address Space Layout Randomization (ASLR) for the target"
+               " application"
+               "\n";
 
   std::cout.flush();
   std::cout.flags(flags);
@@ -180,6 +187,7 @@ std::optional<arguments> tep::parse_arguments(int argc, char *const argv[]) {
   int option_index = 0;
   int idle = 0;
   bool quiet = false;
+  bool randomize = false;
   std::string output;
   std::string config;
   std::string logpath;
@@ -203,6 +211,7 @@ std::optional<arguments> tep::parse_arguments(int argc, char *const argv[]) {
       {gpu_devices_str.data(), required_argument, nullptr, 0x102},
       {"exec", required_argument, nullptr, 0x103},
       {"debug-dump", required_argument, nullptr, 0x104},
+      {"enable-randomization", no_argument, nullptr, 0x105},
       {nullptr, 0, nullptr, 0}};
 
   while ((c = getopt_long(argc, argv, "hqc:o:l:", long_options,
@@ -247,6 +256,9 @@ std::optional<arguments> tep::parse_arguments(int argc, char *const argv[]) {
                   << " cannot be empty\n";
         return std::nullopt;
       }
+      break;
+    case 0x105:
+      randomize = true;
       break;
     case 'c':
       config = optarg;
@@ -320,6 +332,7 @@ std::optional<arguments> tep::parse_arguments(int argc, char *const argv[]) {
   }
 
   return arguments{flags{bool(idle), cpu_sensors, cpu_sockets, gpu_devices},
+                   randomize,
                    std::move(config),
                    std::move(of),
                    std::move(dd),
