@@ -60,17 +60,6 @@ Other Make variables which can be overriden:
 * `system_clock` - use the system's clock instead of a steady clock for
   timestamps; use when an absolute, real time is necessary
 
-Additionally, some options are provided as preprocessor definitions.
-Enable them by running `make` with the `cpp` argument:
-
-```shell
-make cpp="MY_MACRO_DEFINITION"
-```
-
-Supported preprocessor definitions are:
-
-* `NO_ASLR` - disable ASLR for the target executable (enabled by default)
-
 The building procedure will generate an executable `profiler` in `bin`.
 
 ## Examples
@@ -218,6 +207,7 @@ options:
   --cpu-sockets {MASK,all}      mask of CPU sockets to profile in hexadecimal, overwrites config value (default: use value in config)
   --gpu-devices {MASK,all}      mask of GPU devices to profile in hexadecimal, overwrites config value (default: use value in config)
   --exec <path>                 evaluate executable <path> instead of <executable>; used when <executable> is some wrapper program which launches <path> (default: <executable>)
+  --enable-randomization        enable Address Space Layout Randomization (ASLR) for the target application
 ```
 
 Example of running the profiler for socket 0 (`--cpu-sockets`),
