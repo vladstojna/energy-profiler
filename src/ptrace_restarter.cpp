@@ -16,15 +16,15 @@ namespace tep {
 ptrace_restarter::ptrace_restarter(pid_t tid, pid_t tracee) noexcept
     : _tid(tid), _tracee(tracee) {}
 
-tracer_error ptrace_restarter::cont() noexcept {
+tracer_error ptrace_restarter::resume(int signo) noexcept {
   // sometimes PTRACE_CONT may fail with ESRCH despite the tracee existing
   // in /proc/<pid>/tasks, so the tracee is manually waited for if errno equals
   // ESRCH perhaps polling with WNOHANG and limited iterations would be better
   // to avoid situations where waiting is infinite
   int errnum;
   int wait_status;
-  if (ptrace_wrapper::instance.ptrace(errnum, PTRACE_CONT, _tracee, 0, 0) ==
-      -1) {
+  auto &pw = ptrace_wrapper::instance;
+  if (pw.ptrace(errnum, PTRACE_CONT, _tracee, 0, signo) == -1) {
     if (errnum != ESRCH)
       return get_syserror(errnum, tracer_errcode::PTRACE_ERROR, _tid,
                           "PTRACE_CONT");
@@ -48,8 +48,7 @@ tracer_error ptrace_restarter::cont() noexcept {
                  _tid, _tracee, sigstr ? sigstr : "<no stop signal>",
                  wait_status, regs.get_ip());
 
-    if (ptrace_wrapper::instance.ptrace(errnum, PTRACE_CONT, _tracee, 0, 0) ==
-        -1)
+    if (pw.ptrace(errnum, PTRACE_CONT, _tracee, 0, signo) == -1)
       return get_syserror(errnum, tracer_errcode::PTRACE_ERROR, _tid,
                           "PTRACE_CONT");
   }
