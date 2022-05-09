@@ -51,9 +51,12 @@ int main(int argc, char *argv[]) {
     if (args->debug_dump)
       args->debug_dump << dbg::debug_dump{oinfo};
 
+    auto callback = [](ptrace_wrapper::callback_args_t x) {
+      run_target(x.randomize, x.argv);
+    };
     int errnum;
-    pid_t child_pid =
-        ptrace_wrapper::instance.fork(errnum, &run_target, args->argv);
+    pid_t child_pid = ptrace_wrapper::instance.fork(
+        errnum, callback, {args->enable_randomization, args->argv});
     if (child_pid > 0) {
       profiler prof(child_pid, args->profiler_flags, oinfo, config);
       if (!args->same_target()) {

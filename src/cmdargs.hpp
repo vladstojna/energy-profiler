@@ -37,6 +37,7 @@ struct log_args {
 
 struct arguments {
   flags profiler_flags;
+  bool enable_randomization;
   optional_input_file config;
   optional_output_file output;
   std::ofstream debug_dump;

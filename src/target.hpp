@@ -4,6 +4,6 @@
 
 namespace tep {
 
-void run_target(char *const argv[]);
+void run_target(bool aslr_randomization, char *const argv[]);
 
 }
