@@ -459,7 +459,7 @@ find_function_symbol(const object_info &oi, std::string_view name,
 result<const function_symbol *>
 find_function_symbol(const object_info &oi, const compilation_unit &cu,
                      std::string_view name, exact_symbol_name_flag exact_name,
-                     ignore_symbol_suffix_flag no_suffix) {
+                     ignore_symbol_suffix_flag ignore_suffix) {
   using ret_type = result<const function_symbol *>;
   using unexpected = nonstd::unexpected<std::error_code>;
   if (name.empty())
@@ -487,38 +487,41 @@ find_function_symbol(const object_info &oi, const compilation_unit &cu,
     return util_errc::symbol_ambiguous;
   };
 
-  auto find_matched = [&](bool no_suffix) -> ret_type {
+  auto find_matched = [&](bool ignore_suffix) -> ret_type {
+    bool found_only_with_suffix = false;
     const function_symbol *found = nullptr;
     for (const auto &sym : oi.function_symbols()) {
       if (auto res = is_match(name, sym.name); !res)
         return unexpected{res.error()};
-      else if (!*res)
-        continue;
-      auto cu_res = find_compilation_unit(oi, sym);
-      if (!cu_res || (*cu_res)->path != cu.path)
-        continue;
-      if (auto res = is_equal(name, sym.name); !res)
-        return unexpected{res.error()};
-      else if (*res)
-        return &sym;
-      if (!found)
-        found = &sym;
-      else if (!no_suffix) {
-        if (has_suffix(sym.name) || has_suffix(found->name))
-          return unexpected{util_errc::symbol_ambiguous_suffix};
-        return unexpected{ambiguous_error(sym.binding, found->binding)};
-      } else {
-        if (!has_suffix(sym.name))
-          found = &sym;
-        else {
-          if (has_suffix(found->name)) {
-            if (has_suffix(sym.name))
+      else if (*res) {
+        auto cu_res = find_compilation_unit(oi, sym);
+        if (cu_res && (*cu_res)->path == cu.path) {
+          if (auto res = is_equal(name, sym.name); !res)
+            return unexpected{res.error()};
+          else if (*res)
+            return &sym;
+          if (!found)
+            found = &sym;
+          else if (ignore_suffix) {
+            if (!has_suffix(sym.name) && !has_suffix(found->name))
+              return unexpected{ambiguous_error(sym.binding, found->binding)};
+            if (has_suffix(found->name) && has_suffix(sym.name)) {
+              found_only_with_suffix = true;
+            } else {
+              found_only_with_suffix = false;
+              if (!has_suffix(sym.name))
+                found = &sym;
+            }
+          } else {
+            if (has_suffix(sym.name) || has_suffix(found->name))
               return unexpected{util_errc::symbol_ambiguous_suffix};
             return unexpected{ambiguous_error(sym.binding, found->binding)};
           }
         }
       }
     }
+    if (found_only_with_suffix)
+      return unexpected{util_errc::symbol_ambiguous_suffix};
     if (found)
       return found;
     return unexpected{util_errc::symbol_not_found};
@@ -526,7 +529,7 @@ find_function_symbol(const object_info &oi, const compilation_unit &cu,
 
   if (bool(exact_name))
     return find_exact();
-  return find_matched(bool(no_suffix));
+  return find_matched(bool(ignore_suffix));
 }
 
 result<const function_symbol *> find_function_symbol(const object_info &oi,
