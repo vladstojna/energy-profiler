@@ -4,6 +4,7 @@
 
 #include <nrg/types.hpp>
 
+#include <array>
 #include <iosfwd>
 #include <vector>
 

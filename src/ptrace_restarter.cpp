@@ -7,10 +7,12 @@
 #include "registers.hpp"
 #include "util.hpp"
 
-#include <cassert>
-#include <cstring>
 #include <sys/user.h>
 #include <sys/wait.h>
+
+#include <cassert>
+#include <cstring>
+#include <utility>
 
 namespace tep {
 ptrace_restarter::ptrace_restarter(pid_t tid, pid_t tracee) noexcept
