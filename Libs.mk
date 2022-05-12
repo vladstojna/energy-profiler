@@ -7,7 +7,7 @@ libdir := lib
 dir_targets  := $(addprefix $(libdir)/, pugixml json expected)
 pugixml_build_files := $(addprefix $(libdir)/, pugixml/lib pugixml/include)
 
-CMAKE := $(shell command -v cmake)
+CMAKE := $(shell command -v cmake;)
 
 .PHONY: default
 default: build
