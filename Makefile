@@ -4,6 +4,8 @@ override cpp +=
 
 LIB_PREFIX ?= lib
 ELFUTILS_PREFIX ?=
+DEBUG ?=
+system_clock ?=
 
 # directories
 src_dir := src
@@ -27,24 +29,14 @@ obj  := $(patsubst $(src_dir)/%.cpp, $(obj_dir)/%.o, $(src))
 deps := $(patsubst $(src_dir)/%.cpp, $(dep_dir)/%.d, $(src))
 tgt  := $(tgt_dir)/profiler
 
-DEBUG ?=
-
-system_clock ?=
-ifdef system_clock
-cflags += -DTEP_USE_SYSTEM_CLOCK
-endif
-
 cflags := -Wall -Wextra -Wno-unknown-pragmas -Wpedantic -fPIE -g -pthread
 cflags += $(addprefix -I, $(extlibs_incl))
 cflags += $(addprefix -I, include nrg/include)
 cflags += -std=$(std)
 cflags += $(addprefix -D, $(cpp))
 
-ifdef DEBUG
-cflags += -O0
-else
-cflags += -O3 -DNDEBUG -flto
-ldflags += -flto
+ifdef system_clock
+cflags += -DTEP_USE_SYSTEM_CLOCK
 endif
 
 # linker flags
@@ -53,6 +45,13 @@ ldflags += $(addprefix -L, $(extlibs_dirs) nrg/lib)
 
 # rpath
 ldflags += -Wl,-rpath='$$ORIGIN/../nrg/lib'
+
+ifdef DEBUG
+cflags += -O0
+else
+cflags += -O3 -DNDEBUG -flto
+ldflags += -flto
+endif
 
 # rules -----------------------------------------------------------------------
 
