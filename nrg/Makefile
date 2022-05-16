@@ -68,7 +68,10 @@ ldflags := -shared
 
 # GPU vendor specific
 ifeq ($(gpu),GPU_NV)
-incl += /opt/cuda/include
+# CUDA installation prefix
+CUDA_ROOT ?= /opt/cuda
+incl += $(CUDA_ROOT)/include
+ldflags += -L$(CUDA_ROOT)/lib$(shell getconf LONG_BIT;)
 ldflags += -lnvidia-ml
 endif # $(gpu),GPU_NV
 
