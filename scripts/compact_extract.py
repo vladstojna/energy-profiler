@@ -46,7 +46,9 @@ def main():
                         and (k == args.location if args.location else True)
                     }.items()
                 ):
-                    for value_type, value in values.items():
+                    for value_type, value in (
+                        (k, v) for k, v in values.items() if v is not None
+                    ):
                         entry = (
                             "{}_{}_{}_{}{!s}".format(
                                 value_type, prefix, loc, dev_key, dev
