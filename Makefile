@@ -2,21 +2,24 @@ cc := g++
 std := c++17
 override cpp +=
 
-LIB_PREFIX ?= lib
-ELFUTILS_PREFIX ?=
-DEBUG ?=
-system_clock ?=
-
 # directories
 src_dir := src
 tgt_dir := bin
-lib_dir := $(LIB_PREFIX)
+lib_dir := lib
 obj_dir := obj
 dep_dir := $(obj_dir)/.deps
 
+ELFUTILS_PREFIX ?=
+PUGIXML_PREFIX  ?= $(lib_dir)/pugixml
+JSON_PREFIX     ?= $(lib_dir)/json
+EXPECTED_PREFIX ?= $(lib_dir)/expected
+
+DEBUG ?=
+system_clock ?=
+
 # external libs
-extlibs_incl := $(addprefix $(lib_dir)/, pugixml/include json/single_include expected/include)
-extlibs_dirs := $(addprefix $(lib_dir)/, pugixml/lib)
+extlibs_incl := $(PUGIXML_PREFIX)/include $(JSON_PREFIX)/single_include $(EXPECTED_PREFIX)/include
+extlibs_dirs := $(PUGIXML_PREFIX)/lib
 
 ifdef ELFUTILS_PREFIX
 extlibs_incl += $(ELFUTILS_PREFIX)/include

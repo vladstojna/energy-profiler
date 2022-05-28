@@ -5,11 +5,10 @@ obj_dir := obj
 inc_dir := include
 dep_dir := $(obj_dir)/.deps
 lib_dir := ../lib
-
-libs_incl := $(addprefix $(lib_dir)/, expected/include)
-incl := ../include $(inc_dir) $(libs_incl)
-
 override cpp +=
+
+EXPECTED_PREFIX ?= $(lib_dir)/expected
+incl := ../include $(inc_dir) $(EXPECTED_PREFIX)/include
 
 # debug build
 dbg ?=
@@ -70,26 +69,16 @@ ldflags := -shared
 ifeq ($(gpu),GPU_NV)
 # CUDA installation prefix
 CUDA_ROOT ?= /opt/cuda
-incl += $(CUDA_ROOT)/include
-ldflags += -L$(CUDA_ROOT)/lib$(shell getconf LONG_BIT;)
-ldflags += -lnvidia-ml
+incl      += $(CUDA_ROOT)/include
+ldflags   += -L$(CUDA_ROOT)/lib$(shell getconf LONG_BIT;)
+ldflags   += -lnvidia-ml
 endif # $(gpu),GPU_NV
 
 ifeq ($(gpu),GPU_AMD)
-rocm_ver ?=
-ifdef rocm_ver
-rocm := rocm-$(rocm_ver)
-else
-rocm := rocm
-endif
-
-rsmi_base := /opt/$(rocm)/rocm_smi
-export LD_RUN_PATH=$(rsmi_base)/lib
-
-incl += $(rsmi_base)/include
-ldflags += -lrocm_smi64
-ldflags += $(addprefix -L, $(LD_RUN_PATH))
-
+ROCM_ROOT ?= /opt/rocm
+incl      += $(ROCM_ROOT)/rocm_smi/include
+ldflags   += -L$(ROCM_ROOT)/rocm_smi/lib
+ldflags   += -lrocm_smi64
 endif # $(gpu),GPU_AMD
 
 # compiler flags
