@@ -129,8 +129,10 @@ def main():
                     samples[ix - 1][value_idx] = val.value
                     val = p
                 samples[-1][value_idx] = val.value
-        for ix, t in enumerate(times[1:]):
-            times[ix + 1] = (t + times[ix]) // 2
+        time_prev = times[0]
+        for ix, t in enumerate(times[1:], start=1):
+            times[ix] = (t + time_prev) // 2
+            time_prev = t
 
     def power2energy(
         times: SampleTimes,
