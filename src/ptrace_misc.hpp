@@ -4,6 +4,7 @@
 
 #include <util/expectedfwd.hpp>
 
+#include <cstdint>
 #include <string>
 #include <vector>
 

@@ -2,6 +2,7 @@
 #include "demangle.hpp"
 
 #include <nonstd/expected.hpp>
+#include <algorithm>
 
 namespace {
 struct util_category_t : std::error_category {

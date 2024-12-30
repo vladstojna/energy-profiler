@@ -5,6 +5,8 @@
 #include <functional>
 #include <util/expectedfwd.hpp>
 
+#include <sys/types.h>
+
 namespace tep {
 class ptrace_wrapper;
 class tracer_error;

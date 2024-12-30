@@ -3,6 +3,7 @@
 #include "ptrace_wrapper.hpp"
 
 #include <cstdarg>
+#include <stdexcept>
 #include <unistd.h>
 
 using namespace tep;
